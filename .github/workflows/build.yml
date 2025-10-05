@@ -1,0 +1,36 @@
+name: Build LTW
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+
+      - name: 设置 JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: 授予执行权限给 Gradlew
+        run: chmod +x gradlew
+
+      - name: 构建项目
+        run: ./gradlew :ltw:assembleRelease
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v3
+        with:
+          name: ltw-release
+          path: ltw/build/outputs/aar/ltw-release.aar
