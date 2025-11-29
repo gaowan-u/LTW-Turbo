@@ -512,3 +512,35 @@ void glDebugMessageControl( 	GLenum source,
                                GLboolean enabled) {
     //STUB
 }
+
+// 测试拦截函数 - 用于验证LTW拦截功能
+void glTestIntercept(void) {
+    printf("LTW INTERCEPT SUCCESS: glTestIntercept called - LTW is actively intercepting OpenGL calls!\n");
+    printf("LTW STATUS: Interception layer is working correctly\n");
+    printf("LTW DEBUG: This proves LTW can intercept and map OpenGL functions\n");
+}
+
+// 增强关键函数的日志输出
+void glClear(GLbitfield mask) {
+    if(!current_context) return;
+    if(debug) {
+        printf("LTW INTERCEPT: glClear called with mask=0x%x\n", mask);
+        printf("LTW MAPPING: Mapping to es3_functions.glClear\n");
+    }
+    es3_functions.glClear(mask);
+    if(debug) {
+        printf("LTW SUCCESS: glClear completed successfully\n");
+    }
+}
+
+void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
+    if(!current_context) return;
+    if(debug) {
+        printf("LTW INTERCEPT: glClearColor called with RGBA=(%.2f, %.2f, %.2f, %.2f)\n", red, green, blue, alpha);
+        printf("LTW MAPPING: Mapping to es3_functions.glClearColor\n");
+    }
+    es3_functions.glClearColor(red, green, blue, alpha);
+    if(debug) {
+        printf("LTW SUCCESS: glClearColor completed successfully\n");
+    }
+}
