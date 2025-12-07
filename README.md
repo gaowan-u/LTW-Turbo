@@ -10,6 +10,10 @@
 >
 > 感谢您的关注与耐心等待！
 
+## 重要通知：
+
+更新了main.c的注释
+
 ## 关于项目 (About the Project)
 
 LTW 是一个开源项目，致力于为 Minecraft Java 版（1.17及更早版本）的玩家提供一个高性能、持续维护的 OpenGL ES 渲染兼容层。
@@ -73,4 +77,5 @@ LTW-Turbo 的重生离不开原 LTW 项目的奠基者们。在此，我们向 a
 
 ## 许可证 (License)
 
-本项目基于 LGPL-3.0 协议开源，详情请见 `LICENSE` 文件。
+本项目基于 LGPL-3.0 协议开源，详情请见 `LICENSE` 文件
+
