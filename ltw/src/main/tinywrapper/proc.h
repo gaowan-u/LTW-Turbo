@@ -14,11 +14,11 @@
 typedef void (*eglMustCastToProperFunctionPointerType)(void);
 
 typedef struct {
-#define GLESFUNC(name, type) type name;
+#define GLESFUNC(name, type) type name; //GLES的api匹配？新的宏定义
 #include "es3_functions.h"
 #include "es3_extended.h"
-#undef GLESFUNC
-} es3_functions_t;
+#undef GLESFUNC //取消之前定义的宏
+} es3_functions_t;  
 
 extern eglMustCastToProperFunctionPointerType (*host_eglGetProcAddress)(const char *procname);
 extern es3_functions_t es3_functions;

@@ -4,7 +4,7 @@
  * For use under LGPL-3.0
  */
 #include <stdio.h>
-#include <dlfcn.h>
+#include <dlfcn.h>  //动态链接库
 
 #include <stdbool.h>
 #include "GL/gl.h"
@@ -16,20 +16,22 @@
 #include "egl.h"
 #include "glformats.h"
 #include "main.h"
-#include "swizzle.h"
+#include "swizzle.h"    //重组向量分量？？？
 #include "libraryinternal.h"
 #include "env.h"
 
+//GL清空深度缓存使用glClearDepth这个GL的api
 void glClearDepth(GLdouble depth) {
-    if(!current_context) return;
-    es3_functions.glClearDepthf((GLfloat) depth);
+    if(!current_context) return;    //判断是否为context_t结构体中成员，否则直接返回
+    es3_functions.glClearDepthf((GLfloat) depth);   //对应ltw\src\main\tinywrapper\es3_functions.h中的GLESFUNC(glClearDepthf,PFNGLCLEARDEPTHFPROC)
 }
 
-void *glMapBuffer(GLenum target, GLenum access) {
+//GL映射缓冲区
+void *glMapBuffer(GLenum target, GLenum access) {   //GLenum是unsigned int类型;GLint是int类型
     if(!current_context) return NULL;
 
-    GLenum access_range;
-    GLint length;
+    GLenum access_range;    //定义了一个GLenum类型的变量access_range
+    GLint length;   //定义了一个int类型的变量length
 
     switch (target) {
         // GL 4.2
@@ -40,42 +42,46 @@ void *glMapBuffer(GLenum target, GLenum access) {
         // GL 4.4
         case GL_QUERY_BUFFER:
             printf("ERROR: glMapBuffer unsupported target=0x%x\n", target);
-            break; // not supported for now
+            break; // not supported for now --> 现在暂不支持
 	    case GL_DRAW_INDIRECT_BUFFER:
         case GL_TEXTURE_BUFFER:
             printf("ERROR: glMapBuffer unimplemented target=0x%x\n", target);
             break;
-    }
+    }   //选择GL版本
 
     switch (access) {
         case GL_READ_ONLY:
-            access_range = GL_MAP_READ_BIT;
+            access_range = GL_MAP_READ_BIT; //图形库中的映射读取位
             break;
 
         case GL_WRITE_ONLY:
-            access_range = GL_MAP_WRITE_BIT;
+            access_range = GL_MAP_WRITE_BIT; //图形库中的映射写入位
             break;
 
         case GL_READ_WRITE:
-            access_range = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
+            access_range = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;  //图形库中的映射读取位或映射写入位
             break;
-    }
+    }   //GL读写权限选择
 
-    es3_functions.glGetBufferParameteriv(target, GL_BUFFER_SIZE, &length);
-    return es3_functions.glMapBufferRange(target, 0, length, access_range);
+    es3_functions.glGetBufferParameteriv(target, GL_BUFFER_SIZE, &length);  //对应ltw\src\main\tinywrapper\es3_functions.h中的GLESFUNC(glGetBufferParameteriv,PFNGLGETBUFFERPARAMETERIVPROC)
+    //调用获取缓冲区参数iv函数查询数组缓冲区大小，参数为（版本号，GL宏，int类型的指针）
+    return es3_functions.glMapBufferRange(target, 0, length, access_range); //对应ltw\src\main\tinywrapper\es3_functions.h中的GLESFUNC(glMapBufferRange,PFNGLMAPBUFFERRANGEPROC)
+    //调用映射缓冲区范围函数，参数为（版本号，偏移量，长度，访问权限）
 }
 
+//判断是否为代理纹理
 INTERNAL int isProxyTexture(GLenum target) {
     switch (target) {
         case GL_PROXY_TEXTURE_1D:
         case GL_PROXY_TEXTURE_2D:
         case GL_PROXY_TEXTURE_3D:
-        case GL_PROXY_TEXTURE_RECTANGLE_ARB:
-            return 1;
+        case GL_PROXY_TEXTURE_RECTANGLE_ARB:    //矩形代理纹理（ARB扩展）
+            return 1;   //返回真
     }
-    return 0;
+    return 0;   //返回假
 }
 
+//查询纹理在glext.h中的映射
 INTERNAL GLenum get_textarget_query_param(GLenum target) {
     switch (target) {
         case GL_TEXTURE_2D:
@@ -105,22 +111,24 @@ INTERNAL GLenum get_textarget_query_param(GLenum target) {
     }
 }
 
+//此处为一个内联函数，计算纹理级别的尺寸，可以插入到调用它的地方
 static int inline nlevel(int size, int level) {
     if(size) {
-        size>>=level;
+        size>>=level;   //右移赋值运算符，将size右移level位后赋值给size
         if(!size) size=1;
     }
     return size;
 }
 
-static bool trigger_texlevelparameter = false;
+static bool trigger_texlevelparameter = false;  //纹理级别参数触发器，默认关闭
 
+//纹理级别参数验证
 static bool check_texlevelparameter() {
-    if(current_context->es31) return true;
-    if(trigger_texlevelparameter) return false;
-    printf("glGetTexLevelParameter* functions are not supported below OpenGL ES 3.1\n");
-    trigger_texlevelparameter = true;
-    return false;
+    if(current_context->es31) return true;  //如果支持OpenGL ES 3.1则返回真
+    if(trigger_texlevelparameter) return false; //如果触发器为真则返回假
+    printf("glGetTexLevelParameter* functions are not supported below OpenGL ES 3.1\n");    //前两项都未执行
+    trigger_texlevelparameter = true;   //开启触发器
+    return false;   //返回假
 }
 
 static void proxy_getlevelparameter(GLenum target, GLint level, GLenum pname, GLint *params) {

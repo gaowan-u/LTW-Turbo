@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "es3_functions.h": "c",
+        "es3_extended.h": "c",
+        "env.h": "c",
+        "proc.h": "c",
+        "glformats.h": "c",
+        "egl.h": "c",
+        "libraryinternal.h": "c",
+        "swizzle.h": "c"
+    }
+}
