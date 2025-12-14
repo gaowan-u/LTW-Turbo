@@ -1,0 +1,58 @@
+name: Android Build - Build APK  # Android构建工作流
+
+on:
+  push:
+    branches: [ main, master ]  # 推送到main或master分支时触发
+  pull_request:
+    branches: [ main, master ]  # 针对main或master分支的PR时触发
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # 使用最新的Ubuntu运行器
+    
+    steps:
+    # 步骤1: 检出代码
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    # 步骤2: 设置Node.js环境 (Capacitor CLI需要NodeJS >=22.0.0)
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'  # 使用Node.js 22.x版本
+        cache: 'npm'  # 启用npm缓存加速依赖安装
+    
+    # 步骤3: 安装项目依赖
+    - name: Install dependencies
+      run: npm ci  # 使用clean install确保依赖一致性
+    
+    # 步骤4: 检查Node版本 (调试用)
+    - name: Check Node version
+      run: node --version && npm --version
+    
+    # 步骤5: 设置Java环境 (项目配置要求Java 21)
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'  # 使用Temurin发行版
+        java-version: '21'  # Java 21版本
+    
+    # 步骤6: 设置Android SDK
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+    
+    # 步骤7: 构建Android APK
+    - name: Build Android APK
+      run: |
+        npx cap sync  # 同步Web资源到Android项目
+        cd capacitor-android
+        ./gradlew assembleRelease  # 构建正式版APK
+    
+    # 步骤8: 上传APK作为工作流产物
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-apk  # 产物名称
+        path: capacitor-android/app/build/outputs/apk/release/app-release.apk  # 正式版APK文件路径
+        if-no-files-found: error  # 如果找不到文件则报错

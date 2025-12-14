@@ -1,4 +1,4 @@
-name: Android CI
+name: Android CI - Build AAR
 
 on: [push, workflow_dispatch]
 

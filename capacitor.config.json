@@ -1,0 +1,8 @@
+{
+  "appId": "com.ltw.turbo",
+  "appName": "LTW Turbo",
+  "webDir": "www",
+  "android": {
+    "path": "capacitor-android"
+  }
+}

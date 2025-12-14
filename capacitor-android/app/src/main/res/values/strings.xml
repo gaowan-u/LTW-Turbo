@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LTW Turbo</string>
+    <string name="title_activity_main">LTW Turbo</string>
+    <string name="package_name">com.ltw.turbo</string>
+    <string name="custom_url_scheme">com.ltw.turbo</string>
+</resources>
