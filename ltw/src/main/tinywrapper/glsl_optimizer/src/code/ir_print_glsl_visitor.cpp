@@ -1859,8 +1859,8 @@ print_float(sbuffer& str, float f)
 
 void IR_TO_GLSL::print_float_checked(sbuffer& str, float f) {
         int valid_float = 0;
-        char float_dest[5];
-        snprintf(float_dest, 5, "%f", f);
+        char float_dest[16];	//原代码:char float_dest[5];
+        snprintf(float_dest, sizeof(float_dest), "%f", f);	//原代码:snprintf(float_dest, 5, "%f", f);
         valid_float = strstr(float_dest, "nan") == nullptr && strstr(float_dest, "inf") == nullptr;
 	if (!valid_float)
 		{

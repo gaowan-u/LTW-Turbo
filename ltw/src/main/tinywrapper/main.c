@@ -4,7 +4,7 @@
  * For use under LGPL-3.0
  */
 #include <stdio.h>
-#include <dlfcn.h>  //动态链接库
+#include <dlfcn.h>
 
 #include <stdbool.h>
 #include "GL/gl.h"
@@ -16,7 +16,7 @@
 #include "egl.h"
 #include "glformats.h"
 #include "main.h"
-#include "swizzle.h"    //重组向量分量？？？
+#include "swizzle.h"
 #include "libraryinternal.h"
 #include "env.h"
 

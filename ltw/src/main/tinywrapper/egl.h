@@ -58,30 +58,30 @@ typedef struct {
 } texture_swizzle_track_t;
 
 typedef struct {
-    EGLContext phys_context;
-    bool context_rdy;
-    bool es31, es32, buffer_storage, buffer_texture_ext, multidraw_indirect;
-    PFNGLDRAWELEMENTSBASEVERTEXPROC drawelementsbasevertex;
-    GLint shader_version;
-    basevertex_renderer_t basevertex;
-    GLuint multidraw_element_buffer;
-    framebuffer_copier_t framebuffer_copier;
-    unordered_map* shader_map;
-    unordered_map* program_map;
-    unordered_map* framebuffer_map;
-    unordered_map* texture_swztrack_map;
-    unordered_map* bound_basebuffers[MAX_BOUND_BASEBUFFERS];
-    int proxy_width, proxy_height, proxy_intformat, maxTextureSize;
-    GLint max_drawbuffers;
-    GLuint bound_buffers[MAX_BOUND_BUFFERS];
-    GLuint program;
-    GLuint draw_framebuffer;
-    GLuint read_framebuffer;
-    char* extensions_string;
-    size_t nextras;
-    int nextensions_es;
-    char** extra_extensions_array;
-} context_t;
+    EGLContext phys_context;    //实际的EGL上下文句柄
+    bool context_rdy;   //标记上下文是否已准备就绪
+    bool es31, es32, buffer_storage, buffer_texture_ext, multidraw_indirect;    //支持OpenGL ES 3.1/3.2版本
+    PFNGLDRAWELEMENTSBASEVERTEXPROC drawelementsbasevertex; //函数指针，指向绘制元素基顶点的函数
+    GLint shader_version;   //着色器版本
+    basevertex_renderer_t basevertex;   //基顶点渲染器
+    GLuint multidraw_element_buffer;    //多重绘制元素缓冲区对象
+    framebuffer_copier_t framebuffer_copier;    //帧缓冲复制器
+    unordered_map* shader_map;  //着色器映射表
+    unordered_map* program_map; //程序映射表
+    unordered_map* framebuffer_map; //帧缓冲映射表
+    unordered_map* texture_swztrack_map;    //纹理重组跟踪映射表
+    unordered_map* bound_basebuffers[MAX_BOUND_BASEBUFFERS];    //绑定的基本缓冲区映射表数组
+    int proxy_width, proxy_height, proxy_intformat, maxTextureSize; //代理纹理参数和最大纹理尺寸
+    GLint max_drawbuffers;  //最大绘制缓冲区数
+    GLuint bound_buffers[MAX_BOUND_BUFFERS];       //绑定的缓冲区对象数组
+    GLuint program;     //当前使用的程序对象
+    GLuint draw_framebuffer;    //绘制帧缓冲对象
+    GLuint read_framebuffer;    //读取帧缓冲对象
+    char* extensions_string;    //扩展字符串
+    size_t nextras;         //额外扩展数量
+    int nextensions_es;     //ES扩展数量
+    char** extra_extensions_array;      //额外扩展字符串数组
+} context_t;        //表示OpenGL ES的上下文状态信息
 
 extern thread_local context_t *current_context;
 extern void init_egl();
