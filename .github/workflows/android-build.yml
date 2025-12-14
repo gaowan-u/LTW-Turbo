@@ -1,4 +1,4 @@
-name: Android Build - ${{ github.ref_name }}  # Android构建工作流
+name: Android Build - Build APK  # Android构建工作流
 
 on:
   push:

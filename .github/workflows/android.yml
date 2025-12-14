@@ -1,4 +1,4 @@
-name: Android CI - ${{ github.ref_name }}
+name: Android CI - Build AAR
 
 on: [push, workflow_dispatch]
 
