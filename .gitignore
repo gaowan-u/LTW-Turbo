@@ -4,3 +4,17 @@
 /workspace.xml
 local.properties
 学习.md
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Capacitor
+capacitor-android/captures/
+capacitor-android/app/release/
+capacitor-android/app/debug/
+capacitor-android/app/build/
+capacitor-android/.gradle/
+capacitor-android/local.properties
