@@ -1,0 +1,188 @@
+name: Build Complete LTW-Turbo APK
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'
+        cache: 'npm'
+        
+    - name: Setup Java JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        cache: gradle
+        
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+        
+    - name: Cache Gradle
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+          
+    - name: Cache NDK
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.android/ndk
+        key: ${{ runner.os }}-ndk-${{ hashFiles('**/ndkVersion') }}
+        restore-keys: |
+          ${{ runner.os }}-ndk-
+          
+    - name: Make gradlew executable
+      run: |
+        chmod +x ./gradlew
+        chmod +x ./capacitor-android/gradlew
+        
+    - name: Install dependencies
+      run: npm ci
+        
+    - name: Build LTW-Turbo Library
+      run: |
+        ./gradlew :ltw:assembleRelease
+        
+    - name: Extract SO files from AAR
+      run: |
+        mkdir -p temp_aar
+        cd temp_aar
+        unzip -q ../ltw/build/outputs/aar/ltw-release.aar
+        cd ..
+        
+        # Create jniLibs directories
+        mkdir -p capacitor-android/app/src/main/jniLibs/{armeabi-v7a,arm64-v8a,x86_64}
+        
+        # Copy SO files
+        for arch in armeabi-v7a arm64-v8a x86_64; do
+          if [ -f "temp_aar/jni/$arch/libltw_turbo.so" ]; then
+            cp "temp_aar/jni/$arch/libltw_turbo.so" "capacitor-android/app/src/main/jniLibs/$arch/"
+            echo "✅ Copied $arch/libltw_turbo.so"
+          else
+            echo "⚠️ Warning: $arch/libltw_turbo.so not found"
+          fi
+        done
+        
+        # List copied files
+        find capacitor-android/app/src/main/jniLibs -name "*.so" -ls
+        
+    - name: Sync Capacitor
+      run: |
+        npx cap sync android
+        
+    - name: Build APK
+      run: |
+        cd capacitor-android
+        ./gradlew assembleDebug
+        
+    - name: Sign APK (Debug)
+      run: |
+        cd capacitor-android
+        # Debug signing is already configured in build.gradle
+        echo "APK is already signed with debug keystore"
+        
+    - name: Verify APK
+      run: |
+        APK_FILE="capacitor-android/app/build/outputs/apk/debug/app-debug.apk"
+        if [ -f "$APK_FILE" ]; then
+          echo "✅ APK built successfully: $APK_FILE"
+          echo "📏 APK size: $(du -h $APK_FILE | cut -f1)"
+          
+          # Verify SO files are included
+          if unzip -l "$APK_FILE" | grep -q "libltw_turbo.so"; then
+            echo "✅ libltw_turbo.so found in APK"
+          else
+            echo "❌ libltw_turbo.so NOT found in APK"
+            exit 1
+          fi
+          
+          # Verify plugin metadata
+          if unzip -l "$APK_FILE" | grep -q "AndroidManifest.xml"; then
+            echo "✅ AndroidManifest.xml found in APK"
+          fi
+        else
+          echo "❌ APK file not found"
+          exit 1
+        fi
+        
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4.6.0
+      with:
+        name: ltw-turbo-apk
+        path: capacitor-android/app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
+        
+    - name: Generate Release Info
+      run: |
+        APK_FILE="capacitor-android/app/build/outputs/apk/debug/app-debug.apk"
+        APK_SIZE=$(du -h $APK_FILE | cut -f1)
+        APK_HASH=$(sha256sum $APK_FILE | cut -d' ' -f1)
+        
+        cat > release-info.md << EOF
+        # LTW-Turbo APK 构建完成
+        
+        ## APK 信息
+        - **文件名**: app-debug.apk
+        - **大小**: $APK_SIZE
+        - **SHA256**: $APK_HASH
+        - **包名**: com.ltw.plugin.renderer.ltw.turbo
+        - **版本**: 1.0
+        
+        ## 功能特性
+        - ✅ HTML 界面显示
+        - ✅ 渲染器插件标识
+        - ✅ 支持 armeabi-v7a, arm64-v8a, x86_64
+        - ✅ 兼容 Pojav/Boat/FCL 启动器
+        - ✅ 使用 libltw_turbo.so 渲染库
+        
+        ## 安装说明
+        1. 下载 APK 文件
+        2. 在 Android 设备上安装
+        3. 启动器中会显示 "LTW (OpenGL 3.2 and 4.6, All Version)"
+        
+        ## 构建信息
+        - **构建时间**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        - **提交**: ${{ github.sha }}
+        - **分支**: ${{ github.ref_name }}
+        EOF
+        
+    - name: Upload Release Info
+      uses: actions/upload-artifact@v4.6.0
+      with:
+        name: release-info
+        path: release-info.md
+        retention-days: 30
+        
+    - name: Create Release (Tag only)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          capacitor-android/app/build/outputs/apk/debug/app-debug.apk
+          release-info.md
+        name: LTW-Turbo ${{ github.ref_name }}
+        body_path: release-info.md
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
