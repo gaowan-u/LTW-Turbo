@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.ltw.plugin.renderer.ltw">
 
     <application
         android:allowBackup="true"
@@ -11,7 +12,7 @@
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
-            android:name=".MainActivity"
+            android:name="com.ltw.plugin.renderer.MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
@@ -33,6 +34,14 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+        
+        <!-- 渲染器插件标识 -->
+        <meta-data android:name="fclPlugin" android:value="true" />
+        <meta-data android:name="des" android:value="LTW-Turbo (OpenGL3.2~OpenGL4.6, ALl Version)" />
+        <meta-data android:name="renderer" 
+                   android:value="LTW-Turbo:libltw_turbo.so:libltw_turbo.so" />
+        <meta-data android:name="pojavEnv" 
+                   android:value="LIBGL_ES=3:POJAV_RENDERER=opengles3_ltw_turbo" />
     </application>
 
     <!-- Permissions -->

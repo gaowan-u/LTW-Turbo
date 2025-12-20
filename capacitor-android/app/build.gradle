@@ -1,12 +1,12 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.ltw.turbo"
+    namespace = "com.ltw.plugin.renderer"
     compileSdk = rootProject.ext.compileSdkVersion
     
     defaultConfig {
-        applicationId "com.ltw.turbo"
-        minSdkVersion rootProject.ext.minSdkVersion
+        applicationId "com.ltw.plugin.renderer.ltw"
+        minSdkVersion 26
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
@@ -16,6 +16,9 @@ android {
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+        }
     }
     buildTypes {
         release {
@@ -24,6 +27,51 @@ android {
             signingConfig signingConfigs.debug
         }
     }
+    
+    packagingOptions {
+        pickFirst 'lib/**/libltw_turbo.so'
+    }
+    
+    // 自动复制 LTW SO 文件任务
+    task copyLtwSoFiles {
+        doLast {
+            def ltwAar = file("${rootDir}/ltw/build/outputs/aar/ltw-release.aar")
+            if (!ltwAar.exists()) {
+                println "⚠️  LTW AAR 文件不存在，请先运行 ./gradlew :ltw:assembleRelease"
+                return
+            }
+            
+            def tempDir = file("${buildDir}/temp-aar")
+            tempDir.mkdirs()
+            
+            // 解压 AAR
+            copy {
+                from zipTree(ltwAar)
+                into tempDir
+            }
+            
+            // 复制 SO 文件
+            def jniLibsDir = file("src/main/jniLibs")
+            ['armeabi-v7a', 'arm64-v8a', 'x86_64'].each { arch ->
+                def soFile = file("${tempDir}/jni/${arch}/libltw_turbo.so")
+                if (soFile.exists()) {
+                    copy {
+                        from soFile
+                        into "${jniLibsDir}/${arch}"
+                    }
+                    println "✅ 复制 ${arch}/libltw_turbo.so"
+                } else {
+                    println "⚠️  未找到 ${arch}/libltw_turbo.so"
+                }
+            }
+            
+            // 清理临时目录
+            delete tempDir
+        }
+    }
+    
+    // 在预构建阶段自动复制 SO 文件
+    preBuild.dependsOn copyLtwSoFiles
 }
 
 repositories {
@@ -42,6 +90,9 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    
+    // 依赖 LTW 库
+    implementation project(':ltw')
 }
 
 apply from: 'capacitor.build.gradle'

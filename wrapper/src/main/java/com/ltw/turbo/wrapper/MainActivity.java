@@ -1,4 +1,4 @@
-package git.artdeell.gl4eswrapper;
+package com.ltw.turbo.wrapper;
 
 
 import android.app.Activity;
@@ -24,9 +24,9 @@ public class MainActivity extends Activity {
         String copySrc = myAppInfo.nativeLibraryDir;
         String copyDst = targetAppInfo.nativeLibraryDir;
         if(copySrc == null || copyDst == null || copySrc.isEmpty() || copyDst.isEmpty()) {
-            Log.e("GL4ES-W", "Wrong source or destination!");
-            Log.e("GL4ES-W", "Source: "+copySrc);
-            Log.e("GL4ES-W", "Destination: "+copyDst);
+            Log.e("LTW-Turbo", "Wrong source or destination!");
+            Log.e("LTW-Turbo", "Source: "+copySrc);
+            Log.e("LTW-Turbo", "Destination: "+copyDst);
             finish();
             return;
         }
@@ -39,17 +39,17 @@ public class MainActivity extends Activity {
             if(errorCode == 0) {
                 startActivity(packageManager.getLaunchIntentForPackage(targetAppInfo.packageName));
             }else {
-                Log.e("GL4ES-W", "Copying failed with error code "+errorCode);
+                Log.e("LTW-Turbo", "Copying failed with error code "+errorCode);
             }
         }catch (Exception e) {
-            Log.e("GL4ES-W", "Failed to copy files!", e);
+            Log.e("LTW-Turbo", "Failed to copy files!", e);
         }
         finish();
     }
 
     public ApplicationInfo getAppicationInfo(PackageManager packageManager) {
         try {
-            return packageManager.getApplicationInfo("git.artdeell.mojo.debug", PackageManager.GET_SHARED_LIBRARY_FILES);
+            return packageManager.getApplicationInfo("com.ltw.turbo", PackageManager.GET_SHARED_LIBRARY_FILES);
         }catch (PackageManager.NameNotFoundException e) {
             return null;
         }
