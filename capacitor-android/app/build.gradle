@@ -1,11 +1,11 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.ltw.turbo"
+    namespace = "com.ltw.plugin.renderer.ltw.turbo"
     compileSdk = rootProject.ext.compileSdkVersion
     
     defaultConfig {
-        applicationId "com.ltw.turbo"
+        applicationId "com.ltw.plugin.renderer.ltw.turbo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -16,6 +16,9 @@ android {
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+        }
     }
     buildTypes {
         release {
@@ -23,6 +26,10 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug
         }
+    }
+    
+    packagingOptions {
+        pickFirst 'lib/**/libltw_turbo.so'
     }
 }
 
