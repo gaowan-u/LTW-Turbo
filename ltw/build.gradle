@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace "git.artdeell.ltw"
+    namespace "com.ltw.turbo"
     compileSdk 33
     defaultConfig {
         minSdk 21

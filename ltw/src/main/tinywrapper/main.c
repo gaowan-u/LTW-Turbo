@@ -320,6 +320,8 @@ const GLubyte* glGetString(GLenum name) {
             return (const GLubyte*)"4.60 LTW";
         case GL_VENDOR:
             return (const GLubyte*)"artDev, SerpentSpirale, CADIndie";
+        case GL_RENDERER:
+            return (const GLubyte*)"LTW-Turbo (OpenGL 4.6, All version)";
         case GL_EXTENSIONS:
             if(current_context->extensions_string != NULL) return (const GLubyte*)current_context->extensions_string;
             return (const GLubyte*)es3_functions.glGetString(GL_EXTENSIONS);
