@@ -4,14 +4,14 @@ ext {
     compileSdkVersion = 34
     targetSdkVersion = 34
     
-    // 以下版本保持不变，它们与 SDK 34 兼容
-    androidxActivityVersion = '1.11.0'
-    androidxAppCompatVersion = '1.7.1'
-    androidxCoordinatorLayoutVersion = '1.3.0'
-    androidxCoreVersion = '1.17.0'
-    androidxFragmentVersion = '1.8.9'
-    coreSplashScreenVersion = '1.2.0'
-    androidxWebkitVersion = '1.14.0'
+    // 降级到与 SDK 34 兼容的版本（根据错误信息调整）
+    androidxActivityVersion = '1.8.0'          // 从 1.11.0 降级
+    androidxAppCompatVersion = '1.7.1'        // 保持不变
+    androidxCoordinatorLayoutVersion = '1.3.0' // 保持不变
+    androidxCoreVersion = '1.12.0'            // 从 1.17.0 降级
+    androidxFragmentVersion = '1.8.0'         // 从 1.8.9 降级
+    coreSplashScreenVersion = '1.0.2'         // 从 1.2.0 降级
+    androidxWebkitVersion = '1.10.0'          // 从 1.14.0 降级
     junitVersion = '4.13.2'
     androidxJunitVersion = '1.3.0'
     androidxEspressoCoreVersion = '3.7.0'
