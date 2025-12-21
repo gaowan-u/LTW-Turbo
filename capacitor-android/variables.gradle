@@ -1,7 +1,10 @@
 ext {
     minSdkVersion = 24
-    compileSdkVersion = 36
-    targetSdkVersion = 36
+    // 降回 34 (Android 14)，这是目前对原生库兼容性最好的版本
+    compileSdkVersion = 34
+    targetSdkVersion = 34
+    
+    // 以下版本保持不变，它们与 SDK 34 兼容
     androidxActivityVersion = '1.11.0'
     androidxAppCompatVersion = '1.7.1'
     androidxCoordinatorLayoutVersion = '1.3.0'

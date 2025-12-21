@@ -1,34 +1,55 @@
 apply plugin: 'com.android.application'
 
 android {
+    // 确保命名空间一致
     namespace = "com.ltw.plugin.renderer.ltw"
-    compileSdk = rootProject.ext.compileSdkVersion
+    
+    // 强制锁定在 API 34 (Android 14)，避开 API 35+ 的 16KB 页对齐限制
+    compileSdk = 34
     
     packagingOptions {
+        // 关键修改：强制解压库文件，这是修复 UnsatisfiedLinkError 的核心
+        jniLibs {
+            useLegacyPackaging = true
+        }
+        // 保持你原有的 pickFirst
         pickFirst "lib/**/libltw_turbo.so"
     }
     
     defaultConfig {
         applicationId "com.ltw.plugin.renderer.ltw"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdkVersion 24
+        // 强制锁定 targetSdk 为 34
+        targetSdkVersion 34
+        
         versionCode 1
         versionName "1.0"
+        
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        
         ndk {
+            // 确保只打包这四种架构，减少 APK 体积
             abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
         }
+        
         aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+             // 保持默认配置
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug
+        }
+    }
+    
+    // 确保源码集正确指向 jniLibs
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
         }
     }
 }

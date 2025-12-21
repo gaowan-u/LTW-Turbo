@@ -27,32 +27,36 @@ jobs:
     - name: Install dependencies
       run: npm ci  # 使用clean install确保依赖一致性
     
-    # 步骤4: 检查Node版本 (调试用)
-    - name: Check Node version
-      run: node --version && npm --version
-    
-    # 步骤5: 设置Java环境 (项目配置要求Java 21)
+    # 步骤4: 设置Java环境 (项目配置要求Java 21)
     - name: Setup Java
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'  # 使用Temurin发行版
         java-version: '21'  # Java 21版本
     
-    # 步骤6: 设置Android SDK
+    # 步骤5: 设置Android SDK
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
     
-    # 步骤7: 构建Android APK
+    # 步骤6: 构建Android APK
     - name: Build Android APK
       run: |
-        npx cap sync  # 同步Web资源到Android项目
+        # 仅复制Web资源到原生项目，不执行update逻辑，防止覆盖手动修改的原生配置
+        npx cap copy android  
+        
         cd capacitor-android
-        ./gradlew assembleRelease  # 构建正式版APK
+        
+        # 确保gradle脚本有执行权限
+        chmod +x gradlew
+        
+        # 构建Debug版本。Debug版会自动签名，下载到手机后可以直接安装运行
+        ./gradlew assembleDebug
     
-    # 步骤8: 上传APK作为工作流产物
+    # 步骤7: 上传APK作为工作流产物
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: android-apk  # 产物名称
-        path: capacitor-android/app/build/outputs/apk/release/app-release.apk  # 正式版APK文件路径
+        # 路径指向Debug版APK所在位置
+        path: capacitor-android/app/build/outputs/apk/debug/app-debug.apk
         if-no-files-found: error  # 如果找不到文件则报错
