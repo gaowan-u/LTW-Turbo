@@ -387,7 +387,7 @@ LOCAL_LDFLAGS := -ffunction-sections -fdata-sections
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := ltw
+LOCAL_MODULE := ltw.turbo
 LOCAL_SRC_FILES := \
     egl.c \
     proc.c \
