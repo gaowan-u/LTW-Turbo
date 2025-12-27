@@ -37,6 +37,7 @@ jobs:
       with:
         distribution: 'temurin'  # 使用Temurin发行版
         java-version: '21'  # Java 21版本
+        cache: 'gradle'  # 启用gradle缓存加速构建
     
     # 步骤6: 设置Android SDK
     - name: Setup Android SDK
@@ -47,12 +48,12 @@ jobs:
       run: |
         npx cap sync  # 同步Web资源到Android项目
         cd capacitor-android
-        ./gradlew assembleRelease  # 构建正式版APK
+        ./gradlew assembleDebug  # 构建调试版APK
     
     # 步骤8: 上传APK作为工作流产物
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: android-apk  # 产物名称
-        path: capacitor-android/app/build/outputs/apk/release/app-release.apk  # 正式版APK文件路径
+        path: capacitor-android/app/build/outputs/apk/debug/app-debug.apk  # 调试版APK文件路径
         if-no-files-found: error  # 如果找不到文件则报错

@@ -19,11 +19,11 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     - name: Build with Gradle
-      run: ./gradlew :ltw:assembleRelease
+      run: ./gradlew :ltw:assembleDebug
     - name: Upload AAR
       uses: actions/upload-artifact@v4.6.0
       with:
          name: output-aar
-         path: ltw/build/outputs/aar/ltw-release.aar
+         path: ltw/build/outputs/aar/ltw-debug.aar
          if-no-files-found: error
        

@@ -8,7 +8,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/AppTheme">
+        android:theme="@style/AppTheme"
+        android:extractNativeLibs="true">
 
         <meta-data android:name="fclPlugin" android:value="true" />
         <meta-data android:name="des" android:value="LTW-Turbo (OpenGL 3.2 and 4.6, All Version)" />
