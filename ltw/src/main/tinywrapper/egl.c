@@ -82,7 +82,8 @@ static void free_context(context_t* tw_context) {
 void init_extra_extensions(context_t* context, int* length) {
     const char* es_extensions = (const char*)es3_functions.glGetString(GL_EXTENSIONS);
     *length = (int)strlen(es_extensions);
-    context->extensions_string = malloc(*length + 1);
+    // 预分配额外512字节的空间，减少后续realloc次数
+    context->extensions_string = malloc(*length + 512 + 1);
     memcpy(context->extensions_string, es_extensions, *length+1);
 }
 
@@ -93,7 +94,18 @@ void add_extra_extension(context_t* context, int* length, const char* extension)
     memcpy(str_append_extension, extension, extension_len);
     str_append_extension[extension_len] = ' ';
     str_append_extension[extension_len + 1] = 0;
-    context->extensions_string = gl4es_append(context->extensions_string, length, str_append_extension);
+
+    // 检查当前分配的内存是否足够
+    size_t current_capacity = malloc_usable_size(context->extensions_string);
+    size_t new_length = *length + extension_len + 1;
+    if(new_length >= current_capacity) {
+        // 需要扩容，一次性分配更大的空间
+        size_t new_capacity = new_length + 256;  // 额外预留256字节
+        context->extensions_string = realloc(context->extensions_string, new_capacity);
+    }
+    // 直接追加字符串
+    memcpy(context->extensions_string + *length, str_append_extension, extension_len + 2);
+    *length += extension_len + 1;
 
     int extension_idx = context->nextras++;
     context->extra_extensions_array = realloc(context->extra_extensions_array, sizeof(char*)*context->nextras);
@@ -185,6 +197,10 @@ static void init_incontext(context_t* tw_context) {
     basevertex_init(tw_context);
     buffer_copier_init(tw_context);
     es3_functions.glGenBuffers(1, &tw_context->multidraw_element_buffer);
+
+    // 初始化格式缓存
+    memset(tw_context->format_cache, 0, sizeof(tw_context->format_cache));
+    tw_context->format_cache_index = 0;
 }
 
 EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list) {

@@ -58,6 +58,15 @@ typedef struct {
 } texture_swizzle_track_t;
 
 typedef struct {
+    GLint internalformat;
+    GLenum type;
+    GLenum format;
+    bool valid;
+} format_cache_entry_t;
+
+#define FORMAT_CACHE_SIZE 64
+
+typedef struct {
     EGLContext phys_context;    //实际的EGL上下文句柄
     bool context_rdy;   //标记上下文是否已准备就绪
     bool es31, es32, buffer_storage, buffer_texture_ext, multidraw_indirect;    //支持OpenGL ES 3.1/3.2版本
@@ -77,10 +86,14 @@ typedef struct {
     GLuint program;     //当前使用的程序对象
     GLuint draw_framebuffer;    //绘制帧缓冲对象
     GLuint read_framebuffer;    //读取帧缓冲对象
+    framebuffer_t* cached_draw_framebuffer;   //缓存的绘制帧缓冲对象
+    framebuffer_t* cached_read_framebuffer;   //缓存的读取帧缓冲对象
     char* extensions_string;    //扩展字符串
     size_t nextras;         //额外扩展数量
     int nextensions_es;     //ES扩展数量
     char** extra_extensions_array;      //额外扩展字符串数组
+    format_cache_entry_t format_cache[FORMAT_CACHE_SIZE];   //纹理格式缓存
+    int format_cache_index;    //格式缓存索引
 } context_t;        //表示OpenGL ES的上下文状态信息
 
 extern thread_local context_t *current_context;

@@ -195,10 +195,33 @@ void pick_format(GLint *internalformat, GLenum* type, GLenum* format) {
 
 
 INTERNAL void pick_internalformat(GLint *internalformat, GLenum* type, GLenum* format, GLvoid const** data) {
+    // 检查缓存
+    if(current_context && *data == NULL) {
+        // 使用简单的哈希来查找缓存
+        GLuint hash = ((GLuint)*internalformat ^ (GLuint)*type) % FORMAT_CACHE_SIZE;
+        format_cache_entry_t* cache = &current_context->format_cache[hash];
+        if(cache->valid && cache->internalformat == *internalformat && cache->type == *type) {
+            // 缓存命中
+            *internalformat = cache->internalformat;
+            *type = cache->type;
+            *format = cache->format;
+            return;
+        }
+    }
+
     if(*data == NULL) {
         // Appears that desktop GL completely discards type and format without data. Pick a correct (sized if unsized is unavailable)
         // format for the d
         pick_format(internalformat, type, format);
+        // 更新缓存
+        if(current_context) {
+            GLuint hash = ((GLuint)*internalformat ^ (GLuint)*type) % FORMAT_CACHE_SIZE;
+            format_cache_entry_t* cache = &current_context->format_cache[hash];
+            cache->internalformat = *internalformat;
+            cache->type = *type;
+            cache->format = *format;
+            cache->valid = true;
+        }
         return;
     }
     // Compared to OpenGL ES, desktop OpenGL implicitly supports way more depth/RGB formats without explicit sizing.

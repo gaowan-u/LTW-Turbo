@@ -9,13 +9,40 @@
 #include <string.h>
 
 static framebuffer_t* get_framebuffer(GLenum target) {
+    framebuffer_t* cached_fb = NULL;
     GLuint fb;
     switch (target) {
         case GL_FRAMEBUFFER:
-        case GL_DRAW_FRAMEBUFFER: fb = current_context->draw_framebuffer; break;
-        case GL_READ_FRAMEBUFFER: fb = current_context->read_framebuffer; break;
+        case GL_DRAW_FRAMEBUFFER:
+            fb = current_context->draw_framebuffer;
+            // 检查缓存是否有效
+            if(current_context->cached_draw_framebuffer && 
+               fb != 0) {  // framebuffer 0表示默认framebuffer，不缓存
+                return current_context->cached_draw_framebuffer;
+            }
+            break;
+        case GL_READ_FRAMEBUFFER:
+            fb = current_context->read_framebuffer;
+            // 检查缓存是否有效
+            if(current_context->cached_read_framebuffer && 
+               fb != 0) {
+                return current_context->cached_read_framebuffer;
+            }
+            break;
     }
-    return unordered_map_get(current_context->framebuffer_map, (void*)fb);
+    // 缓存未命中，从Map中查询
+    framebuffer_t* fb_obj = unordered_map_get(current_context->framebuffer_map, (void*)fb);
+    // 更新缓存
+    switch (target) {
+        case GL_FRAMEBUFFER:
+        case GL_DRAW_FRAMEBUFFER:
+            current_context->cached_draw_framebuffer = fb_obj;
+            break;
+        case GL_READ_FRAMEBUFFER:
+            current_context->cached_read_framebuffer = fb_obj;
+            break;
+    }
+    return fb_obj;
 }
 
 static GLuint get_attachment_idx(GLenum attachment) {
@@ -42,26 +69,48 @@ void rebind_framebuffer(GLenum target, framebuffer_t *framebuffer, GLenum virt_a
     if(virt_index == -1) return;
     GLenum phys_attachment = map_attachment(framebuffer, virt_attachment);
     if(phys_attachment == GL_NONE) return;
+
+    // 保存当前绑定的状态，避免重复绑定
+    GLenum cached_target = framebuffer->phys_drawbuffers[virt_index];
+    GLuint cached_object = framebuffer->color_objects[virt_index];
+
+    // 如果目标已经绑定到正确的对象，跳过
+    if(cached_target != GL_NONE && cached_target != phys_attachment) {
+        // 目标已经改变了，需要清除缓存
+        framebuffer->phys_drawbuffers[virt_index] = GL_NONE;
+    }
+
     switch (framebuffer->color_targets[virt_index]) {
         case GL_NONE:
             es3_functions.glFramebufferRenderbuffer(target, phys_attachment, GL_RENDERBUFFER, 0);
             break;
         case GL_RENDERBUFFER:
-            es3_functions.glFramebufferRenderbuffer(target, phys_attachment, GL_RENDERBUFFER, framebuffer->color_objects[virt_index]);
+            // 检查是否已经绑定到相同的renderbuffer
+            if(cached_object != framebuffer->color_objects[virt_index]) {
+                es3_functions.glFramebufferRenderbuffer(target, phys_attachment, GL_RENDERBUFFER, framebuffer->color_objects[virt_index]);
+            }
             break;
         case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER:
-            es3_functions.glFramebufferTextureLayer(target, phys_attachment,
-                                                    framebuffer->color_objects[virt_index],
-                                                    framebuffer->color_levels[virt_index],
-                                                    framebuffer->color_layers[virt_index]);
+            // 检查是否已经绑定到相同的纹理层
+            if(cached_object != framebuffer->color_objects[virt_index]) {
+                es3_functions.glFramebufferTextureLayer(target, phys_attachment,
+                                                        framebuffer->color_objects[virt_index],
+                                                        framebuffer->color_levels[virt_index],
+                                                        framebuffer->color_layers[virt_index]);
+            }
             break;
         default:
-            es3_functions.glFramebufferTexture2D(target, phys_attachment,
-                                                 framebuffer->color_targets[virt_index],
-                                                 framebuffer->color_objects[virt_index],
-                                                 framebuffer->color_levels[virt_index]);
+            // 检查是否已经绑定到相同的纹理
+            if(cached_object != framebuffer->color_objects[virt_index]) {
+                es3_functions.glFramebufferTexture2D(target, phys_attachment,
+                                                     framebuffer->color_targets[virt_index],
+                                                     framebuffer->color_objects[virt_index],
+                                                     framebuffer->color_levels[virt_index]);
+            }
             break;
     }
+    // 更新缓存
+    framebuffer->phys_drawbuffers[virt_index] = phys_attachment;
 }
 
 void glClearBufferiv( 	GLenum buffer,
@@ -279,6 +328,13 @@ void glDeleteFramebuffers(GLsizei n, const GLuint* framebuffers) {
     for(GLsizei i = 0; i < n; i++) {
         fb = unordered_map_remove(current_context->framebuffer_map, (void*)framebuffers[i]);
         if(fb == NULL) continue;
+        // 检查是否需要清除缓存
+        if(current_context->cached_draw_framebuffer == fb) {
+            current_context->cached_draw_framebuffer = NULL;
+        }
+        if(current_context->cached_read_framebuffer == fb) {
+            current_context->cached_read_framebuffer = NULL;
+        }
         free(fb);
     }
 }
@@ -289,12 +345,19 @@ void glBindFramebuffer(GLenum target, GLuint framebuffer) {
     switch (target) {
         case GL_FRAMEBUFFER:
             current_context->read_framebuffer = current_context->draw_framebuffer = framebuffer;
+            // 清除缓存，下次访问时重新获取
+            current_context->cached_draw_framebuffer = NULL;
+            current_context->cached_read_framebuffer = NULL;
             break;
         case GL_READ_FRAMEBUFFER:
             current_context->read_framebuffer = framebuffer;
+            // 清除缓存，下次访问时重新获取
+            current_context->cached_read_framebuffer = NULL;
             break;
         case GL_DRAW_FRAMEBUFFER:
             current_context->draw_framebuffer = framebuffer;
+            // 清除缓存，下次访问时重新获取
+            current_context->cached_draw_framebuffer = NULL;
             break;
     }
 }
