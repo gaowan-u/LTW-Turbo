@@ -40,6 +40,10 @@ static texture_swizzle_track_t* get_swizzle_track(GLenum target) {
         es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_G, (GLint*)&track->original_swizzle[1]);
         es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_B, (GLint*)&track->original_swizzle[2]);
         es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_A, (GLint*)&track->original_swizzle[3]);
+        // 初始化applied_swizzle，标记为未应用
+        memset(track->applied_swizzle, 0, sizeof(track->applied_swizzle));
+        track->goofy_byte_order = GL_FALSE;
+        track->upload_bgra = GL_FALSE;
         unordered_map_put(current_context->texture_swztrack_map, (void*)texture, track);
     }
     return track;
@@ -50,6 +54,16 @@ static void apply_swizzles(GLenum target, texture_swizzle_track_t* track) {
     memcpy(new_swizzle, track->original_swizzle, 4 * sizeof(GLenum));
     if(track->goofy_byte_order) swizzle_process_endianness(new_swizzle);
     if(track->upload_bgra) swizzle_process_bgra(new_swizzle);
+
+    // 检查是否需要更新（关键优化点）
+    if(memcmp(new_swizzle, track->applied_swizzle, 4 * sizeof(GLenum)) == 0) {
+        return;  // 已经是这个状态，跳过
+    }
+
+    // 更新缓存
+    memcpy(track->applied_swizzle, new_swizzle, 4 * sizeof(GLenum));
+
+    // 只在需要时调用OpenGL
     es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, new_swizzle[0]);
     es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_G, new_swizzle[1]);
     es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, new_swizzle[2]);

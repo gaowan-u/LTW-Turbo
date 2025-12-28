@@ -27,7 +27,17 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
     for (GLsizei i = 0; i < primcount; i++) {
         total += count[i];
     }
-    es3_functions.glBufferData(GL_COPY_WRITE_BUFFER, total*typebytes, NULL, GL_STREAM_DRAW);
+    GLsizei needed_size = total * typebytes;
+
+    // 检查是否需要扩容
+    if(needed_size > current_context->multidraw_buffer_size) {
+        // 扩容到2倍或足够大小
+        GLsizei new_size = needed_size * 2;
+        es3_functions.glBufferData(GL_COPY_WRITE_BUFFER, new_size, NULL, GL_STREAM_DRAW);
+        current_context->multidraw_buffer_size = new_size;
+    }
+
+    // 使用 glBufferSubData 填充数据
     for (GLsizei i = 0; i < primcount; i++) {
         GLsizei icount = count[i];
         if(icount == 0) continue;

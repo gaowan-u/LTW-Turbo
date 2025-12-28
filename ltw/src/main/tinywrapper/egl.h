@@ -52,7 +52,8 @@ typedef struct {
 } framebuffer_copier_t;
 
 typedef struct {
-    GLenum original_swizzle[4];
+    GLenum original_swizzle[4];  // 原始swizzle
+    GLenum applied_swizzle[4];   // 已应用的swizzle（缓存）
     GLboolean goofy_byte_order;
     GLboolean upload_bgra;
 } texture_swizzle_track_t;
@@ -94,6 +95,7 @@ typedef struct {
     char** extra_extensions_array;      //额外扩展字符串数组
     format_cache_entry_t format_cache[FORMAT_CACHE_SIZE];   //纹理格式缓存
     int format_cache_index;    //格式缓存索引
+    GLsizei multidraw_buffer_size;  //多重绘制缓冲区大小
 } context_t;        //表示OpenGL ES的上下文状态信息
 
 extern thread_local context_t *current_context;

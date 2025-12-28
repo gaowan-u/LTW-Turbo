@@ -201,6 +201,12 @@ static void init_incontext(context_t* tw_context) {
     // 初始化格式缓存
     memset(tw_context->format_cache, 0, sizeof(tw_context->format_cache));
     tw_context->format_cache_index = 0;
+
+    // 初始化multidraw缓冲区，预分配256KB
+    tw_context->multidraw_buffer_size = 256 * 1024;
+    es3_functions.glBindBuffer(GL_COPY_WRITE_BUFFER, tw_context->multidraw_element_buffer);
+    es3_functions.glBufferData(GL_COPY_WRITE_BUFFER, tw_context->multidraw_buffer_size, NULL, GL_STREAM_DRAW);
+    es3_functions.glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
 }
 
 EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list) {
