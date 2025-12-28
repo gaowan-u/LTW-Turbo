@@ -1,0 +1,751 @@
+--------- Start launching the game
+Info: Launcher version: 1.4.1.2 (141200)
+Info: Architecture: arm64
+Info: Device model: Xiaomi 22101317C
+Info: API version: 34
+Info: Renderer: LTW-Turbo (OpenGL 3.2 and 4.6, All Version) (来自 LTW Turbo 插件)
+Info: Selected Minecraft version: 服务器版本
+Info: Minecraft Info: 1.20.1, Fabric - 0.16.14
+Info: Game Path: /storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/versions/服务器版本 (Isolation: true)
+Info: Custom Java arguments: -Xms2G -Xmx4G -XX:+UseG1GC -XX:MaxGCPauseMillis=180 -XX:ParallelGCThreads=2 -XX:ConcGCThreads=1 -XX:InitiatingHeapOccupancyPercent=50 -XX:G1ReservePercent=15 -XX:G1HeapRegionSize=8M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+PerfDisableSharedMem -XX:+UseStringDeduplication -XX:+DisableExplicitGC -Djava.rmi.server.hostname=localhost -Dfml.readTimeout=90
+Info: Java Runtime: Internal-21
+Info: Account: MathCode (LittleSkin)
+---------
+
+Mod Perception: Sodium or Embeddium Mod found, attempting to load the disable warning tool later!
+Added custom env: ZALITH_VERSION_CODE=141200
+Added custom env: TMPDIR=/data/user/0/com.movtery.zalithlauncher/cache
+Added custom env: AWTSTUB_WIDTH=2400
+Added custom env: FORCE_VSYNC=false
+Added custom env: POJAV_BIG_CORE_AFFINITY=1
+Added custom env: POJAV_NATIVEDIR=/data/app/~~5244M1QOzqkE8DqdNU7Kjg==/com.movtery.zalithlauncher-Bh_hzDt9-9o6nwRKhixFqg==/lib/arm64
+Added custom env: DRIVER_PATH=/data/app/~~-B0lyaS50JRaZQ5vOtyihQ==/com.mio.plugin.renderer.turnip2600d.r27d.sdk29-6SziIQqK_W45VM_Aq5dbkg==/lib/arm64
+Added custom env: HOME=/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files
+Added custom env: PATH=/data/user/0/com.movtery.zalithlauncher/runtimes/Internal-21/bin:/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/system_ext/bin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin
+Added custom env: INST_FABRIC=1
+Added custom env: MOD_ANDROID_RUNTIME=/data/user/0/com.movtery.zalithlauncher/app_runtime_mod
+Added custom env: LD_LIBRARY_PATH=/data/app/~~wheMTwjmYyYd8W_ovnZr3Q==/net.kdt.pojavlaunch.ffmpeg-DYpBWO04GhlL1Qhxy0sNDg==/lib/arm64:/data/app/~~m8s70nIHwvZ37FU4Ae_x5w==/com.ltw.plugin.renderer.ltw-yPpyUr0D61PzsmeIqOsAoA==/lib/arm64:/data/user/0/com.movtery.zalithlauncher/runtimes/Internal-21/lib/jli:/data/user/0/com.movtery.zalithlauncher/runtimes/Internal-21/lib:/system/lib64:/vendor/lib64:/vendor/lib64/hw:/data/user/0/com.movtery.zalithlauncher/app_runtime_mod:/data/app/~~5244M1QOzqkE8DqdNU7Kjg==/com.movtery.zalithlauncher-Bh_hzDt9-9o6nwRKhixFqg==/lib/arm64
+Added custom env: POJAV_RENDERER=opengles3_ltw
+Added custom env: LIBGL_ES=3
+Added custom env: POJAV_FFMPEG_PATH=/data/app/~~wheMTwjmYyYd8W_ovnZr3Q==/net.kdt.pojavlaunch.ffmpeg-DYpBWO04GhlL1Qhxy0sNDg==/lib/arm64/libffmpeg.so
+Added custom env: POJAVEXEC_EGL=libltw_turbo.so
+Added custom env: JAVA_HOME=/data/user/0/com.movtery.zalithlauncher/runtimes/Internal-21
+Added custom env: AWTSTUB_HEIGHT=1080
+LTW will NOT ignore GL errors. This may break mods, consider yourself warned.
+LTW will force dynamic storage buffers to be coherent.
+LTW will prevent all explicit buffer flushes.
+JVMArg: -XX:+UseG1GC
+JVMArg: -XX:+UnlockExperimentalVMOptions
+JVMArg: -XX:+ParallelRefProcEnabled
+JVMArg: -XX:+PerfDisableSharedMem
+JVMArg: -XX:+UseStringDeduplication
+JVMArg: -XX:+DisableExplicitGC
+JVMArg: -XX:MaxGCPauseMillis=180
+JVMArg: -XX:ParallelGCThreads=2
+JVMArg: -XX:ConcGCThreads=1
+JVMArg: -XX:InitiatingHeapOccupancyPercent=50
+JVMArg: -XX:G1ReservePercent=15
+JVMArg: -XX:G1HeapRegionSize=8M
+JVMArg: -Djava.rmi.server.hostname=localhost
+JVMArg: -Dfml.readTimeout=90
+JVMArg: -Djava.home=/data/user/0/com.movtery.zalithlauncher/runtimes/Internal-21
+JVMArg: -Djava.io.tmpdir=/data/user/0/com.movtery.zalithlauncher/cache
+JVMArg: -Djna.boot.library.path=/data/app/~~5244M1QOzqkE8DqdNU7Kjg==/com.movtery.zalithlauncher-Bh_hzDt9-9o6nwRKhixFqg==/lib/arm64
+JVMArg: -Duser.home=/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files
+JVMArg: -Duser.language=zh
+JVMArg: -Dos.name=Linux
+JVMArg: -Dos.version=Android-14
+JVMArg: -Dpojav.path.minecraft=/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft
+JVMArg: -Dpojav.path.private.account=/data/user/0/com.movtery.zalithlauncher/files/accounts
+JVMArg: -Duser.timezone=Asia/Shanghai
+JVMArg: -Dorg.lwjgl.vulkan.libname=libvulkan.so
+JVMArg: -Dglfwstub.windowWidth=2400
+JVMArg: -Dglfwstub.windowHeight=1080
+JVMArg: -Dglfwstub.initEgl=false
+JVMArg: -Dext.net.resolvPath=/data/user/0/com.movtery.zalithlauncher/resolv.conf
+JVMArg: -Dlog4j2.formatMsgNoLookups=true
+JVMArg: -Dnet.minecraft.clientmodname=ZalithLauncher
+JVMArg: -Dfml.earlyprogresswindow=false
+JVMArg: -Dloader.disable_forked_guis=true
+JVMArg: -Djdk.lang.Process.launchMechanism=FORK
+JVMArg: -Dsodium.checks.issue2561=false
+JVMArg: -javaagent:/data/user/0/com.movtery.zalithlauncher/components/MioLibPatcher.jar
+JVMArg: -Xms4096M
+JVMArg: -Xmx4096M
+JVMArg: -Dorg.lwjgl.opengl.libname=/data/app/~~m8s70nIHwvZ37FU4Ae_x5w==/com.ltw.plugin.renderer.ltw-yPpyUr0D61PzsmeIqOsAoA==/lib/arm64/libltw_turbo.so
+JVMArg: -Dorg.lwjgl.freetype.libname=/data/app/~~5244M1QOzqkE8DqdNU7Kjg==/com.movtery.zalithlauncher-Bh_hzDt9-9o6nwRKhixFqg==/lib/arm64/libfreetype.so
+JVMArg: -XX:ActiveProcessorCount=8
+JVMArg: -javaagent:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/other_login/authlib-injector.jar=https://littleskin.cn/api/yggdrasil/
+JVMArg: -Djava.awt.headless=false
+JVMArg: -Dcacio.managed.screensize=1920x864
+JVMArg: -Dcacio.font.fontmanager=sun.awt.X11FontManager
+JVMArg: -Dcacio.font.fontscaler=sun.font.FreetypeFontScaler
+JVMArg: -Dswing.defaultlaf=javax.swing.plaf.nimbus.NimbusLookAndFeel
+JVMArg: -Dawt.toolkit=com.github.caciocavallosilano.cacio.ctc.CTCToolkit
+JVMArg: -Djava.awt.graphicsenv=com.github.caciocavallosilano.cacio.ctc.CTCGraphicsEnvironment
+JVMArg: -javaagent:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/caciocavallo17/cacio-agent.jar
+JVMArg: --add-exports=java.desktop/java.awt=ALL-UNNAMED
+JVMArg: --add-exports=java.desktop/java.awt.peer=ALL-UNNAMED
+JVMArg: --add-exports=java.desktop/sun.awt.image=ALL-UNNAMED
+JVMArg: --add-exports=java.desktop/sun.java2d=ALL-UNNAMED
+JVMArg: --add-exports=java.desktop/java.awt.dnd.peer=ALL-UNNAMED
+JVMArg: --add-exports=java.desktop/sun.awt=ALL-UNNAMED
+JVMArg: --add-exports=java.desktop/sun.awt.event=ALL-UNNAMED
+JVMArg: --add-exports=java.desktop/sun.awt.datatransfer=ALL-UNNAMED
+JVMArg: --add-exports=java.desktop/sun.font=ALL-UNNAMED
+JVMArg: --add-exports=java.base/sun.security.action=ALL-UNNAMED
+JVMArg: --add-opens=java.base/java.util=ALL-UNNAMED
+JVMArg: --add-opens=java.desktop/java.awt=ALL-UNNAMED
+JVMArg: --add-opens=java.desktop/sun.font=ALL-UNNAMED
+JVMArg: --add-opens=java.desktop/sun.java2d=ALL-UNNAMED
+JVMArg: --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+JVMArg: --add-opens=java.base/java.net=ALL-UNNAMED
+JVMArg: -Xbootclasspath/a:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/caciocavallo17/cacio-agent.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/caciocavallo17/cacio-shared-1.19.1-SNAPSHOT.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/caciocavallo17/cacio-tta-1.19.1-SNAPSHOT.jar
+JVMArg: -Dlog4j.configurationFile=/data/user/0/com.movtery.zalithlauncher/components/log4j-rce-patch-1.12.xml
+JVMArg: -Djava.library.path=/data/user/0/com.movtery.zalithlauncher/cache/natives/服务器版本:/data/app/~~5244M1QOzqkE8DqdNU7Kjg==/com.movtery.zalithlauncher-Bh_hzDt9-9o6nwRKhixFqg==/lib/arm64
+JVMArg: -Djna.boot.library.path=/data/user/0/com.movtery.zalithlauncher/cache/natives/服务器版本
+JVMArg: -DFabricMcEmu= net.minecraft.client.main.Main 
+JVMArg: -cp
+JVMArg: /storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/lwjgl3/lwjgl-glfw-classes.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/github/oshi/oshi-core/6.3.0/oshi-core-6.3.0.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/google/code/gson/gson/2.10/gson-2.10.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/google/guava/guava/31.1-jre/guava-31.1-jre.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/ibm/icu/icu4j/71.1/icu4j-71.1.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/mojang/authlib/4.0.43/authlib-4.0.43.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/mojang/blocklist/1.0.10/blocklist-1.0.10.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/mojang/brigadier/1.1.8/brigadier-1.1.8.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/mojang/datafixerupper/6.0.8/datafixerupper-6.0.8.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/mojang/logging/1.1.1/logging-1.1.1.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/mojang/patchy/2.2.10/patchy-2.2.10.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/com/mojang/text2speech/1.17.9/text2speech-1.17.9.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/commons-codec/commons-codec/1.15/commons-codec-1.15.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/commons-io/commons-io/2.11.0/commons-io-2.11.0.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-buffer/4.1.82.Final/netty-buffer-4.1.82.Final.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-codec/4.1.82.Final/netty-codec-4.1.82.Final.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-common/4.1.82.Final/netty-common-4.1.82.Final.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-handler/4.1.82.Final/netty-handler-4.1.82.Final.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-resolver/4.1.82.Final/netty-resolver-4.1.82.Final.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-transport-classes-epoll/4.1.82.Final/netty-transport-classes-epoll-4.1.82.Final.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-transport-native-epoll/4.1.82.Final/netty-transport-native-epoll-4.1.82.Final-linux-aarch_64.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-transport-native-epoll/4.1.82.Final/netty-transport-native-epoll-4.1.82.Final-linux-x86_64.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-transport-native-unix-common/4.1.82.Final/netty-transport-native-unix-common-4.1.82.Final.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/io/netty/netty-transport/4.1.82.Final/netty-transport-4.1.82.Final.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/it/unimi/dsi/fastutil/8.5.9/fastutil-8.5.9.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/net/java/dev/jna/jna-platform/5.12.1/jna-platform-5.12.1.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/net/java/dev/jna/jna/5.13.0/jna-5.13.0.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/net/sf/jopt-simple/jopt-simple/5.0.4/jopt-simple-5.0.4.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/apache/commons/commons-compress/1.21/commons-compress-1.21.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/apache/httpcomponents/httpclient/4.5.13/httpclient-4.5.13.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/apache/httpcomponents/httpcore/4.4.15/httpcore-4.4.15.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/apache/logging/log4j/log4j-api/2.19.0/log4j-api-2.19.0.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/apache/logging/log4j/log4j-core/2.19.0/log4j-core-2.19.0.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/apache/logging/log4j/log4j-slf4j2-impl/2.19.0/log4j-slf4j2-impl-2.19.0.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/joml/joml/1.10.5/joml-1.10.5.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/slf4j/slf4j-api/2.0.1/slf4j-api-2.0.1.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/ow2/asm/asm/9.8/asm-9.8.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/ow2/asm/asm-analysis/9.8/asm-analysis-9.8.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/ow2/asm/asm-commons/9.8/asm-commons-9.8.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/ow2/asm/asm-tree/9.8/asm-tree-9.8.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/org/ow2/asm/asm-util/9.8/asm-util-9.8.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/net/fabricmc/sponge-mixin/0.15.5+mixin.0.8.7/sponge-mixin-0.15.5+mixin.0.8.7.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/net/fabricmc/intermediary/1.20.1/intermediary-1.20.1.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/net/fabricmc/fabric-loader/0.16.14/fabric-loader-0.16.14.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/versions/服务器版本/服务器版本.jar
+JVMArg: --add-exports
+JVMArg: net.fabricmc.loader.impl.launch.knot/net.fabricmc.loader.impl.launch.knot=ALL-UNNAMED
+JVMArg: net.fabricmc.loader.impl.launch.knot.KnotClient
+JVMArg: --username
+JVMArg: MathCode
+JVMArg: --version
+JVMArg: 1.20.1
+JVMArg: --gameDir
+JVMArg: /storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/versions/服务器版本
+JVMArg: --assetsDir
+JVMArg: /storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/assets
+JVMArg: --assetIndex
+JVMArg: 5
+JVMArg: --uuid
+JVMArg: 33c7a81a4fcd4e9bbd61b17d42d19339
+JVMArg: --accessToken
+JVMArg: --clientId
+JVMArg: ${clientid}
+JVMArg: --xuid
+JVMArg: 
+JVMArg: --userType
+JVMArg: msa
+JVMArg: --versionType
+JVMArg: ZalithLauncher1.4.1.2
+WARNING: Unknown module: net.fabricmc.loader.impl.launch.knot specified to --add-exports
+[MioPatcher]: MioPatcher is running!
+[authlib-injector] [INFO] Logging file: /storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/versions/服务器版本/authlib-injector.log
+[authlib-injector] [INFO] Version: 1.2.7
+[authlib-injector] [INFO] Authentication server: https://littleskin.cn/api/yggdrasil/
+2025-12-28 13:46:54,455 main ERROR appender Console has no parameter that matches element Policies
+[13:46:54] [main/INFO]: Loading Minecraft 1.20.1 with Fabric Loader 0.16.14
+[13:46:55] [main/INFO]: Loading 188 mods:
+	- alternate-current 1.9.0
+	- appleskin 2.5.1+mc1.20
+	- architectury 9.2.14
+	- balm 7.3.34
+	   \-- kuma_api 20.1.10
+	- betterbeds 1.3.0
+	- c2me 0.2.0+alpha.11.16
+	   |-- c2me-base 0.2.0+alpha.11.16
+	   |-- c2me-client-uncapvd 0.2.0+alpha.11.16
+	   |-- c2me-fixes-chunkio-threading-issues 0.2.0+alpha.11.16
+	   |-- c2me-fixes-general-threading-issues 0.2.0+alpha.11.16
+	   |-- c2me-fixes-worldgen-threading-issues 0.2.0+alpha.11.16
+	   |-- c2me-fixes-worldgen-vanilla-bugs 0.2.0+alpha.11.16
+	   |-- c2me-notickvd 0.2.0+alpha.11.16
+	   |-- c2me-opts-allocs 0.2.0+alpha.11.16
+	   |-- c2me-opts-chunk-access 0.2.0+alpha.11.16
+	   |-- c2me-opts-chunkio 0.2.0+alpha.11.16
+	   |-- c2me-opts-math 0.2.0+alpha.11.16
+	   |-- c2me-opts-scheduling 0.2.0+alpha.11.16
+	   |-- c2me-opts-worldgen-general 0.2.0+alpha.11.16
+	   |-- c2me-opts-worldgen-vanilla 0.2.0+alpha.11.16
+	   |-- c2me-rewrites-chunk-serializer 0.2.0+alpha.11.16
+	   |-- c2me-rewrites-chunkio 0.2.0+alpha.11.16
+	   |-- c2me-server-utils 0.2.0+alpha.11.16
+	   |-- c2me-threading-chunkio 0.2.0+alpha.11.16
+	   |-- c2me-threading-lighting 0.2.0+alpha.11.16
+	   |-- c2me-threading-worldgen 0.2.0+alpha.11.16
+	   |-- com_electronwill_night-config_core 3.6.5
+	   |-- com_electronwill_night-config_toml 3.6.5
+	   |-- com_ibm_async_asyncutil 0.1.0
+	   |-- net_objecthunter_exp4j 0.4.8
+	   \-- org_threadly_threadly 7.0
+	- chat_heads 0.13.18
+	- clienttweaks 11.1.4
+	- cloth-config 11.1.136
+	   \-- cloth-basic-math 0.6.1
+	- clumps 12.0.0.4
+	- continuity 3.0.0+1.20.1
+	- coroutil 1.20.1-1.3.7
+	- entity_texture_features 6.2.9
+	   \-- org_apache_httpcomponents_httpmime 4.5.10
+	- entityculling 1.8.2
+	   |-- transition 1.0.3
+	   \-- trender 1.0.5
+	- fabric-api 0.92.6+1.20.1
+	   |-- fabric-api-base 0.4.32+1802ada577
+	   |-- fabric-api-lookup-api-v1 1.6.37+1802ada577
+	   |-- fabric-biome-api-v1 13.0.14+1802ada577
+	   |-- fabric-block-api-v1 1.0.12+1802ada577
+	   |-- fabric-block-view-api-v2 1.0.3+924f046a77
+	   |-- fabric-blockrenderlayer-v1 1.1.42+1802ada577
+	   |-- fabric-client-tags-api-v1 1.1.3+1802ada577
+	   |-- fabric-command-api-v1 1.2.35+f71b366f77
+	   |-- fabric-command-api-v2 2.2.14+1802ada577
+	   |-- fabric-commands-v0 0.2.52+df3654b377
+	   |-- fabric-containers-v0 0.1.67+df3654b377
+	   |-- fabric-content-registries-v0 4.0.13+1802ada577
+	   |-- fabric-convention-tags-v1 1.5.6+1802ada577
+	   |-- fabric-crash-report-info-v1 0.2.20+1802ada577
+	   |-- fabric-data-attachment-api-v1 1.0.2+de0fd6d177
+	   |-- fabric-data-generation-api-v1 12.3.7+1802ada577
+	   |-- fabric-dimensions-v1 2.1.55+1802ada577
+	   |-- fabric-entity-events-v1 1.6.1+1c78457f77
+	   |-- fabric-events-interaction-v0 0.6.5+13a40c6677
+	   |-- fabric-events-lifecycle-v0 0.2.64+df3654b377
+	   |-- fabric-game-rule-api-v1 1.0.41+1802ada577
+	   |-- fabric-item-api-v1 2.1.29+1802ada577
+	   |-- fabric-item-group-api-v1 4.0.14+1802ada577
+	   |-- fabric-key-binding-api-v1 1.0.38+1802ada577
+	   |-- fabric-keybindings-v0 0.2.36+df3654b377
+	   |-- fabric-lifecycle-events-v1 2.2.23+1802ada577
+	   |-- fabric-loot-api-v2 1.2.3+1802ada577
+	   |-- fabric-loot-tables-v1 1.1.47+9e7660c677
+	   |-- fabric-message-api-v1 5.1.10+1802ada577
+	   |-- fabric-mining-level-api-v1 2.1.52+1802ada577
+	   |-- fabric-model-loading-api-v1 1.0.4+1802ada577
+	   |-- fabric-models-v0 0.4.3+9386d8a777
+	   |-- fabric-networking-api-v1 1.3.14+a158aa0477
+	   |-- fabric-networking-v0 0.3.54+df3654b377
+	   |-- fabric-object-builder-api-v1 11.1.5+e35120df77
+	   |-- fabric-particles-v1 1.1.3+1802ada577
+	   |-- fabric-recipe-api-v1 1.0.24+1802ada577
+	   |-- fabric-registry-sync-v0 2.3.6+1802ada577
+	   |-- fabric-renderer-api-v1 3.2.2+1802ada577
+	   |-- fabric-renderer-indigo 1.5.3+85287f9f77
+	   |-- fabric-renderer-registries-v1 3.2.47+df3654b377
+	   |-- fabric-rendering-data-attachment-v1 0.3.39+92a0d36777
+	   |-- fabric-rendering-fluids-v1 3.0.29+1802ada577
+	   |-- fabric-rendering-v0 1.1.50+df3654b377
+	   |-- fabric-rendering-v1 3.0.9+1802ada577
+	   |-- fabric-resource-conditions-api-v1 2.3.9+1802ada577
+	   |-- fabric-resource-loader-v0 0.11.12+fb82e9d777
+	   |-- fabric-screen-api-v1 2.0.9+1802ada577
+	   |-- fabric-screen-handler-api-v1 1.3.33+1802ada577
+	   |-- fabric-sound-api-v1 1.0.14+1802ada577
+	   |-- fabric-transfer-api-v1 3.3.6+8dd72ea377
+	   \-- fabric-transitive-access-wideners-v1 4.3.2+1802ada577
+	- fabric-language-kotlin 1.13.4+kotlin.2.2.0
+	   |-- org_jetbrains_kotlin_kotlin-reflect 2.2.0
+	   |-- org_jetbrains_kotlin_kotlin-stdlib 2.2.0
+	   |-- org_jetbrains_kotlin_kotlin-stdlib-jdk7 2.2.0
+	   |-- org_jetbrains_kotlin_kotlin-stdlib-jdk8 2.2.0
+	   |-- org_jetbrains_kotlinx_atomicfu-jvm 0.28.0
+	   |-- org_jetbrains_kotlinx_kotlinx-coroutines-core-jvm 1.10.2
+	   |-- org_jetbrains_kotlinx_kotlinx-coroutines-jdk8 1.10.2
+	   |-- org_jetbrains_kotlinx_kotlinx-datetime-jvm 0.6.2
+	   |-- org_jetbrains_kotlinx_kotlinx-io-bytestring-jvm 0.7.0
+	   |-- org_jetbrains_kotlinx_kotlinx-io-core-jvm 0.7.0
+	   |-- org_jetbrains_kotlinx_kotlinx-serialization-cbor-jvm 1.8.1
+	   |-- org_jetbrains_kotlinx_kotlinx-serialization-core-jvm 1.8.1
+	   \-- org_jetbrains_kotlinx_kotlinx-serialization-json-jvm 1.8.1
+	- fabricloader 0.16.14
+	   \-- mixinextras 0.4.1
+	- fallingtrees 0.13.2
+	- fastchest 1.5+1.20
+	- ferritecore 6.0.1
+	- forgeconfigapiport 8.0.2
+	- immediatelyfast 1.5.1+1.20.4
+	   \-- net_lenni0451_reflect 1.3.4
+	- immersive_paintings 0.6.8+1.20.1
+	- indium 1.0.36+mc1.20.1
+	- iris 1.7.6+mc1.20.1
+	   |-- io_github_douira_glsl-transformer 2.0.1
+	   |-- org_anarres_jcpp 1.4.14
+	   \-- org_antlr_antlr4-runtime 4.13.1
+	- jade 11.13.1+fabric
+	- java 21
+	- jei 15.20.0.112
+	- krypton 0.2.3
+	   \-- com_velocitypowered_velocity-native 3.2.0-SNAPSHOT
+	- lambdynlights 4.1.4+1.20.1
+	   |-- lambdynlights_api 4.1.4+1.20.1
+	   |    |-- yumi-commons-collections 1.0.0-alpha.12
+	   |    |-- yumi-commons-core 1.0.0-alpha.12
+	   |    \-- yumi-commons-event 1.0.0-alpha.12
+	   |-- pride 1.2.0+1.19.4
+	   \-- spruceui 6.2.1+1.20
+	- lithium 0.11.3
+	- memoryleakfix 1.1.5
+	- minecraft 1.20.1
+	- modernfix 5.24.4+mc1.20.1
+	- modernui 3.11.1.6
+	   |-- com_github_ben-manes_caffeine_caffeine 3.1.7
+	   |-- com_vladsch_flexmark_flexmark 0.64.8
+	   |-- com_vladsch_flexmark_flexmark-util-ast 0.64.8
+	   |-- com_vladsch_flexmark_flexmark-util-builder 0.64.8
+	   |-- com_vladsch_flexmark_flexmark-util-collection 0.64.8
+	   |-- com_vladsch_flexmark_flexmark-util-data 0.64.8
+	   |-- com_vladsch_flexmark_flexmark-util-dependency 0.64.8
+	   |-- com_vladsch_flexmark_flexmark-util-format 0.64.8
+	   |-- com_vladsch_flexmark_flexmark-util-html 0.64.8
+	   |-- com_vladsch_flexmark_flexmark-util-misc 0.64.8
+	   |-- com_vladsch_flexmark_flexmark-util-sequence 0.64.8
+	   \-- com_vladsch_flexmark_flexmark-util-visitor 0.64.8
+	- modmenu 7.2.2
+	- moreculling 1.20.4-0.24.0
+	   |-- conditional-mixin 0.3.2
+	   \-- mixinsquared 0.1.1
+	- mousetweaks 2.26
+	- noisium 2.3.0+mc1.20-1.20.1
+	- onekeyminer 1.20.1-1.8.0
+	- pandalib 0.5.2
+	- reeses-sodium-options 1.7.2+mc1.20.1-build.101
+	- ruok 1.7.1
+	- sodium 0.5.13+mc1.20.1
+	- sodium-extra 0.5.9+mc1.20.1
+	   \-- caffeineconfig 1.3.0+1.17
+	- sophisticatedbackpacks 1.20.1-3.23.4.4.105
+	- sophisticatedcore 1.20.1-1.2.7.12.160
+	   |-- porting_lib_extensions 2.3.2+1.20.1
+	   |    |-- porting_lib_accessors 2.3.2+1.20.1
+	   |    |-- porting_lib_attributes 2.3.2+1.20.1
+	   |    |-- porting_lib_common 2.3.2+1.20.1
+	   |    |-- porting_lib_core 2.3.2+1.20.1
+	   |    \-- reach-entity-attributes 2.4.0
+	   |-- porting_lib_fluids 2.3.2+1.20.1
+	   |    \-- porting_lib_core 2.3.2+1.20.1
+	   |-- porting_lib_loot 2.3.2+1.20.1
+	   |    |-- porting_lib_core 2.3.2+1.20.1
+	   |    \-- porting_lib_lazy_registration 2.3.2+1.20.1
+	   |-- porting_lib_model_loader 2.3.2+1.20.1
+	   |    \-- porting_lib_core 2.3.2+1.20.1
+	   |-- porting_lib_networking 2.3.2+1.20.1
+	   |    \-- porting_lib_core 2.3.2+1.20.1
+	   |-- porting_lib_tool_actions 2.3.2+1.20.1
+	   |    \-- porting_lib_core 2.3.2+1.20.1
+	   |-- porting_lib_transfer 2.3.2+1.20.1
+	   |    \-- porting_lib_core 2.3.2+1.20.1
+	   \-- team_reborn_energy 3.0.0
+	- starlight 1.1.2+fabric.dbc156f
+	- tiefix 1.14.0
+	- watut 1.20.1-1.2.3
+	- xaerominimap 25.2.10
+	- xaeroworldmap 1.39.12
+[13:46:56] [main/INFO]: SpongePowered MIXIN Subsystem Version=0.8.7 Source=file:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/libraries/net/fabricmc/sponge-mixin/0.15.5+mixin.0.8.7/sponge-mixin-0.15.5+mixin.0.8.7.jar Service=Knot/Fabric Env=CLIENT
+[13:46:57] [main/INFO]: Compatibility level set to JAVA_16
+[13:46:57] [main/INFO]: Compatibility level set to JAVA_17
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.base.mixin
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.client.uncapvd.mixin
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.fixes.chunkio.threading_issues.mixin
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.fixes.general.threading_issues.mixin
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.fixes.worldgen.threading_issues.mixin
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.fixes.worldgen.vanilla_bugs.mixin
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.notickvd.mixin
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.opts.allocs.mixin
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.opts.chunk_access.mixin
+[13:46:58] [main/INFO]: Initializing com.ishland.c2me.opts.chunkio.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.opts.math.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.opts.scheduling.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.opts.worldgen.general.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.opts.worldgen.vanilla.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.rewrites.chunk_serializer.mixin
+[13:46:59] [main/INFO]: Disabling config ioSystem.gcFreeChunkSerializer: Incompatible with architectury@9.2.14 (*) (defined in c2me)
+[13:46:59] [main/INFO]: Disabling com.ishland.c2me.rewrites.chunk_serializer.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.rewrites.chunkio.mixin
+[13:46:59] [main/INFO]: Disabling com.ishland.c2me.rewrites.chunkio.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.server.utils.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.threading.chunkio.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.threading.lighting.mixin
+[13:46:59] [main/INFO]: Initializing com.ishland.c2me.threading.worldgen.mixin
+[13:46:59] [main/INFO]: Disabling com.ishland.c2me.threading.worldgen.mixin
+[13:46:59] [main/WARN]: Reference map 'coroutil.refmap.json' for coroutil_fabric.mixins.json could not be read. If this is a development environment you can ignore this message
+[13:46:59] [main/INFO]: Loaded configuration file for Lithium: 131 options available, 2 override(s) found
+[13:46:59] [main/WARN]: Reference map 'memoryleakfix-fabric-1.17+-fabric-refmap.json' for memoryleakfix-fabric.mixins.json could not be read. If this is a development environment you can ignore this message
+[13:47:00] [main/INFO]: Loaded configuration file for ModernFix 5.24.4+mc1.20.1: 70 options available, 3 override(s) found
+[13:47:00] [main/WARN]: Option 'mixin.bugfix.paper_chunk_patches' overriden (by mods [c2me]) to 'false'
+[13:47:00] [main/WARN]: Option 'mixin.perf.cache_strongholds' overriden (by mods [c2me]) to 'false'
+[13:47:00] [main/WARN]: Option 'mixin.bugfix.chunk_deadlock' overriden (by mods [c2me]) to 'false'
+[13:47:00] [main/INFO]: Applying Nashorn fix
+[13:47:00] [main/INFO]: Iris API installed...
+[13:47:00] [main/WARN]: Reference map 'pandalib-common-common-refmap.json' for pandalib-common.mixins.json could not be read. If this is a development environment you can ignore this message
+[13:47:00] [main/INFO]: Loaded configuration file for Sodium: 42 options available, 3 override(s) found
+[13:47:00] [main/INFO]: Loaded configuration file for Sodium Extra: 35 options available, 0 override(s) found
+[13:47:02] [main/WARN]: Error loading class: net/caffeinemc/sodium/config/user/UserConfigCategories (java.lang.ClassNotFoundException: net/caffeinemc/sodium/config/user/UserConfigCategories)
+[13:47:02] [main/WARN]: Error loading class: dev/tr7zw/skinlayers/render/CustomizableModelPart (java.lang.ClassNotFoundException: dev/tr7zw/skinlayers/render/CustomizableModelPart)
+[13:47:03] [main/WARN]: Force-disabling mixin 'alloc.blockstate.StateMixin' as rule 'mixin.alloc.blockstate' (added by mods [ferritecore]) disables it and children
+[13:47:04] [main/WARN]: Force-disabling mixin 'world.player_chunk_tick.ThreadedAnvilChunkStorageMixin' as rule 'mixin.world.player_chunk_tick' (added by mods [c2me, krypton]) disables it and children
+[13:47:05] [main/WARN]: Force-disabling mixin 'features.render.entity.CuboidMixin' as rule 'mixin.features.render.entity' (added by mods [iris]) disables it and children
+[13:47:05] [main/WARN]: Force-disabling mixin 'features.render.entity.ModelPartMixin' as rule 'mixin.features.render.entity' (added by mods [iris]) disables it and children
+[13:47:05] [main/WARN]: Force-disabling mixin 'features.render.entity.cull.EntityRendererMixin' as rule 'mixin.features.render.entity' (added by mods [iris]) disables it and children
+[13:47:05] [main/WARN]: Force-disabling mixin 'features.render.entity.shadows.EntityRenderDispatcherMixin' as rule 'mixin.features.render.entity' (added by mods [iris]) disables it and children
+[13:47:05] [main/WARN]: Force-disabling mixin 'features.render.gui.font.GlyphRendererMixin' as rule 'mixin.features.render.gui.font' (added by mods [iris]) disables it and children
+[13:47:05] [main/WARN]: Force-disabling mixin 'features.render.world.sky.BackgroundRendererMixin' as rule 'mixin.features.render.world.sky' (added by mods [iris]) disables it and children
+[13:47:05] [main/WARN]: Force-disabling mixin 'features.render.world.sky.ClientWorldMixin' as rule 'mixin.features.render.world.sky' (added by mods [iris]) disables it and children
+[13:47:05] [main/WARN]: Force-disabling mixin 'features.render.world.sky.WorldRendererMixin' as rule 'mixin.features.render.world.sky' (added by mods [iris]) disables it and children
+[13:47:05] [main/INFO]: [MemoryLeakFix] Will be applying 3 memory leak fixes!
+[13:47:05] [main/INFO]: [MemoryLeakFix] Currently enabled memory leak fixes: [targetEntityLeak, biomeTemperatureLeak, hugeScreenshotLeak]
+[13:47:05] [main/WARN]: Error loading class: net/caffeinemc/sodium/config/user/UserConfigCategories (java.lang.ClassNotFoundException: net/caffeinemc/sodium/config/user/UserConfigCategories)
+[13:47:05] [main/WARN]: Error loading class: net/caffeinemc/sodium/config/user/UserConfigCategories (java.lang.ClassNotFoundException: net/caffeinemc/sodium/config/user/UserConfigCategories)
+[13:47:06] [main/INFO]: Searching for graphics cards...
+[13:47:06] [main/WARN]: Could not find any graphics adapters! Probably the device is not on a bus we can probe, or there are no devices supporting 3D acceleration.
+[13:47:06] [main/WARN]: Unable to determine desktop session type because the environment variable XDG_SESSION_TYPE is not set! Your user session may not be configured correctly.
+[authlib-injector] [INFO] Transformed [net.minecraft.client.main.Main] with [Main Arguments Transformer]
+[authlib-injector] [INFO] Transformed [com.mojang.authlib.properties.Property] with [Yggdrasil Public Key Transformer]
+[13:47:07] [main/INFO]: Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.4.1).
+[13:47:09] [main/WARN]: File not found or not readable: /proc/stat
+[13:47:14] [main/INFO]: Injecting BlockStateBase cache population hook into getOpacityIfCached from ca.spottedleaf.starlight.mixin.common.blockstate.BlockStateBaseMixin
+[13:47:14] [main/INFO]: Injecting BlockStateBase cache population hook into getNeighborPathNodeType from me.jellysquid.mods.lithium.mixin.ai.pathing.AbstractBlockStateMixin
+[13:47:14] [main/INFO]: Injecting BlockStateBase cache population hook into getPathNodeType from me.jellysquid.mods.lithium.mixin.ai.pathing.AbstractBlockStateMixin
+[13:47:14] [main/INFO]: Injecting BlockStateBase cache population hook into isConditionallyFullOpaque from ca.spottedleaf.starlight.mixin.common.blockstate.BlockStateBaseMixin
+[13:47:14] [main/INFO]: Injecting BlockStateBase cache population hook into getAllFlags from me.jellysquid.mods.lithium.mixin.util.block_tracking.AbstractBlockStateMixin
+[authlib-injector] [INFO] Httpd is running on port 39283
+[authlib-injector] [INFO] Transformed [net.minecraft.class_742] with [Constant URL Transformer]
+[13:47:22] [main/WARN]: Static binding violation: PRIVATE @Overwrite method method_21740 in modernfix-common.mixins.json:perf.remove_biome_temperature_cache.BiomeMixin from mod modernfix cannot reduce visibiliy of PUBLIC target method, visibility will be upgraded.
+[13:47:22] [main/WARN]: Method overwrite conflict for method_21740 in modernfix-common.mixins.json:perf.remove_biome_temperature_cache.BiomeMixin from mod modernfix, previously written by me.jellysquid.mods.lithium.mixin.world.temperature_cache.BiomeMixin. Skipping method.
+[13:47:23] [main/INFO]: Vanilla bootstrap took 12812 milliseconds
+[LWJGL] Failed to load a library. Possible solutions:
+	a) Add the directory that contains the shared library to -Djava.library.path or -Dorg.lwjgl.librarypath.
+	b) Add the JAR that contains the shared library to the classpath.
+[LWJGL] Enable debug mode with -Dorg.lwjgl.util.Debug=true for better diagnostics.
+[LWJGL] Enable the SharedLibraryLoader debug mode with -Dorg.lwjgl.util.DebugLoader=true for better diagnostics.
+[authlib-injector] [INFO] Transformed [com.mojang.authlib.HttpAuthenticationService] with [ConcatenateURL Workaround]
+[authlib-injector] [INFO] Transformed [com.mojang.authlib.yggdrasil.YggdrasilEnvironment] with [Constant URL Transformer]
+[13:47:24] [Render thread/INFO]: Environment: authHost='https://littleskin.cn/api/yggdrasil/authserver', accountsHost='http://127.0.0.1:39283/https/api.mojang.com', sessionHost='http://127.0.0.1:39283/https/sessionserver.mojang.com', servicesHost='http://127.0.0.1:39283/https/api.minecraftservices.com', name='PROD'
+[authlib-injector] [INFO] Transformed [com.mojang.authlib.yggdrasil.YggdrasilServicesKeyInfo] with [Yggdrasil Public Key Transformer]
+[13:47:24] [Render thread/INFO]: Setting user: MathCode
+[13:47:25] [Render thread/INFO]: Bypassed Mojang DFU
+[13:47:26] [Render thread/INFO]: fabric loader environment detected
+[authlib-injector] [INFO] Transformed [net.minecraft.class_3248] with [Username Character Check Transformer]
+[13:47:27] [Render thread/INFO]: Successfully loaded config 'fallingtrees_client'
+[13:47:27] [Render thread/INFO]: Successfully saved config 'fallingtrees_client'
+[13:47:27] [Render thread/INFO]: Successfully loaded config 'fallingtrees_common'
+[13:47:27] [Render thread/INFO]: Successfully saved config 'fallingtrees_common'
+[13:47:27] [Render thread/INFO]: Compression will use Java, encryption will use Java
+[13:47:27] [Render thread/WARN]: Signature is missing
+[13:47:27] [Render thread/INFO]: Modern UI common config loaded/reloaded
+[13:47:27] [Render thread/INFO]: Initialized Modern UI
+[13:47:27] [Thread-4/INFO]: Modern UI common config loaded/reloaded
+[13:47:27] [Thread-4/INFO]: Modern UI common config loaded/reloaded
+[13:47:27] [Render thread/INFO]: Loading Noisium.
+[13:47:27] [Render thread/INFO]: Hello OneKeyMiner world!
+[13:47:29] [Render thread/INFO]: Registering S2C receiver with id architectury:spawn_entity_packet
+[13:47:30] [Render thread/WARN]: disabled "Before Name" rendermode due to incompatibility with modernui
+Registered forkAndExec
+[13:47:30] [Render thread/INFO]: Loading Entity Texture Features, Thanks for 10 Million plus downloads!!
+[13:47:30] [Render thread/INFO]: [Indigo] Different rendering plugin detected; not applying Indigo.
+[13:47:31] [Render thread/INFO]: Sending ConfigManager...
+[13:47:31] [Render thread/INFO]: Sending ConfigManager took 8.357 ms
+[13:47:32] [Render thread/INFO]: Krypton is now accelerating your Minecraft client's networking stack 🚀
+[13:47:32] [Render thread/INFO]: Note that Krypton is most effective on servers, not the client.
+[13:47:32] [Render thread/INFO]: [LambDynLights] Initializing LambDynamicLights...
+[13:47:32] [Render thread/INFO]: [LambDynLights] Configuration loaded.
+[13:47:32] [Render thread/INFO]: Modern UI client config loaded/reloaded
+[13:47:32] [Thread-4/INFO]: Modern UI client config loaded/reloaded
+[13:47:32] [Thread-4/INFO]: Modern UI client config loaded/reloaded
+[13:47:32] [Render thread/INFO]: Modern UI text config loaded/reloaded
+[13:47:32] [Thread-4/INFO]: Modern UI text config loaded/reloaded
+[13:47:32] [Thread-4/INFO]: Modern UI text config loaded/reloaded
+[13:47:33] [Render thread/INFO]: Created TextLayoutEngine
+[13:47:33] [Render thread/INFO]: Created MuiFabricApi
+[13:47:33] [Render thread/INFO]: Initialized Modern UI text engine
+[13:47:33] [Render thread/INFO]: Initialized Modern UI client
+[13:47:33] [Worker-Main-1/INFO]: Checking mod updates...
+[13:47:33] [Render thread/INFO]: [STDOUT]: [Mouse Tweaks] Main.initialize()
+[13:47:33] [Render thread/INFO]: [STDOUT]: [Mouse Tweaks] Initialized.
+[13:47:34] [Render thread/INFO]: [STDOUT]: [LibGui] Initializing Client...
+[13:47:35] [Render thread/INFO]: Loading Xaero's Minimap - Stage 1/2
+[13:47:35] [Render thread/INFO]: Loading Xaero's World Map - Stage 1/2
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'modernui@3.11.1.6', (-> 3.12.0.1)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'jei@15.20.0.112', (-> 15.20.0.128)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'entity_texture_features@6.2.9', (-> 7.0.6-fabric-1.20.1)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'modernfix@5.24.4+mc1.20.1', (-> 5.25.2+mc1.20.1)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'lithium@0.11.3', (-> mc1.20.1-0.11.4-fabric)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'moreculling@1.20.4-0.24.0', (-> 1.20.1-0.24.2)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'sophisticatedbackpacks@1.20.1-3.23.4.4.105', (-> 1.20.1-3.23.4.5.110)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'ruok@1.7.1', (-> 1.7.2-fabric)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'entityculling@1.8.2', (-> 1.9.4)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'chat_heads@0.13.18', (-> 0.14.2)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'immediatelyfast@1.5.1+1.20.4', (-> 1.5.3+1.20.4-fabric)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'lambdynlights@4.1.4+1.20.1', (-> 4.4.0+1.20.1)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'fabric-language-kotlin@1.13.4+kotlin.2.2.0', (-> 1.13.8+kotlin.2.3.0)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'sophisticatedcore@1.20.1-1.2.7.12.160', (-> 1.20.1-1.2.7.15.166)
+[13:47:36] [Worker-Main-1/INFO]: Update available for 'forgeconfigapiport@8.0.2', (-> v8.0.3-1.20.1-Fabric)
+[13:47:38] [Render thread/INFO]: Backend library: LWJGL version 3.3.3-snapshot
+[13:47:38] [Render thread/INFO]: OpenGL library: /data/app/~~m8s70nIHwvZ37FU4Ae_x5w==/com.ltw.plugin.renderer.ltw-yPpyUr0D61PzsmeIqOsAoA==/lib/arm64/libltw_turbo.so
+AdrenoSupp: Loaded Turnip, loader address: 0x1b3da2758c892a8b
+EGLBridge: Binding to OpenGL ES
+[13:47:38] [Render thread/INFO]: Promoted to OpenGL 4.6 Core Profile
+EGLBridge: Binding to OpenGL ES
+LTW: Overridden glGetError
+LTW: Overridden glGetString
+LTW: Overridden glGetIntegerv
+---- Minecraft Crash Report ----
+// But it works on my machine.
+
+Time: 2025-12-28 13:47:40
+Description: Initializing game
+
+java.lang.IllegalStateException: There is no OpenGL context current in the current thread.
+	at knot//org.lwjgl.opengl.GL.createCapabilities(GL.java:404)
+	at knot//org.lwjgl.opengl.GL.createCapabilities(GL.java:325)
+	at knot//org.lwjgl.opengl.GL.createCapabilities(GL.java:309)
+	at knot//net.minecraft.class_1041.<init>(class_1041.java:113)
+	at knot//net.minecraft.class_3682.method_16038(class_3682.java:21)
+	at knot//net.minecraft.class_310.<init>(class_310.java:486)
+	at knot//net.minecraft.client.main.Main.main(Main.java:211)
+	at net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(MinecraftGameProvider.java:480)
+	at net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74)
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23)
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: Render thread
+Stacktrace:
+	at knot//org.lwjgl.opengl.GL.createCapabilities(GL.java:404)
+	at knot//org.lwjgl.opengl.GL.createCapabilities(GL.java:325)
+	at knot//org.lwjgl.opengl.GL.createCapabilities(GL.java:309)
+	at knot//net.minecraft.class_1041.<init>(class_1041.java:113)
+	at knot//net.minecraft.class_3682.method_16038(class_3682.java:21)
+	at knot//net.minecraft.class_310.<init>(class_310.java:486)
+
+-- Initialization --
+Details:
+	Modules: 
+Stacktrace:
+	at knot//net.minecraft.client.main.Main.main(Main.java:211)
+	at net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(MinecraftGameProvider.java:480)
+	at net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74)
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23)
+
+-- System Details --
+Details:
+	Minecraft Version: 1.20.1
+	Minecraft Version ID: 1.20.1
+	Operating System: Linux (aarch64) version Android-14
+	Java Version: 21.0.1-internal, N/A
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode), Oracle Corporation
+	Memory: 3965457168 bytes (3781 MiB) / 4294967296 bytes (4096 MiB) up to 4294967296 bytes (4096 MiB)
+	CPUs: 8
+	Processor Vendor: 0x41
+	Processor Name: 
+	Identifier: 0x41 Family 8 Model 0xd41 Stepping r2p0
+	Microarchitecture: unknown
+	Frequency (GHz): -0.00
+	Number of physical packages: 2
+	Number of physical CPUs: 8
+	Number of logical CPUs: 8
+	Graphics card #0 name: unknown
+	Graphics card #0 vendor: unknown
+	Graphics card #0 VRAM (MB): 0.00
+	Graphics card #0 deviceId: unknown
+	Graphics card #0 versionInfo: unknown
+	Virtual memory max (MB): 9872.12
+	Virtual memory used (MB): 6237.10
+	Swap memory total (MB): 6144.00
+	Swap memory used (MB): 1414.95
+	JVM Flags: 16 total; -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+PerfDisableSharedMem -XX:+UseStringDeduplication -XX:+DisableExplicitGC -XX:MaxGCPauseMillis=180 -XX:ParallelGCThreads=2 -XX:ConcGCThreads=1 -XX:InitiatingHeapOccupancyPercent=50 -XX:G1ReservePercent=15 -XX:G1HeapRegionSize=8M -Xms4096M -Xmx4096M -XX:ActiveProcessorCount=8 -Xbootclasspath/a:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/caciocavallo17/cacio-agent.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/caciocavallo17/cacio-shared-1.19.1-SNAPSHOT.jar:/storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/caciocavallo17/cacio-tta-1.19.1-SNAPSHOT.jar
+	Fabric Mods: 
+		alternate-current: Alternate Current 1.9.0
+		appleskin: AppleSkin 2.5.1+mc1.20
+		architectury: Architectury 9.2.14
+		balm: Balm 7.3.34
+			kuma_api: KumaAPI 20.1.10
+		betterbeds: Better Beds 1.3.0
+		c2me: Concurrent Chunk Management Engine 0.2.0+alpha.11.16
+			c2me-base: Concurrent Chunk Management Engine (Base) 0.2.0+alpha.11.16
+			c2me-client-uncapvd: Concurrent Chunk Management Engine (Client/Uncap View Distance) 0.2.0+alpha.11.16
+			c2me-fixes-chunkio-threading-issues: Concurrent Chunk Management Engine (Fixes/Chunk IO/Threading Issues) 0.2.0+alpha.11.16
+			c2me-fixes-general-threading-issues: Concurrent Chunk Management Engine (Fixes/General/Threading Issues) 0.2.0+alpha.11.16
+			c2me-fixes-worldgen-threading-issues: Concurrent Chunk Management Engine (Fixes/WorldGen/Threading Issues) 0.2.0+alpha.11.16
+			c2me-fixes-worldgen-vanilla-bugs: Concurrent Chunk Management Engine (Fixes/WorldGen/Vanilla Bugs) 0.2.0+alpha.11.16
+			c2me-notickvd: Concurrent Chunk Management Engine (No Tick View Distance) 0.2.0+alpha.11.16
+			c2me-opts-allocs: Concurrent Chunk Management Engine (Optimizations/Memory Allocations) 0.2.0+alpha.11.16
+			c2me-opts-chunk-access: Concurrent Chunk Management Engine (Optimizations/Chunk Access) 0.2.0+alpha.11.16
+			c2me-opts-chunkio: Concurrent Chunk Management Engine (Optimizations/Chunk IO) 0.2.0+alpha.11.16
+			c2me-opts-math: Concurrent Chunk Management Engine (Optimizations/Math) 0.2.0+alpha.11.16
+			c2me-opts-scheduling: Concurrent Chunk Management Engine (Optimizations/Scheduling) 0.2.0+alpha.11.16
+			c2me-opts-worldgen-general: Concurrent Chunk Management Engine (Optimizations/General WorldGen) 0.2.0+alpha.11.16
+			c2me-opts-worldgen-vanilla: Concurrent Chunk Management Engine (Optimizations/Vanilla WorldGen) 0.2.0+alpha.11.16
+			c2me-rewrites-chunk-serializer: Concurrent Chunk Management Engine (Rewrites/Chunk Serializer) 0.2.0+alpha.11.16
+			c2me-rewrites-chunkio: Concurrent Chunk Management Engine (Rewrites/Chunk IO) 0.2.0+alpha.11.16
+			c2me-server-utils: Concurrent Chunk Management Engine (Server Utils) 0.2.0+alpha.11.16
+			c2me-threading-chunkio: Concurrent Chunk Management Engine (Threading/WorldGen) 0.2.0+alpha.11.16
+			c2me-threading-lighting: Concurrent Chunk Management Engine (Threading/Lighting) 0.2.0+alpha.11.16
+			c2me-threading-worldgen: Concurrent Chunk Management Engine (Threading/WorldGen) 0.2.0+alpha.11.16
+			com_electronwill_night-config_core: core 3.6.5
+			com_electronwill_night-config_toml: toml 3.6.5
+			com_ibm_async_asyncutil: asyncutil 0.1.0
+			net_objecthunter_exp4j: exp4j 0.4.8
+			org_threadly_threadly: threadly 7.0
+		chat_heads: Chat Heads 0.13.18
+		clienttweaks: Client Tweaks 11.1.4
+		cloth-config: Cloth Config v11 11.1.136
+			cloth-basic-math: cloth-basic-math 0.6.1
+		clumps: Clumps 12.0.0.4
+		continuity: Continuity 3.0.0+1.20.1
+		coroutil: CoroUtil 1.20.1-1.3.7
+		entity_texture_features: Entity Texture Features 6.2.9
+			org_apache_httpcomponents_httpmime: httpmime 4.5.10
+		entityculling: EntityCulling 1.8.2
+			transition: TRansition 1.0.3
+			trender: TRender 1.0.5
+		fabric-api: Fabric API 0.92.6+1.20.1
+			fabric-api-base: Fabric API Base 0.4.32+1802ada577
+			fabric-api-lookup-api-v1: Fabric API Lookup API (v1) 1.6.37+1802ada577
+			fabric-biome-api-v1: Fabric Biome API (v1) 13.0.14+1802ada577
+			fabric-block-api-v1: Fabric Block API (v1) 1.0.12+1802ada577
+			fabric-block-view-api-v2: Fabric BlockView API (v2) 1.0.3+924f046a77
+			fabric-blockrenderlayer-v1: Fabric BlockRenderLayer Registration (v1) 1.1.42+1802ada577
+			fabric-client-tags-api-v1: Fabric Client Tags 1.1.3+1802ada577
+			fabric-command-api-v1: Fabric Command API (v1) 1.2.35+f71b366f77
+			fabric-command-api-v2: Fabric Command API (v2) 2.2.14+1802ada577
+			fabric-commands-v0: Fabric Commands (v0) 0.2.52+df3654b377
+			fabric-containers-v0: Fabric Containers (v0) 0.1.67+df3654b377
+			fabric-content-registries-v0: Fabric Content Registries (v0) 4.0.13+1802ada577
+			fabric-convention-tags-v1: Fabric Convention Tags 1.5.6+1802ada577
+			fabric-crash-report-info-v1: Fabric Crash Report Info (v1) 0.2.20+1802ada577
+			fabric-data-attachment-api-v1: Fabric Data Attachment API (v1) 1.0.2+de0fd6d177
+			fabric-data-generation-api-v1: Fabric Data Generation API (v1) 12.3.7+1802ada577
+			fabric-dimensions-v1: Fabric Dimensions API (v1) 2.1.55+1802ada577
+			fabric-entity-events-v1: Fabric Entity Events (v1) 1.6.1+1c78457f77
+			fabric-events-interaction-v0: Fabric Events Interaction (v0) 0.6.5+13a40c6677
+			fabric-events-lifecycle-v0: Fabric Events Lifecycle (v0) 0.2.64+df3654b377
+			fabric-game-rule-api-v1: Fabric Game Rule API (v1) 1.0.41+1802ada577
+			fabric-item-api-v1: Fabric Item API (v1) 2.1.29+1802ada577
+			fabric-item-group-api-v1: Fabric Item Group API (v1) 4.0.14+1802ada577
+			fabric-key-binding-api-v1: Fabric Key Binding API (v1) 1.0.38+1802ada577
+			fabric-keybindings-v0: Fabric Key Bindings (v0) 0.2.36+df3654b377
+			fabric-lifecycle-events-v1: Fabric Lifecycle Events (v1) 2.2.23+1802ada577
+			fabric-loot-api-v2: Fabric Loot API (v2) 1.2.3+1802ada577
+			fabric-loot-tables-v1: Fabric Loot Tables (v1) 1.1.47+9e7660c677
+			fabric-message-api-v1: Fabric Message API (v1) 5.1.10+1802ada577
+			fabric-mining-level-api-v1: Fabric Mining Level API (v1) 2.1.52+1802ada577
+			fabric-model-loading-api-v1: Fabric Model Loading API (v1) 1.0.4+1802ada577
+			fabric-models-v0: Fabric Models (v0) 0.4.3+9386d8a777
+			fabric-networking-api-v1: Fabric Networking API (v1) 1.3.14+a158aa0477
+			fabric-networking-v0: Fabric Networking (v0) 0.3.54+df3654b377
+			fabric-object-builder-api-v1: Fabric Object Builder API (v1) 11.1.5+e35120df77
+			fabric-particles-v1: Fabric Particles (v1) 1.1.3+1802ada577
+			fabric-recipe-api-v1: Fabric Recipe API (v1) 1.0.24+1802ada577
+			fabric-registry-sync-v0: Fabric Registry Sync (v0) 2.3.6+1802ada577
+			fabric-renderer-api-v1: Fabric Renderer API (v1) 3.2.2+1802ada577
+			fabric-renderer-indigo: Fabric Renderer - Indigo 1.5.3+85287f9f77
+			fabric-renderer-registries-v1: Fabric Renderer Registries (v1) 3.2.47+df3654b377
+			fabric-rendering-data-attachment-v1: Fabric Rendering Data Attachment (v1) 0.3.39+92a0d36777
+			fabric-rendering-fluids-v1: Fabric Rendering Fluids (v1) 3.0.29+1802ada577
+			fabric-rendering-v0: Fabric Rendering (v0) 1.1.50+df3654b377
+			fabric-rendering-v1: Fabric Rendering (v1) 3.0.9+1802ada577
+			fabric-resource-conditions-api-v1: Fabric Resource Conditions API (v1) 2.3.9+1802ada577
+			fabric-resource-loader-v0: Fabric Resource Loader (v0) 0.11.12+fb82e9d777
+			fabric-screen-api-v1: Fabric Screen API (v1) 2.0.9+1802ada577
+			fabric-screen-handler-api-v1: Fabric Screen Handler API (v1) 1.3.33+1802ada577
+			fabric-sound-api-v1: Fabric Sound API (v1) 1.0.14+1802ada577
+			fabric-transfer-api-v1: Fabric Transfer API (v1) 3.3.6+8dd72ea377
+			fabric-transitive-access-wideners-v1: Fabric Transitive Access Wideners (v1) 4.3.2+1802ada577
+		fabric-language-kotlin: Fabric Language Kotlin 1.13.4+kotlin.2.2.0
+			org_jetbrains_kotlin_kotlin-reflect: kotlin-reflect 2.2.0
+			org_jetbrains_kotlin_kotlin-stdlib: kotlin-stdlib 2.2.0
+			org_jetbrains_kotlin_kotlin-stdlib-jdk7: kotlin-stdlib-jdk7 2.2.0
+			org_jetbrains_kotlin_kotlin-stdlib-jdk8: kotlin-stdlib-jdk8 2.2.0
+			org_jetbrains_kotlinx_atomicfu-jvm: atomicfu-jvm 0.28.0
+			org_jetbrains_kotlinx_kotlinx-coroutines-core-jvm: kotlinx-coroutines-core-jvm 1.10.2
+			org_jetbrains_kotlinx_kotlinx-coroutines-jdk8: kotlinx-coroutines-jdk8 1.10.2
+			org_jetbrains_kotlinx_kotlinx-datetime-jvm: kotlinx-datetime-jvm 0.6.2
+			org_jetbrains_kotlinx_kotlinx-io-bytestring-jvm: kotlinx-io-bytestring-jvm 0.7.0
+			org_jetbrains_kotlinx_kotlinx-io-core-jvm: kotlinx-io-core-jvm 0.7.0
+			org_jetbrains_kotlinx_kotlinx-serialization-cbor-jvm: kotlinx-serialization-cbor-jvm 1.8.1
+			org_jetbrains_kotlinx_kotlinx-serialization-core-jvm: kotlinx-serialization-core-jvm 1.8.1
+			org_jetbrains_kotlinx_kotlinx-serialization-json-jvm: kotlinx-serialization-json-jvm 1.8.1
+		fabricloader: Fabric Loader 0.16.14
+			mixinextras: MixinExtras 0.4.1
+		fallingtrees: Panda's Falling Tree's 0.13.2
+		fastchest: FastChest 1.5+1.20
+		ferritecore: FerriteCore 6.0.1
+		forgeconfigapiport: Forge Config API Port 8.0.2
+		immediatelyfast: ImmediatelyFast 1.5.1+1.20.4
+			net_lenni0451_reflect: Reflect 1.3.4
+		immersive_paintings: Immersive Paintings 0.6.8+1.20.1
+		indium: Indium 1.0.36+mc1.20.1
+		iris: Iris 1.7.6+mc1.20.1
+			io_github_douira_glsl-transformer: glsl-transformer 2.0.1
+			org_anarres_jcpp: jcpp 1.4.14
+			org_antlr_antlr4-runtime: antlr4-runtime 4.13.1
+		jade: Jade 11.13.1+fabric
+		java: OpenJDK 64-Bit Server VM 21
+		jei: Just Enough Items 15.20.0.112
+		krypton: Krypton 0.2.3
+			com_velocitypowered_velocity-native: velocity-native 3.2.0-SNAPSHOT
+		lambdynlights: LambDynamicLights 4.1.4+1.20.1
+			lambdynlights_api: LambDynamicLights (API) 4.1.4+1.20.1
+				yumi-commons-collections: Yumi Commons: Collections 1.0.0-alpha.12
+				yumi-commons-core: Yumi Commons: Core 1.0.0-alpha.12
+				yumi-commons-event: Yumi Commons: Event 1.0.0-alpha.12
+			pride: Pride Lib 1.2.0+1.19.4
+			spruceui: SpruceUI 6.2.1+1.20
+		lithium: Lithium 0.11.3
+		memoryleakfix: Memory Leak Fix 1.1.5
+		minecraft: Minecraft 1.20.1
+		modernfix: ModernFix 5.24.4+mc1.20.1
+		modernui: Modern UI 3.11.1.6
+			com_github_ben-manes_caffeine_caffeine: caffeine 3.1.7
+			com_vladsch_flexmark_flexmark: flexmark 0.64.8
+			com_vladsch_flexmark_flexmark-util-ast: flexmark-util-ast 0.64.8
+			com_vladsch_flexmark_flexmark-util-builder: flexmark-util-builder 0.64.8
+			com_vladsch_flexmark_flexmark-util-collection: flexmark-util-collection 0.64.8
+			com_vladsch_flexmark_flexmark-util-data: flexmark-util-data 0.64.8
+			com_vladsch_flexmark_flexmark-util-dependency: flexmark-util-dependency 0.64.8
+			com_vladsch_flexmark_flexmark-util-format: flexmark-util-format 0.64.8
+			com_vladsch_flexmark_flexmark-util-html: flexmark-util-html 0.64.8
+			com_vladsch_flexmark_flexmark-util-misc: flexmark-util-misc 0.64.8
+			com_vladsch_flexmark_flexmark-util-sequence: flexmark-util-sequence 0.64.8
+			com_vladsch_flexmark_flexmark-util-visitor: flexmark-util-visitor 0.64.8
+		modmenu: Mod Menu 7.2.2
+		moreculling: More Culling 1.20.4-0.24.0
+			conditional-mixin: conditional mixin 0.3.2
+			mixinsquared: MixinSquared 0.1.1
+		mousetweaks: Mouse Tweaks 2.26
+		noisium: Noisium 2.3.0+mc1.20-1.20.1
+		onekeyminer: One Key Miner 1.20.1-1.8.0
+		pandalib: PandaLib 0.5.2
+		reeses-sodium-options: Reese's Sodium Options 1.7.2+mc1.20.1-build.101
+		ruok: RuOK Mod 1.7.1
+		sodium: Sodium 0.5.13+mc1.20.1
+		sodium-extra: Sodium Extra 0.5.9+mc1.20.1
+			caffeineconfig: CaffeineConfig 1.3.0+1.17
+		sophisticatedbackpacks: Sophisticated Backpacks 1.20.1-3.23.4.4.105
+		sophisticatedcore: Sophisticated Core 1.20.1-1.2.7.12.160
+			porting_lib_extensions: Porting Lib Extensions 2.3.2+1.20.1
+				porting_lib_accessors: Porting Lib Accessors 2.3.2+1.20.1
+				porting_lib_attributes: Porting Lib Attributes 2.3.2+1.20.1
+				porting_lib_common: Porting Lib Common 2.3.2+1.20.1
+				reach-entity-attributes: Reach Entity Attributes 2.4.0
+			porting_lib_fluids: Porting Lib Fluids 2.3.2+1.20.1
+			porting_lib_loot: Porting Lib Loot 2.3.2+1.20.1
+				porting_lib_lazy_registration: Porting Lib Lazy Register 2.3.2+1.20.1
+			porting_lib_model_loader: Porting Lib Model Loader 2.3.2+1.20.1
+			porting_lib_networking: Porting Lib Networking 2.3.2+1.20.1
+			porting_lib_tool_actions: Porting Lib Tool Actions 2.3.2+1.20.1
+				porting_lib_core: Porting Lib Core 2.3.2+1.20.1
+			porting_lib_transfer: Porting Lib Transfer 2.3.2+1.20.1
+			team_reborn_energy: Energy 3.0.0
+		starlight: Starlight 1.1.2+fabric.dbc156f
+		tiefix: TieFix 1.14.0
+		watut: What Are They Up To 1.20.1-1.2.3
+		xaerominimap: Xaero's Minimap 25.2.10
+		xaeroworldmap: Xaero's World Map 1.39.12
+	Launched Version: 1.20.1
+	Backend library: LWJGL version 3.3.3-snapshot
+	Backend API: Unknown
+	Window size: <not initialized>
+	GL Caps: Using framebuffer using OpenGL 3.2
+	GL debug messages: <disabled>
+	Using VBOs: Yes
+	Is Modded: Definitely; Client brand changed to 'fabric'
+	Type: Client (map_client.txt)
+	CPU: <unknown>
+#@!@# Game crashed! Crash report saved to: #@!@# /storage/emulated/0/Android/data/com.movtery.zalithlauncher/files/.minecraft/versions/服务器版本/crash-reports/crash-2025-12-28_13.47.40-client.txt

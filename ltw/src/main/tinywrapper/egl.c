@@ -12,6 +12,12 @@
 thread_local context_t *current_context;
 unordered_map* context_map;
 
+// 保存当前的 EGL 状态，用于防止重复绑定
+static EGLDisplay current_display = EGL_NO_DISPLAY;
+static EGLSurface current_draw_surface = EGL_NO_SURFACE;
+static EGLSurface current_read_surface = EGL_NO_SURFACE;
+static EGLContext current_egl_context = EGL_NO_CONTEXT;
+
 EGLContext (*host_eglCreateContext)(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list);
 EGLBoolean (*host_eglDestroyContext)(EGLDisplay dpy, EGLContext ctx);
 EGLBoolean (*host_eglMakeCurrent) (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx);
@@ -199,15 +205,46 @@ EGLBoolean eglDestroyContext (EGLDisplay dpy, EGLContext ctx) {
     context_t* old_ctx = unordered_map_remove(context_map, ctx);
     free_context(old_ctx);
     free(old_ctx);
+
+    // 如果销毁的是当前上下文，清除保存的 EGL 状态
+    if (current_egl_context == ctx) {
+        current_display = EGL_NO_DISPLAY;
+        current_draw_surface = EGL_NO_SURFACE;
+        current_read_surface = EGL_NO_SURFACE;
+        current_egl_context = EGL_NO_CONTEXT;
+        current_context = NULL;
+    }
+
     return EGL_TRUE;
 }
 
 EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
-    if(!host_eglMakeCurrent(dpy, draw, read, ctx)) return EGL_FALSE;
-    if(ctx == EGL_NO_CONTEXT) {
-        current_context = NULL;
+    // 检查是否是重复绑定相同的上下文
+    if (current_display == dpy && current_draw_surface == draw &&
+        current_read_surface == read && current_egl_context == ctx) {
+        // 上下文已经绑定，直接返回成功
         return EGL_TRUE;
     }
+
+    // 清除上下文的情况
+    if (ctx == EGL_NO_CONTEXT) {
+        current_display = EGL_NO_DISPLAY;
+        current_draw_surface = EGL_NO_SURFACE;
+        current_read_surface = EGL_NO_SURFACE;
+        current_egl_context = EGL_NO_CONTEXT;
+        current_context = NULL;
+        return host_eglMakeCurrent(dpy, draw, read, ctx);
+    }
+
+    // 新的上下文绑定
+    if(!host_eglMakeCurrent(dpy, draw, read, ctx)) return EGL_FALSE;
+
+    // 保存新的 EGL 状态
+    current_display = dpy;
+    current_draw_surface = draw;
+    current_read_surface = read;
+    current_egl_context = ctx;
+
     context_t* tw_context = unordered_map_get(context_map, ctx);
     if(tw_context == NULL) {
         printf("TinywrapperEGL: Failed to find context %p\n", ctx);
