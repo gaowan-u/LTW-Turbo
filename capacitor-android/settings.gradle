@@ -1,5 +1,7 @@
 include ':app'
 include ':capacitor-cordova-android-plugins'
+include ':ltw'
 project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
+project(':ltw').projectDir = new File('../ltw')
 
 apply from: 'capacitor.settings.gradle'
