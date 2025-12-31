@@ -26,7 +26,7 @@ void glMultiDrawArrays( GLenum mode, GLint *first, GLsizei *count, GLsizei primc
     if (valid_count == 1) {
         for (int i = 0; i < primcount; i++) {
             if (count[i] > 0) {
-                es3_functions.glDrawArrays(mode, first[i], count[i]);
+                current_context->fast_gl.glDrawArrays(mode, first[i], count[i]);
                 return;
             }
         }
@@ -35,7 +35,7 @@ void glMultiDrawArrays( GLenum mode, GLint *first, GLsizei *count, GLsizei primc
     // 多个绘制调用：逐个执行（保持原有逻辑）
     for (int i = 0; i < primcount; i++) {
         if (count[i] > 0) {
-            es3_functions.glDrawArrays(mode, first[i], count[i]);
+            current_context->fast_gl.glDrawArrays(mode, first[i], count[i]);
         }
     }
 }
@@ -46,8 +46,8 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
     if(primcount <= 0) return;
 
     GLint elementbuffer;
-    es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementbuffer);
-    es3_functions.glBindBuffer(GL_COPY_WRITE_BUFFER, current_context->multidraw_element_buffer);
+    current_context->fast_gl.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementbuffer);
+    current_context->fast_gl.glBindBuffer(GL_COPY_WRITE_BUFFER, current_context->multidraw_element_buffer);
 
     GLsizei total = 0, typebytes = type_bytes(type);
     if(typebytes <= 0) {
@@ -78,7 +78,7 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
                 return;
             }
         }
-        es3_functions.glBufferData(GL_COPY_WRITE_BUFFER, new_size, NULL, GL_STREAM_DRAW);
+        current_context->fast_gl.glBufferData(GL_COPY_WRITE_BUFFER, new_size, NULL, GL_STREAM_DRAW);
         current_context->multidraw_buffer_size = new_size;
     }
 
@@ -90,7 +90,7 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
             GLsizei icount = count[i];
             if(icount == 0) continue;
             icount *= typebytes;
-            es3_functions.glCopyBufferSubData(GL_ELEMENT_ARRAY_BUFFER, GL_COPY_WRITE_BUFFER, (GLintptr)indices[i], offset, icount);
+            current_context->fast_gl.glCopyBufferSubData(GL_ELEMENT_ARRAY_BUFFER, GL_COPY_WRITE_BUFFER, (GLintptr)indices[i], offset, icount);
             offset += icount;
         }
     } else {
@@ -100,17 +100,17 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
             GLsizei icount = count[i];
             if(icount == 0) continue;
             icount *= typebytes;
-            es3_functions.glBufferSubData(GL_COPY_WRITE_BUFFER, offset, icount, indices[i]);
+            current_context->fast_gl.glBufferSubData(GL_COPY_WRITE_BUFFER, offset, icount, indices[i]);
             offset += icount;
         }
     }
 
     // 绑定并绘制
-    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, current_context->multidraw_element_buffer);
-    es3_functions.glDrawElements(mode, total, type, 0);
+    current_context->fast_gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, current_context->multidraw_element_buffer);
+    current_context->fast_gl.glDrawElements(mode, total, type, 0);
 
     // 恢复原始绑定
     if(elementbuffer != 0) {
-        es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
+        current_context->fast_gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
     }
 }

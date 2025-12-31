@@ -562,6 +562,16 @@ void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
     }
 }
 
+void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+    if(!current_context) return;
+    current_context->fast_gl.glDrawArrays(mode, first, count);
+}
+
+void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
+    if(!current_context) return;
+    current_context->fast_gl.glDrawElements(mode, count, type, indices);
+}
+
 // 批量更新相关函数 - 用于优化纹理状态切换
 void glLTWBeginBatchUpdate(void) {
     if(!current_context) return;

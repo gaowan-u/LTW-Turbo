@@ -282,6 +282,20 @@ static void init_incontext(context_t* tw_context) {
     tw_context->pending_swizzle_count = 0;
     tw_context->swizzle_batch_mode = false;
     memset(tw_context->pending_swizzle_textures, 0, sizeof(tw_context->pending_swizzle_textures));
+
+    // 初始化热路径函数指针缓存
+    tw_context->fast_gl.glDrawArrays = es3_functions.glDrawArrays;
+    tw_context->fast_gl.glDrawElements = es3_functions.glDrawElements;
+    tw_context->fast_gl.glBindBuffer = es3_functions.glBindBuffer;
+    tw_context->fast_gl.glBindTexture = es3_functions.glBindTexture;
+    tw_context->fast_gl.glTexParameteri = es3_functions.glTexParameteri;
+    tw_context->fast_gl.glGetIntegerv = es3_functions.glGetIntegerv;
+    tw_context->fast_gl.glBufferData = es3_functions.glBufferData;
+    tw_context->fast_gl.glBufferSubData = es3_functions.glBufferSubData;
+    tw_context->fast_gl.glCopyBufferSubData = es3_functions.glCopyBufferSubData;
+    tw_context->fast_gl.glMapBufferRange = es3_functions.glMapBufferRange;
+    tw_context->fast_gl.glUnmapBuffer = es3_functions.glUnmapBuffer;
+    tw_context->fast_gl.glFlushMappedBufferRange = es3_functions.glFlushMappedBufferRange;
 }
 
 EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list) {

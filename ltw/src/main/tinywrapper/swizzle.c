@@ -34,7 +34,7 @@ static texture_swizzle_track_t* get_swizzle_track(GLenum target) {
     GLint texture;
     GLenum getter = get_textarget_query_param(target);
     if(getter == 0) return NULL;
-    es3_functions.glGetIntegerv(getter, &texture);
+    current_context->fast_gl.glGetIntegerv(getter, &texture);
     if(texture == 0) return NULL;
     texture_swizzle_track_t* track = unordered_map_get(current_context->texture_swztrack_map, (void*)texture);
     if(track == NULL) {
@@ -43,10 +43,10 @@ static texture_swizzle_track_t* get_swizzle_track(GLenum target) {
             LTW_ERROR_PRINTF("LTW: Failed to allocate swizzle track for texture %d", texture);
             return NULL;
         }
-        es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_R, (GLint*)&track->original_swizzle[0]);
-        es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_G, (GLint*)&track->original_swizzle[1]);
-        es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_B, (GLint*)&track->original_swizzle[2]);
-        es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_A, (GLint*)&track->original_swizzle[3]);
+        current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_R, (GLint*)&track->original_swizzle[0]);
+        current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_G, (GLint*)&track->original_swizzle[1]);
+        current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_B, (GLint*)&track->original_swizzle[2]);
+        current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_A, (GLint*)&track->original_swizzle[3]);
         // 初始化applied_swizzle和pending_swizzle为原始swizzle值
         memcpy(track->applied_swizzle, track->original_swizzle, sizeof(track->applied_swizzle));
         memcpy(track->pending_swizzle, track->original_swizzle, sizeof(track->pending_swizzle));
@@ -78,7 +78,7 @@ static void apply_swizzles(GLenum target, texture_swizzle_track_t* track) {
         GLint texture;
         GLenum getter = get_textarget_query_param(target);
         if(getter != 0) {
-            es3_functions.glGetIntegerv(getter, &texture);
+            current_context->fast_gl.glGetIntegerv(getter, &texture);
             if(texture != 0 && current_context->pending_swizzle_count < 64) {
                 // 检查是否已经在列表中
                 bool already_pending = false;
@@ -98,10 +98,10 @@ static void apply_swizzles(GLenum target, texture_swizzle_track_t* track) {
 
     // 立即更新模式：直接应用
     memcpy(track->applied_swizzle, new_swizzle, 4 * sizeof(GLenum));
-    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, new_swizzle[0]);
-    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_G, new_swizzle[1]);
-    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, new_swizzle[2]);
-    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_A, new_swizzle[3]);
+    current_context->fast_gl.glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, new_swizzle[0]);
+    current_context->fast_gl.glTexParameteri(target, GL_TEXTURE_SWIZZLE_G, new_swizzle[1]);
+    current_context->fast_gl.glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, new_swizzle[2]);
+    current_context->fast_gl.glTexParameteri(target, GL_TEXTURE_SWIZZLE_A, new_swizzle[3]);
 }
 
 INTERNAL void swizzle_process_upload(GLenum target, GLenum* format, GLenum* type) {
@@ -178,11 +178,11 @@ INTERNAL void swizzle_end_batch_update(void) {
 
             // 应用更新
             memcpy(track->applied_swizzle, track->pending_swizzle, 4 * sizeof(GLenum));
-            es3_functions.glBindTexture(target, texture);
-            es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, track->pending_swizzle[0]);
-            es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_G, track->pending_swizzle[1]);
-            es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, track->pending_swizzle[2]);
-            es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_A, track->pending_swizzle[3]);
+            current_context->fast_gl.glBindTexture(target, texture);
+            current_context->fast_gl.glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, track->pending_swizzle[0]);
+            current_context->fast_gl.glTexParameteri(target, GL_TEXTURE_SWIZZLE_G, track->pending_swizzle[1]);
+            current_context->fast_gl.glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, track->pending_swizzle[2]);
+            current_context->fast_gl.glTexParameteri(target, GL_TEXTURE_SWIZZLE_A, track->pending_swizzle[3]);
             track->has_pending_update = GL_FALSE;
         }
     }
