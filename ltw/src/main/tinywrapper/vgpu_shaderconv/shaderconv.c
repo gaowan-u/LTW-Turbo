@@ -1274,16 +1274,45 @@ char * ReplaceFunctionName(char * source, int * sourceLength, char * initialName
 /**
  * Remove all "uniform" keywords from uniform variables with a default initializer.
  * The default "uniform" initializer is not part of the GLSL ES specification.
+ * NOTE: Do not remove uniform keyword from sampler types, as they need to be properly declared.
  * @param source The shader as a string
  * @param sourceLength The allocated length of the shader
  * @return The shader as a string, maybe in a different memory position. Probably not here though.
  */
 char * RemoveUniformProperty(char * source){
+    // Sampler types that must keep the uniform keyword
+    const char* sampler_types[] = {
+        "sampler2D", "sampler3D", "samplerCube", "sampler2DShadow", "samplerCubeShadow",
+        "sampler2DArray", "sampler2DArrayShadow", "samplerCubeArray", "samplerCubeArrayShadow",
+        "isampler2D", "isampler3D", "isamplerCube", "isampler2DArray", "isamplerCubeArray",
+        "usampler2D", "usampler3D", "usamplerCube", "usampler2DArray", "usamplerCubeArray",
+        "samplerBuffer", "isamplerBuffer", "usamplerBuffer",
+        "sampler2DMS", "isampler2DMS", "usampler2DMS",
+        "sampler2DMSArray", "isampler2DMSArray", "usampler2DMSArray",
+        "sampler2DRect", "isampler2DRect", "usampler2DRect"
+    };
+    int num_sampler_types = sizeof(sampler_types) / sizeof(sampler_types[0]);
+
     unsigned long currentPosition = 0;
     while(1){
         unsigned long newPosition = strstrPos(source + currentPosition, "uniform ");
         if(newPosition == 0)  // No more uniform vars
             break;
+
+        // Check if this is a sampler type by looking ahead
+        int is_sampler = 0;
+        for(int i = 0; i < num_sampler_types; i++) {
+            if(strncmp(source + currentPosition + newPosition + 8, sampler_types[i], strlen(sampler_types[i])) == 0) {
+                is_sampler = 1;
+                break;
+            }
+        }
+
+        // Skip sampler types - they must keep the uniform keyword
+        if(is_sampler) {
+            currentPosition += newPosition + strlen("uniform");
+            continue;
+        }
 
         // Now, get to the end of declaration/initialization
         int endPosition = GetNextTokenPosition(source + currentPosition + newPosition, 0, ';', "\\=");

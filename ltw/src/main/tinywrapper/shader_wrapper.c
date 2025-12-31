@@ -211,11 +211,18 @@ void glGetShaderiv(GLuint shader, GLenum pname, GLint* params) {
 }
 
 static void insert_fragout_pos(char* source, int* size, const char* name, GLuint pos) {
+    if (!source || !size || !name) {
+        LTW_ERROR_PRINTF("LTWShdrWp: Invalid parameters in insert_fragout_pos (NULL pointer)");
+        return;
+    }
     char src_string[256] = { 0 };
     char dst_string[256] = { 0 };
     snprintf(src_string, sizeof(src_string), "/* LTW INSERT LOCATION %s LTW */", name);
     snprintf(dst_string, sizeof(dst_string), "layout(location = %u) ", pos);
-    gl4es_inplace_replace_simple(source, size, src_string, dst_string);
+    char* result = gl4es_inplace_replace_simple(source, size, src_string, dst_string);
+    if (!result) {
+        LTW_ERROR_PRINTF("LTWShdrWp: gl4es_inplace_replace_simple failed in insert_fragout_pos");
+    }
 }
 
 void glLinkProgram(GLuint program) {
