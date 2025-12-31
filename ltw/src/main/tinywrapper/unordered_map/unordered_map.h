@@ -32,6 +32,13 @@ struct unordered_map {
     size_t                max_allowed_size;
     size_t                mask;
     float                 load_factor;
+    // 增量扩容相关字段
+    bool                  rehashing;              // 是否正在进行增量扩容
+    unordered_map_entry** old_table;              // 旧表指针
+    size_t                old_capacity;           // 旧表容量
+    size_t                old_mask;               // 旧表掩码
+    size_t                rehash_index;           // 当前迁移到的索引
+    size_t                rehash_batch_size;      // 每次迁移的元素数量
 };
 
 typedef struct unordered_map          unordered_map;

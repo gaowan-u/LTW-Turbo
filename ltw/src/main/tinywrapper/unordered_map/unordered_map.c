@@ -94,16 +94,72 @@ unordered_map* unordered_map_alloc(size_t initial_capacity,
     map->mask             = initial_capacity - 1;
     map->max_allowed_size = (size_t)(initial_capacity * load_factor);
 
+    // 初始化增量扩容相关字段
+    map->rehashing        = false;
+    map->old_table        = NULL;
+    map->old_capacity     = 0;
+    map->old_mask         = 0;
+    map->rehash_index     = 0;
+    map->rehash_batch_size = 16;  // 每次迁移 16 个元素
+
     return map;
+}
+
+// 增量迁移一批元素
+static void incremental_rehash(unordered_map* map) {
+    if (!map->rehashing) return;
+
+    size_t migrated = 0;
+    unordered_map_entry* entry;
+    unordered_map_entry* next_entry;
+    size_t index;
+
+    // 每次迁移一批元素
+    while (migrated < map->rehash_batch_size && map->rehash_index < map->old_capacity) {
+        entry = map->old_table[map->rehash_index];
+
+        // 迁移这个 bucket 的所有元素
+        while (entry) {
+            next_entry = entry->chain_next;
+
+            // 重新计算在新表中的位置
+            index = map->hash_function(entry->key) & map->mask;
+
+            // 插入到新表
+            entry->chain_next = map->table[index];
+            map->table[index] = entry;
+
+            entry = next_entry;
+            migrated++;
+        }
+
+        // 清空旧表的这个 bucket
+        map->old_table[map->rehash_index] = NULL;
+        map->rehash_index++;
+    }
+
+    // 完成迁移
+    if (map->rehash_index >= map->old_capacity) {
+        free(map->old_table);
+        map->old_table = NULL;
+        map->old_capacity = 0;
+        map->old_mask = 0;
+        map->rehashing = false;
+        map->rehash_index = 0;
+    }
 }
 
 static void ensure_capacity(unordered_map* map)
 {
     size_t new_capacity;
     size_t new_mask;
-    size_t index;
-    unordered_map_entry* entry;
     unordered_map_entry** new_table;
+
+    // 如果正在扩容，先执行一次增量迁移
+    if (map->rehashing) {
+        incremental_rehash(map);
+        return;
+    }
 
     if (map->size < map->max_allowed_size)
     {
@@ -119,20 +175,21 @@ static void ensure_capacity(unordered_map* map)
         return;
     }
 
-    /* Rehash the entries. */
-    for (entry = map->head; entry; entry = entry->next)
-    {
-        index = map->hash_function(entry->key) & new_mask;
-        entry->chain_next = new_table[index];
-        new_table[index] = entry;
-    }
+    // 保存旧表信息用于增量迁移
+    map->old_table = map->table;
+    map->old_capacity = map->table_capacity;
+    map->old_mask = map->mask;
+    map->rehashing = true;
+    map->rehash_index = 0;
 
-    free(map->table);
-
+    // 设置新表
     map->table            = new_table;
     map->table_capacity   = new_capacity;
     map->mask             = new_mask;
     map->max_allowed_size = (size_t)(new_capacity * map->load_factor);
+
+    // 立即迁移第一批元素
+    incremental_rehash(map);
 }
 
 void* unordered_map_put(unordered_map* map, void* key, void* value)
@@ -147,6 +204,11 @@ void* unordered_map_put(unordered_map* map, void* key, void* value)
         return NULL;
     }
 
+    // 如果正在扩容，先执行一次增量迁移
+    if (map->rehashing) {
+        incremental_rehash(map);
+    }
+
     hash_value = map->hash_function(key);
     index = hash_value & map->mask;
 
@@ -157,6 +219,21 @@ void* unordered_map_put(unordered_map* map, void* key, void* value)
             old_value = entry->value;
             entry->value = value;
             return old_value;
+        }
+    }
+
+    // 如果还在扩容，也在旧表中查找
+    if (map->rehashing) {
+        index = hash_value & map->old_mask;
+
+        for (entry = map->old_table[index]; entry; entry = entry->chain_next)
+        {
+            if (map->equals_function(entry->key, key))
+            {
+                old_value = entry->value;
+                entry->value = value;
+                return old_value;
+            }
         }
     }
 
@@ -224,6 +301,12 @@ void* unordered_map_get(unordered_map* map, void* key)
         return NULL;
     }
 
+    // 如果正在扩容，先执行一次增量迁移
+    if (map->rehashing) {
+        incremental_rehash(map);
+    }
+
+    // 在新表中查找
     index = map->hash_function(key) & map->mask;
 
     for (p_entry = map->table[index]; p_entry; p_entry = p_entry->chain_next)
@@ -231,6 +314,19 @@ void* unordered_map_get(unordered_map* map, void* key)
         if (map->equals_function(key, p_entry->key))
         {
             return p_entry->value;
+        }
+    }
+
+    // 如果还在扩容，也在旧表中查找
+    if (map->rehashing) {
+        index = map->hash_function(key) & map->old_mask;
+
+        for (p_entry = map->old_table[index]; p_entry; p_entry = p_entry->chain_next)
+        {
+            if (map->equals_function(key, p_entry->key))
+            {
+                return p_entry->value;
+            }
         }
     }
 
@@ -247,6 +343,11 @@ void* unordered_map_remove(unordered_map* map, void* key)
     if (!map)
     {
         return NULL;
+    }
+
+    // 如果正在扩容，先执行一次增量迁移
+    if (map->rehashing) {
+        incremental_rehash(map);
     }
 
     index = map->hash_function(key) & map->mask;
@@ -296,6 +397,57 @@ void* unordered_map_remove(unordered_map* map, void* key)
         }
 
         prev_entry = current_entry;
+    }
+
+    // 如果还在扩容，也在旧表中查找并删除
+    if (map->rehashing) {
+        index = map->hash_function(key) & map->old_mask;
+
+        prev_entry = NULL;
+
+        for (current_entry = map->old_table[index];
+             current_entry;
+             current_entry = current_entry->chain_next)
+        {
+            if (map->equals_function(key, current_entry->key))
+            {
+                if (prev_entry)
+                {
+                    prev_entry->chain_next = current_entry->chain_next;
+                }
+                else
+                {
+                    map->old_table[index] = current_entry->chain_next;
+                }
+
+                /* Unlink from the global iteration chain. */
+                if (current_entry->prev)
+                {
+                    current_entry->prev->next = current_entry->next;
+                }
+                else
+                {
+                    map->head = current_entry->next;
+                }
+
+                if (current_entry->next)
+                {
+                    current_entry->next->prev = current_entry->prev;
+                }
+                else
+                {
+                    map->tail = current_entry->prev;
+                }
+
+                value = current_entry->value;
+                map->size--;
+                map->mod_count++;
+                free(current_entry);
+                return value;
+            }
+
+            prev_entry = current_entry;
+        }
     }
 
     return NULL;
@@ -369,6 +521,12 @@ void unordered_map_free(unordered_map* map)
 
     unordered_map_clear(map);
     free(map->table);
+
+    // 释放旧表（如果扩容未完成）
+    if (map->old_table) {
+        free(map->old_table);
+    }
+
     free(map);
 }
 
