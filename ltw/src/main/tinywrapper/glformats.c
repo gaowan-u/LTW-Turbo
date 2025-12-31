@@ -101,8 +101,10 @@ void pick_format(GLint *internalformat, GLenum* type, GLenum* format) {
         // So, switch to that.
         case GL_R8_SNORM:
             *internalformat = GL_R16F;
+            break;
         case GL_RG8_SNORM:
             *internalformat = GL_RG16F;
+            break;
         case GL_RGBA8_SNORM:
             *internalformat = GL_RGBA16F;
             break;
@@ -117,6 +119,7 @@ void pick_format(GLint *internalformat, GLenum* type, GLenum* format) {
         case GL_RGB16F:
         case GL_RGB32F:
             *internalformat = GL_R11F_G11F_B10F;
+            break;
         case GL_RGB8UI:
             *internalformat = GL_RGB8;
             break;

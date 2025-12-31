@@ -67,6 +67,7 @@ void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const voi
     uintptr_t indicesPointer = (uintptr_t)indices;
     if(indicesPointer % typeBytes != 0) {
         printf("LTW: misaligned base vertex draw not supported\n");
+        return;
     }
     indirect_pass_t indirect_pass;
     indirect_pass.count = count;

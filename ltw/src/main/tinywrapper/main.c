@@ -304,10 +304,10 @@ void glFlushMappedBufferRange( 	GLenum target,
 
 const GLubyte* glGetStringi(GLenum name, GLuint index) {
     if(!current_context || name != GL_EXTENSIONS) return NULL;
-    if(index >= current_context->nextras) {
-        return es3_functions.glGetStringi(name, index - current_context->nextras);
-    } else {
+    if(index < current_context->nextras) {
         return (const GLubyte*)current_context->extra_extensions_array[index];
+    } else {
+        return es3_functions.glGetStringi(name, index - current_context->nextras);
     }
 }
 

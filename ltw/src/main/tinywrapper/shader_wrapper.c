@@ -187,6 +187,7 @@ void glShaderSource(GLuint shader, GLsizei count, const GLchar *const*string, co
     size_t offset = 0;
     for(GLsizei i = 0; i < count; i++) {
         memcpy(&target_string[offset], string[i], SRC_LEN(i));
+        offset += SRC_LEN(i);
     }
     target_string[target_length] = 0;
 

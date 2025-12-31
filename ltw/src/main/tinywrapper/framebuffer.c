@@ -73,11 +73,11 @@ void rebind_framebuffer(GLenum target, framebuffer_t *framebuffer, GLenum virt_a
     // 保存当前绑定的状态，避免重复绑定
     GLenum cached_target = framebuffer->phys_drawbuffers[virt_index];
     GLuint cached_object = framebuffer->color_objects[virt_index];
+    GLuint current_object = framebuffer->color_objects[virt_index];
 
     // 如果目标已经绑定到正确的对象，跳过
-    if(cached_target != GL_NONE && cached_target != phys_attachment) {
-        // 目标已经改变了，需要清除缓存
-        framebuffer->phys_drawbuffers[virt_index] = GL_NONE;
+    if(cached_target != GL_NONE && cached_target == phys_attachment && cached_object == current_object) {
+        return;
     }
 
     switch (framebuffer->color_targets[virt_index]) {
@@ -85,28 +85,19 @@ void rebind_framebuffer(GLenum target, framebuffer_t *framebuffer, GLenum virt_a
             es3_functions.glFramebufferRenderbuffer(target, phys_attachment, GL_RENDERBUFFER, 0);
             break;
         case GL_RENDERBUFFER:
-            // 检查是否已经绑定到相同的renderbuffer
-            if(cached_object != framebuffer->color_objects[virt_index]) {
-                es3_functions.glFramebufferRenderbuffer(target, phys_attachment, GL_RENDERBUFFER, framebuffer->color_objects[virt_index]);
-            }
+            es3_functions.glFramebufferRenderbuffer(target, phys_attachment, GL_RENDERBUFFER, framebuffer->color_objects[virt_index]);
             break;
         case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER:
-            // 检查是否已经绑定到相同的纹理层
-            if(cached_object != framebuffer->color_objects[virt_index]) {
-                es3_functions.glFramebufferTextureLayer(target, phys_attachment,
-                                                        framebuffer->color_objects[virt_index],
-                                                        framebuffer->color_levels[virt_index],
-                                                        framebuffer->color_layers[virt_index]);
-            }
+            es3_functions.glFramebufferTextureLayer(target, phys_attachment,
+                                                    framebuffer->color_objects[virt_index],
+                                                    framebuffer->color_levels[virt_index],
+                                                    framebuffer->color_layers[virt_index]);
             break;
         default:
-            // 检查是否已经绑定到相同的纹理
-            if(cached_object != framebuffer->color_objects[virt_index]) {
-                es3_functions.glFramebufferTexture2D(target, phys_attachment,
-                                                     framebuffer->color_targets[virt_index],
-                                                     framebuffer->color_objects[virt_index],
-                                                     framebuffer->color_levels[virt_index]);
-            }
+            es3_functions.glFramebufferTexture2D(target, phys_attachment,
+                                                 framebuffer->color_targets[virt_index],
+                                                 framebuffer->color_objects[virt_index],
+                                                 framebuffer->color_levels[virt_index]);
             break;
     }
     // 更新缓存

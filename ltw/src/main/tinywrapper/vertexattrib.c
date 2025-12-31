@@ -198,10 +198,10 @@ void glVertexAttrib4Nubv( 	GLuint index,
 
 void glVertexAttrib4Nusv( 	GLuint index,
                              const GLushort *v) {
-    GLfloat fv0 = ((GLfloat)v[0] / 32767.0f);
-    GLfloat fv1 = ((GLfloat)v[1] / 32767.0f);
-    GLfloat fv2 = ((GLfloat)v[2] / 32767.0f);
-    GLfloat fv3 = ((GLfloat)v[3] / 32767.0f);
+    GLfloat fv0 = ((GLfloat)v[0] / 65535.0f);
+    GLfloat fv1 = ((GLfloat)v[1] / 65535.0f);
+    GLfloat fv2 = ((GLfloat)v[2] / 65535.0f);
+    GLfloat fv3 = ((GLfloat)v[3] / 65535.0f);
     es3_functions.glVertexAttrib4f(index, fv0, fv1, fv2, fv3);
 }
 

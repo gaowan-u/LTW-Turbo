@@ -241,21 +241,24 @@ EGLBoolean eglDestroyContext (EGLDisplay dpy, EGLContext ctx) {
 }
 
 EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
+    // 清除上下文的情况
+    if (ctx == EGL_NO_CONTEXT) {
+        if (current_display != EGL_NO_DISPLAY || current_draw_surface != EGL_NO_SURFACE ||
+            current_read_surface != EGL_NO_SURFACE || current_egl_context != EGL_NO_CONTEXT) {
+            current_display = EGL_NO_DISPLAY;
+            current_draw_surface = EGL_NO_SURFACE;
+            current_read_surface = EGL_NO_SURFACE;
+            current_egl_context = EGL_NO_CONTEXT;
+            current_context = NULL;
+        }
+        return host_eglMakeCurrent(dpy, draw, read, ctx);
+    }
+
     // 检查是否是重复绑定相同的上下文
     if (current_display == dpy && current_draw_surface == draw &&
         current_read_surface == read && current_egl_context == ctx) {
         // 上下文已经绑定，直接返回成功
         return EGL_TRUE;
-    }
-
-    // 清除上下文的情况
-    if (ctx == EGL_NO_CONTEXT) {
-        current_display = EGL_NO_DISPLAY;
-        current_draw_surface = EGL_NO_SURFACE;
-        current_read_surface = EGL_NO_SURFACE;
-        current_egl_context = EGL_NO_CONTEXT;
-        current_context = NULL;
-        return host_eglMakeCurrent(dpy, draw, read, ctx);
     }
 
     // 新的上下文绑定

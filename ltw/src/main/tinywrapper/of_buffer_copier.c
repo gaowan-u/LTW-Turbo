@@ -104,8 +104,10 @@ void glTexSubImage2D(GLenum target,
                      GLenum type,
                      const void * data) {
     if(!current_context) return;
+    // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查
+    bool is_depth = (format == GL_DEPTH_COMPONENT);
     swizzle_process_upload(target, &format, &type);
-    if(format == GL_DEPTH_COMPONENT) {
+    if(is_depth) {
         framebuffer_copier_t* copier = &current_context->framebuffer_copier;
         if(width == copier->depthWidth && height == copier->depthHeight && copier->depthData == data) {
             buffer_copier_release(target, level, xoffset, yoffset, width, height);
