@@ -67,6 +67,9 @@ typedef struct {
 
 #define FORMAT_CACHE_SIZE 64
 
+// 前向声明内存池
+typedef struct mempool mempool_t;
+
 typedef struct {
     EGLContext phys_context;    //实际的EGL上下文句柄
     bool context_rdy;   //标记上下文是否已准备就绪
@@ -90,12 +93,17 @@ typedef struct {
     framebuffer_t* cached_draw_framebuffer;   //缓存的绘制帧缓冲对象
     framebuffer_t* cached_read_framebuffer;   //缓存的读取帧缓冲对象
     char* extensions_string;    //扩展字符串
+    size_t extensions_capacity; //扩展字符串分配的容量
     size_t nextras;         //额外扩展数量
     int nextensions_es;     //ES扩展数量
     char** extra_extensions_array;      //额外扩展字符串数组
     format_cache_entry_t format_cache[FORMAT_CACHE_SIZE];   //纹理格式缓存
     int format_cache_index;    //格式缓存索引
     GLsizei multidraw_buffer_size;  //多重绘制缓冲区大小
+    mempool_t* shader_info_pool;    //shader_info_t 内存池
+    mempool_t* program_info_pool;   //program_info_t 内存池
+    mempool_t* framebuffer_pool;    //framebuffer_t 内存池
+    mempool_t* swizzle_track_pool;  //texture_swizzle_track_t 内存池
 } context_t;        //表示OpenGL ES的上下文状态信息
 
 extern thread_local context_t *current_context;

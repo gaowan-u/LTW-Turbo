@@ -6,7 +6,8 @@
 
 #include <proc.h>
 #include <egl.h>
-#include <stdio.h>
+#include "simd_utils.h"
+#include "debug.h"
 
 /* glVertexAttribXs family */
 void glVertexAttrib1s( 	GLuint index,
@@ -193,26 +194,27 @@ void glVertexAttrib4Nub( 	GLuint index,
 
 void glVertexAttrib4Nubv( 	GLuint index,
                              const GLubyte *v) {
-    glVertexAttrib4Nub(index, v[0], v[1], v[2], v[3]);
+    float src[4] = {(GLfloat)v[0], (GLfloat)v[1], (GLfloat)v[2], (GLfloat)v[3]};
+    float dst[4];
+    normalize_4values(src, dst, 1.0f/255.0f, 1.0f/255.0f);
+    es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
 }
 
 void glVertexAttrib4Nusv( 	GLuint index,
                              const GLushort *v) {
-    GLfloat fv0 = ((GLfloat)v[0] / 65535.0f);
-    GLfloat fv1 = ((GLfloat)v[1] / 65535.0f);
-    GLfloat fv2 = ((GLfloat)v[2] / 65535.0f);
-    GLfloat fv3 = ((GLfloat)v[3] / 65535.0f);
-    es3_functions.glVertexAttrib4f(index, fv0, fv1, fv2, fv3);
+    float src[4] = {(GLfloat)v[0], (GLfloat)v[1], (GLfloat)v[2], (GLfloat)v[3]};
+    float dst[4];
+    normalize_4values(src, dst, 1.0f/65535.0f, 1.0f/65535.0f);
+    es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
 }
 
 void glVertexAttrib4Nuiv( 	GLuint index,
                              const GLuint *v) {
     // GLfloat has a precision limit of 24 bits, so truncate the input integers to it.
-    GLfloat fv0 = ((GLfloat)v[0] / 4294967295.0f);
-    GLfloat fv1 = ((GLfloat)v[1] / 4294967295.0f);
-    GLfloat fv2 = ((GLfloat)v[2] / 4294967295.0f);
-    GLfloat fv3 = ((GLfloat)v[3] / 4294967295.0f);
-    es3_functions.glVertexAttrib4f(index, fv0, fv1, fv2, fv3);
+    float src[4] = {(GLfloat)v[0], (GLfloat)v[1], (GLfloat)v[2], (GLfloat)v[3]};
+    float dst[4];
+    normalize_4values(src, dst, 1.0f/4294967295.0f, 1.0f/4294967295.0f);
+    es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
 }
 
 static float bnormalize(GLbyte x) {
@@ -225,43 +227,47 @@ static float inormalize(GLint x) {
     return x < 0 ? (GLfloat)x/2147483648.0f : (GLfloat)x/2147483647.0f;
 }
 
+// SIMD 优化的归一化函数
+static void normalize_4values(const float* src, float* dst, float scale_pos, float scale_neg) {
+#if LTW_HAS_NEON
+    float32x4_t v = vld1q_f32(src);
+    // 创建掩码来区分正负数
+    uint32x4_t mask = vcltq_f32(v, vdupq_n_f32(0.0f));
+    float32x4_t scale_masked = vbslq_f32(mask, vdupq_n_f32(scale_neg), vdupq_n_f32(scale_pos));
+    v = vmulq_f32(v, scale_masked);
+    vst1q_f32(dst, v);
+#else
+    for (int i = 0; i < 4; i++) {
+        dst[i] = src[i] < 0 ? src[i] * scale_neg : src[i] * scale_pos;
+    }
+#endif
+}
+
 void glVertexAttrib4Nbv( 	GLuint index,
                             const GLbyte *v) {
-    es3_functions.glVertexAttrib4f(
-            index,
-            bnormalize(v[0]),
-            bnormalize(v[1]),
-            bnormalize(v[2]),
-            bnormalize(v[3])
-    );
+    float src[4] = {(GLfloat)v[0], (GLfloat)v[1], (GLfloat)v[2], (GLfloat)v[3]};
+    float dst[4];
+    normalize_4values(src, dst, 1.0f/127.0f, 1.0f/128.0f);
+    es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
 }
 
 void glVertexAttrib4Nsv( 	GLuint index,
                             const GLshort *v) {
-    es3_functions.glVertexAttrib4f(
-            index,
-            snormalize(v[0]),
-            snormalize(v[1]),
-            snormalize(v[2]),
-            snormalize(v[3])
-    );
+    float src[4] = {(GLfloat)v[0], (GLfloat)v[1], (GLfloat)v[2], (GLfloat)v[3]};
+    float dst[4];
+    normalize_4values(src, dst, 1.0f/32767.0f, 1.0f/32768.0f);
+    es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
 }
 
 void glVertexAttrib4Niv( 	GLuint index,
                             const GLint *v) {
-    es3_functions.glVertexAttrib4f(
-            index,
-            inormalize(v[0]),
-            inormalize(v[1]),
-            inormalize(v[2]),
-            inormalize(v[3])
-    );
+    float src[4] = {(GLfloat)v[0], (GLfloat)v[1], (GLfloat)v[2], (GLfloat)v[3]};
+    float dst[4];
+    normalize_4values(src, dst, 1.0f/2147483647.0f, 1.0f/2147483648.0f);
+    es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
 }
 
 void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer) {
-    // 打印一条消息来确认函数被成功拦截
-    printf("LTW-DEBUG: glVertexAttribPointer called! index=%u, size=%d\n", index, size);
-
     // 在初期，为了保持程序能运行，我们先直接调用底层的 GLES 函数
     es3_functions.glVertexAttribPointer(index, size, type, normalized, stride, pointer);
 }

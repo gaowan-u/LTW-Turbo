@@ -174,11 +174,54 @@ char* gl4es_find_string_nc(char* pBuffer, const char* S)
 
 char* gl4es_resize_if_needed(char* pBuffer, int *size, int addsize) {
     char* p = pBuffer;
-    int newsize = strlen(pBuffer)+addsize+1;
-    if (newsize>*size) {
-        //newsize += 100;
-        p = (char*)realloc(pBuffer, newsize);
-        *size=newsize;
+    int current_size = *size;
+    int str_len = (int)strlen(pBuffer);
+    
+    // 检查 addsize 是否会导致溢出
+    if (addsize < 0 || str_len < 0) {
+        fprintf(stderr, "LTW: Invalid size parameters in gl4es_resize_if_needed\n");
+        return NULL;
+    }
+    
+    // 检查 newsize 是否溢出
+    if (str_len > INT_MAX - addsize - 1) {
+        fprintf(stderr, "LTW: Integer overflow in gl4es_resize_if_needed (newsize calculation)\n");
+        return NULL;
+    }
+    int newsize = str_len + addsize + 1;
+    
+    if (newsize > current_size) {
+        // Optimize: Pre-allocate extra space to reduce frequent realloc calls
+        // Use exponential growth strategy (1.5x or 2x) for better amortized performance
+        int growth_size = current_size + (current_size >> 1); // 1.5x growth
+        if (growth_size < current_size) {
+            // 溢出检查失败，使用更保守的增长策略
+            growth_size = current_size + 256;
+        }
+        if (growth_size < newsize) {
+            growth_size = newsize;
+        }
+        // Ensure minimum growth of 256 bytes to avoid tiny allocations
+        if (growth_size - current_size < 256) {
+            if (current_size > INT_MAX - 256) {
+                fprintf(stderr, "LTW: Integer overflow in gl4es_resize_if_needed (minimum growth)\n");
+                return NULL;
+            }
+            growth_size = current_size + 256;
+        }
+        // 最终溢出检查
+        if (growth_size < current_size || growth_size < newsize) {
+            fprintf(stderr, "LTW: Integer overflow in gl4es_resize_if_needed (final check)\n");
+            return NULL;
+        }
+        char* new_ptr = (char*)realloc(pBuffer, growth_size);
+        if (!new_ptr) {
+            // realloc failed, log error and return NULL to indicate failure
+            fprintf(stderr, "LTW: Failed to reallocate buffer in gl4es_resize_if_needed (requested %d bytes)\n", growth_size);
+            return NULL;
+        }
+        p = new_ptr;
+        *size = growth_size;
     }
     return p;
 }
@@ -217,7 +260,7 @@ int isValidFunctionName(char value){
 char* gl4es_str_next(char *pBuffer, const char* S) {
     if(!pBuffer) return NULL;
     char *p = strstr(pBuffer, S);
-    return (p)?p:(p+strlen(S));
+    return p ? p : NULL;
 }
 
 char* gl4es_next_str(char* pBuffer) {

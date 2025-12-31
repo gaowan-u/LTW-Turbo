@@ -6,6 +6,7 @@
 
 #include "proc.h"
 #include "egl.h"
+#include "mempool.h"
 #include <string.h>
 #include "libraryinternal.h"
 //#include <GL/glext.h>
@@ -33,9 +34,14 @@ static texture_swizzle_track_t* get_swizzle_track(GLenum target) {
     GLenum getter = get_textarget_query_param(target);
     if(getter == 0) return NULL;
     es3_functions.glGetIntegerv(getter, &texture);
+    if(texture == 0) return NULL;
     texture_swizzle_track_t* track = unordered_map_get(current_context->texture_swztrack_map, (void*)texture);
     if(track == NULL) {
-        track = malloc(sizeof(texture_swizzle_track_t));
+        track = mempool_alloc(current_context->swizzle_track_pool);
+        if(!track) {
+            LTW_ERROR_PRINTF("LTW: Failed to allocate swizzle track for texture %d", texture);
+            return NULL;
+        }
         es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_R, (GLint*)&track->original_swizzle[0]);
         es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_G, (GLint*)&track->original_swizzle[1]);
         es3_functions.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_B, (GLint*)&track->original_swizzle[2]);

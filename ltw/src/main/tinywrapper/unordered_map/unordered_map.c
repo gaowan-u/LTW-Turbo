@@ -165,6 +165,10 @@ void* unordered_map_put(unordered_map* map, void* key, void* value)
     /* Recompute the index since it is possibly changed by 'ensure_capacity' */
     index             = hash_value & map->mask;
     entry             = unordered_map_entry_alloc(key, value);
+    if (!entry)
+    {
+        return NULL;
+    }
     entry->chain_next = map->table[index];
     map->table[index] = entry;
 
@@ -456,7 +460,7 @@ bool unordered_map_iterator_is_disturbed(unordered_map_iterator* iterator)
 {
     if (!iterator)
     {
-        false;
+        return false;
     }
 
     return iterator->expected_mod_count != iterator->map->mod_count;

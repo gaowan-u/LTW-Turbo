@@ -19,6 +19,8 @@
 #include "swizzle.h"
 #include "libraryinternal.h"
 #include "env.h"
+#include "mempool.h"
+#include "debug.h"
 
 //GL清空深度缓存使用glClearDepth这个GL的api
 void glClearDepth(GLdouble depth) {
@@ -41,11 +43,11 @@ void *glMapBuffer(GLenum target, GLenum access) {   //GLenum是unsigned int类�
         case GL_SHADER_STORAGE_BUFFER:
         // GL 4.4
         case GL_QUERY_BUFFER:
-            printf("ERROR: glMapBuffer unsupported target=0x%x\n", target);
+            LTW_ERROR_PRINTF("glMapBuffer unsupported target=0x%x", target);
             break; // not supported for now --> 现在暂不支持
 	    case GL_DRAW_INDIRECT_BUFFER:
         case GL_TEXTURE_BUFFER:
-            printf("ERROR: glMapBuffer unimplemented target=0x%x\n", target);
+            LTW_ERROR_PRINTF("glMapBuffer unimplemented target=0x%x", target);
             break;
     }   //选择GL版本
 
@@ -126,7 +128,7 @@ static bool trigger_texlevelparameter = false;  //纹理级别参数触发器，
 static bool check_texlevelparameter() {
     if(current_context->es31) return true;  //如果支持OpenGL ES 3.1则返回真
     if(trigger_texlevelparameter) return false; //如果触发器为真则返回假
-    printf("glGetTexLevelParameter* functions are not supported below OpenGL ES 3.1\n");    //前两项都未执行
+    LTW_ERROR_PRINTF("glGetTexLevelParameter* functions are not supported below OpenGL ES 3.1");
     trigger_texlevelparameter = true;   //开启触发器
     return false;   //返回假
 }
@@ -189,7 +191,7 @@ INTERNAL bool filter_params_float(GLenum target, GLenum pname, GLfloat param) {
         if(param != 0.0f) {
             static bool lodbias_trigger = false;
             if(!lodbias_trigger) {
-                printf("LTW: setting GL_TEXTURE_LOD_BIAS to nondefault value not supported\n");
+                LTW_ERROR_PRINTF("LTW: setting GL_TEXTURE_LOD_BIAS to nondefault value not supported");
             }
         }
         return false;
@@ -238,7 +240,7 @@ void glTexParameterIiv( 	GLenum target,
     if(!current_context) return;
     if(pname != GL_TEXTURE_SWIZZLE_RGBA) {
         if(!trigger_gltexparameteri) {
-            printf("LTW: glTexParameterIiv for parameters other than GL_TEXTURE_SWIZZLE_RGBA is not supported\n");
+            LTW_ERROR_PRINTF("LTW: glTexParameterIiv for parameters other than GL_TEXTURE_SWIZZLE_RGBA is not supported");
             trigger_gltexparameteri = true;
         }
         return;
@@ -252,7 +254,7 @@ void glTexParameterIuiv( 	GLenum target,
     if(!current_context) return;
     if(pname != GL_TEXTURE_SWIZZLE_RGBA) {
         if(!trigger_gltexparameteri) {
-            printf("LTW: glTexParameterIuiv for parameters other than GL_TEXTURE_SWIZZLE_RGBA is not supported\n");
+            LTW_ERROR_PRINTF("LTW: glTexParameterIuiv for parameters other than GL_TEXTURE_SWIZZLE_RGBA is not supported");
             trigger_gltexparameteri = true;
         }
         return;
@@ -304,7 +306,7 @@ void glFlushMappedBufferRange( 	GLenum target,
 
 const GLubyte* glGetStringi(GLenum name, GLuint index) {
     if(!current_context || name != GL_EXTENSIONS) return NULL;
-    if(index < current_context->nextras) {
+    if(index < current_context->nextras && current_context->extra_extensions_array != NULL) {
         return (const GLubyte*)current_context->extra_extensions_array[index];
     } else {
         return es3_functions.glGetStringi(name, index - current_context->nextras);
@@ -328,7 +330,7 @@ const GLubyte* glGetString(GLenum name) {
     }
 }
 
-static bool debug = false;
+bool debug = false;
 
 void glEnable(GLenum cap) {
     if(!current_context) return;
@@ -428,7 +430,7 @@ void glGetIntegerv(GLenum pname, GLint* data) {
         case GL_NUM_EXTENSIONS:
             es3_functions.glGetIntegerv(pname, data);
             (*data) += current_context->nextras;
-            printf("GL_NUM_EXTENSIONS: %i\n", (*data));
+            LTW_DEBUG_PRINTF("GL_NUM_EXTENSIONS: %i", (*data));
             break;
         case GL_MAX_COLOR_ATTACHMENTS:
             *data = MAX_FBTARGETS;
@@ -446,7 +448,9 @@ void glGetQueryObjectiv( 	GLuint id,
                             GLint * params) {
     if(!current_context) return;
     // This is not recommended but i don't care
-    es3_functions.glGetQueryObjectuiv(id, pname, (GLuint*)params);
+    GLuint temp;
+    es3_functions.glGetQueryObjectuiv(id, pname, &temp);
+    *params = (GLint)temp;
 }
 
 void glDepthRange(GLdouble nearVal,
@@ -457,10 +461,11 @@ void glDepthRange(GLdouble nearVal,
 
 void glDeleteTextures(GLsizei n, const GLuint *textures) {
     if(!current_context) return;
+    if(!textures) return;
     es3_functions.glDeleteTextures(n, textures);
     for(int i = 0; i < n; i++) {
         void* tracker = unordered_map_remove(current_context->texture_swztrack_map, (void*)textures[i]);
-        free(tracker);
+        if(tracker) mempool_free(current_context->swizzle_track_pool, tracker);
     }
 }
 
@@ -468,11 +473,13 @@ static bool buf_tex_trigger = false;
 
 void glTexBuffer(GLenum target, GLenum internalFormat, GLuint buffer) {
     if(!current_context) return;
-    if(current_context->es32) es3_functions.glTexBuffer(target, internalFormat, buffer);
-    else if(current_context->buffer_texture_ext) es3_functions.glTexBufferEXT(target, internalFormat, buffer);
-    else if(!buf_tex_trigger) {
+    if(current_context->es32 && es3_functions.glTexBuffer) {
+        es3_functions.glTexBuffer(target, internalFormat, buffer);
+    } else if(current_context->buffer_texture_ext && es3_functions.glTexBufferEXT) {
+        es3_functions.glTexBufferEXT(target, internalFormat, buffer);
+    } else if(!buf_tex_trigger) {
         buf_tex_trigger = true;
-        printf("LTW: Buffer textures aren't supported on your device\n");
+        LTW_ERROR_PRINTF("LTW: Buffer textures aren't supported on your device");
     }
 }
 
@@ -482,11 +489,13 @@ void glTexBufferARB(GLenum target, GLenum internalFormat, GLuint buffer) {
 
 void glTexBufferRange(GLenum target, GLenum internalFormat, GLuint buffer, GLintptr offset, GLsizeiptr size) {
     if(!current_context) return;
-    if(current_context->es32) es3_functions.glTexBufferRange(target, internalFormat, buffer, offset, size);
-    else if(current_context->buffer_texture_ext) es3_functions.glTexBufferRangeEXT(target, internalFormat, buffer, offset, size);
-    else if(!buf_tex_trigger) {
+    if(current_context->es32 && es3_functions.glTexBufferRange) {
+        es3_functions.glTexBufferRange(target, internalFormat, buffer, offset, size);
+    } else if(current_context->buffer_texture_ext && es3_functions.glTexBufferRangeEXT) {
+        es3_functions.glTexBufferRangeEXT(target, internalFormat, buffer, offset, size);
+    } else if(!buf_tex_trigger) {
         buf_tex_trigger = true;
-        printf("LTW: Buffer textures aren't supported on your device\n");
+        LTW_ERROR_PRINTF("LTW: Buffer textures aren't supported on your device");
     }
 }
 
@@ -501,10 +510,10 @@ __attribute((constructor)) void init_noerror() {
     debug = env_istrue("LTW_DEBUG");
     never_flush_buffers = env_istrue_d("LTW_NEVER_FLUSH_BUFFERS", true);
     coherent_dynamic_storage = env_istrue_d("LTW_COHERENT_DYNAMIC_STORAGE", true);
-    if(!noerror) printf("LTW will NOT ignore GL errors. This may break mods, consider yourself warned.\n");
-    if(coherent_dynamic_storage) printf("LTW will force dynamic storage buffers to be coherent.\n");
-    if(debug) printf("LTW will allow GL_DEBUG_OUTPUT to be enabled. Expect massive logs.\n");
-    if(never_flush_buffers) printf("LTW will prevent all explicit buffer flushes.\n");
+    if(!noerror) LTW_ERROR_PRINTF("LTW will NOT ignore GL errors. This may break mods, consider yourself warned.");
+    if(coherent_dynamic_storage) LTW_ERROR_PRINTF("LTW will force dynamic storage buffers to be coherent.");
+    if(debug) LTW_ERROR_PRINTF("LTW will allow GL_DEBUG_OUTPUT to be enabled. Expect massive logs.");
+    if(never_flush_buffers) LTW_ERROR_PRINTF("LTW will prevent all explicit buffer flushes.");
 }
 
 GLenum glGetError() {
@@ -523,32 +532,32 @@ void glDebugMessageControl( 	GLenum source,
 
 // 测试拦截函数 - 用于验证LTW拦截功能
 void glTestIntercept(void) {
-    printf("LTW INTERCEPT SUCCESS: glTestIntercept called - LTW is actively intercepting OpenGL calls!\n");
-    printf("LTW STATUS: Interception layer is working correctly\n");
-    printf("LTW DEBUG: This proves LTW can intercept and map OpenGL functions\n");
+    LTW_ERROR_PRINTF("LTW INTERCEPT SUCCESS: glTestIntercept called - LTW is actively intercepting OpenGL calls!");
+    LTW_ERROR_PRINTF("LTW STATUS: Interception layer is working correctly");
+    LTW_ERROR_PRINTF("LTW DEBUG: This proves LTW can intercept and map OpenGL functions");
 }
 
 // 增强关键函数的日志输出
 void glClear(GLbitfield mask) {
     if(!current_context) return;
     if(debug) {
-        printf("LTW INTERCEPT: glClear called with mask=0x%x\n", mask);
-        printf("LTW MAPPING: Mapping to es3_functions.glClear\n");
+        LTW_DEBUG_PRINTF("LTW INTERCEPT: glClear called with mask=0x%x", mask);
+        LTW_DEBUG_PRINTF("LTW MAPPING: Mapping to es3_functions.glClear");
     }
     es3_functions.glClear(mask);
     if(debug) {
-        printf("LTW SUCCESS: glClear completed successfully\n");
+        LTW_DEBUG_PRINTF("LTW SUCCESS: glClear completed successfully");
     }
 }
 
 void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
     if(!current_context) return;
     if(debug) {
-        printf("LTW INTERCEPT: glClearColor called with RGBA=(%.2f, %.2f, %.2f, %.2f)\n", red, green, blue, alpha);
-        printf("LTW MAPPING: Mapping to es3_functions.glClearColor\n");
+        LTW_DEBUG_PRINTF("LTW INTERCEPT: glClearColor called with RGBA=(%.2f, %.2f, %.2f, %.2f)", red, green, blue, alpha);
+        LTW_DEBUG_PRINTF("LTW MAPPING: Mapping to es3_functions.glClearColor");
     }
     es3_functions.glClearColor(red, green, blue, alpha);
     if(debug) {
-        printf("LTW SUCCESS: glClearColor completed successfully\n");
+        LTW_DEBUG_PRINTF("LTW SUCCESS: glClearColor completed successfully");
     }
 }

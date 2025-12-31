@@ -9,6 +9,7 @@
 #include "glformats.h"
 #include "libraryinternal.h"
 #include "GL/gl.h"
+#include "debug.h"
 #include <stdio.h>
 
 static GLint pick_depth_internalformat(GLenum* type, bool* convert) {
@@ -229,7 +230,7 @@ INTERNAL void pick_internalformat(GLint *internalformat, GLenum* type, GLenum* f
     }
     // Compared to OpenGL ES, desktop OpenGL implicitly supports way more depth/RGB formats without explicit sizing.
     // This function converts appropriate unsized formats to sized ones according to the type.
-    bool convert_data;
+    bool convert_data = false;
     switch (*internalformat) {
         case GL_DEPTH_COMPONENT32:
             // Select the equivalent type (32f for float, 24 for int)
@@ -346,6 +347,6 @@ INTERNAL void pick_internalformat(GLint *internalformat, GLenum* type, GLenum* f
             break;
     }
     if(*data != NULL && convert_data) {
-        printf("LTW: we don't support format conversion at the moment. Sorry!\n");
+        LTW_ERROR_PRINTF("LTW: we don't support format conversion at the moment. Sorry!");
     }
 }

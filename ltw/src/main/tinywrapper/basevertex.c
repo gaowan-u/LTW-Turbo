@@ -7,6 +7,7 @@
 #include "proc.h"
 #include "egl.h"
 #include "main.h"
+#include "debug.h"
 
 typedef struct {
     GLuint count;
@@ -19,17 +20,17 @@ typedef struct {
 void basevertex_init(context_t* context) {
     basevertex_renderer_t *renderer = &context->basevertex;
     if(context->drawelementsbasevertex != NULL) {
-        printf("LTW: BaseVertex render calls will use the host driver implementation\n");
+        LTW_ERROR_PRINTF("LTW: BaseVertex render calls will use the host driver implementation");
         return;
     }
     if(!context->es31) {
-        printf("LTW: BaseVertex render calls not available: requires OpenGL ES 3.1\n");
+        LTW_ERROR_PRINTF("LTW: BaseVertex render calls not available: requires OpenGL ES 3.1");
         return;
     }
     es3_functions.glGenBuffers(1, &renderer->indirectRenderBuffer);
     GLenum error = es3_functions.glGetError();
     if(error != GL_NO_ERROR) {
-        printf("LTW: Failed to initialize indirect buffers: %x\n", error);
+        LTW_ERROR_PRINTF("LTW: Failed to initialize indirect buffers: %x", error);
         return;
     }
     renderer->ready = true;
@@ -60,13 +61,17 @@ void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const voi
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementbuffer);
     if(elementbuffer == 0) {
         // I am not bothered enough to implement this.
-        printf("LTW: Base vertex draws without element buffer are not supported\n");
+        LTW_ERROR_PRINTF("LTW: Base vertex draws without element buffer are not supported");
         return;
     }
     GLint typeBytes = type_bytes(type);
+    if(typeBytes <= 0) {
+        LTW_ERROR_PRINTF("LTW: unsupported type for base vertex draw");
+        return;
+    }
     uintptr_t indicesPointer = (uintptr_t)indices;
     if(indicesPointer % typeBytes != 0) {
-        printf("LTW: misaligned base vertex draw not supported\n");
+        LTW_ERROR_PRINTF("LTW: misaligned base vertex draw not supported");
         return;
     }
     indirect_pass_t indirect_pass;
@@ -90,6 +95,11 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
                                    GLsizei drawcount,
                                    const GLint *basevertex) {
     if(!current_context) return;
+    // 添加参数验证
+    if(!count || !indices || !basevertex) {
+        LTW_ERROR_PRINTF("LTW: NULL pointer passed to glMultiDrawElementsBaseVertex");
+        return;
+    }
     if(current_context->drawelementsbasevertex != NULL) {
         for(GLsizei i = 0; i < drawcount; i++) {
             current_context->drawelementsbasevertex(mode, count[i], type, indices[i], basevertex[i]);
@@ -102,15 +112,41 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementbuffer);
     if(elementbuffer == 0) {
         // I am not bothered enough to implement this.
-        printf("LTW: Base vertex draws without element buffer are not supported\n");
+        LTW_ERROR_PRINTF("LTW: Base vertex draws without element buffer are not supported");
         return;
     }
     GLint typeBytes = type_bytes(type);
-    indirect_pass_t indirect_passes[drawcount];
+    if(typeBytes <= 0) {
+        LTW_ERROR_PRINTF("LTW: unsupported type for multi base vertex draw");
+        return;
+    }
+    // 检查 drawcount 大小，防止栈溢出和负数
+    if(drawcount <= 0 || drawcount > 10000) {
+        LTW_ERROR_PRINTF("LTW: invalid drawcount: %d", drawcount);
+        return;
+    }
+    // 检查整数溢出
+    if(drawcount > SIZE_MAX / sizeof(indirect_pass_t)) {
+        LTW_ERROR_PRINTF("LTW: drawcount overflow: %d", drawcount);
+        return;
+    }
+    size_t alloc_size = sizeof(indirect_pass_t) * drawcount;
+    indirect_pass_t* indirect_passes = malloc(alloc_size);
+    if(!indirect_passes) {
+        LTW_ERROR_PRINTF("LTW: Failed to allocate memory for indirect passes");
+        return;
+    }
     for(GLsizei i = 0; i < drawcount; i++) {
+        // 添加对单个 indices 数组的检查
+        if(!indices[i]) {
+            LTW_ERROR_PRINTF("LTW: NULL indices pointer at draw %i", i);
+            free(indirect_passes);
+            return;
+        }
         uintptr_t indicesPointer = (uintptr_t)indices[i];
         if(indicesPointer % typeBytes != 0) {
-            printf("LTW: misaligned base vertex draw not supported (draw %i)\n", i);
+            LTW_ERROR_PRINTF("LTW: misaligned base vertex draw not supported (draw %i)", i);
+            free(indirect_passes);
             return;
         }
         indirect_pass_t* pass = &indirect_passes[i];
@@ -121,11 +157,12 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
         pass->reservedMustBeZero = 0;
     }
     es3_functions.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, renderer->indirectRenderBuffer);
-    es3_functions.glBufferData(GL_DRAW_INDIRECT_BUFFER, (long)sizeof(indirect_pass_t) * drawcount, indirect_passes, GL_STREAM_DRAW);
+    es3_functions.glBufferData(GL_DRAW_INDIRECT_BUFFER, alloc_size, indirect_passes, GL_STREAM_DRAW);
     if(current_context->multidraw_indirect) {
         es3_functions.glMultiDrawElementsIndirectEXT(mode, type, 0, drawcount, 0);
     } else for(GLsizei i = 0; i < drawcount; i++) {
         es3_functions.glDrawElementsIndirect(mode, type, (void*)(sizeof(indirect_pass_t) * i));
     }
+    free(indirect_passes);
     restore_state(elementbuffer);
 }
