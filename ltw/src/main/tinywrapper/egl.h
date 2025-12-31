@@ -133,6 +133,29 @@ typedef struct {
         void (*glUnmapBuffer)(GLenum);
         void (*glFlushMappedBufferRange)(GLenum, GLintptr, GLsizeiptr);
     } fast_gl;
+    // MultiDraw 环形缓冲区相关
+    size_t multidraw_ring_head;  // 环形缓冲区头部位置
+    size_t multidraw_ring_tail;  // 环形缓冲区尾部位置
+    bool multidraw_ring_wrapped; // 是否已环绕
+    // Swizzle 批量更新相关
+    GLuint pending_swizzle_textures[64];  // 待更新的纹理ID列表
+    int pending_swizzle_count;            // 待更新数量
+    bool swizzle_batch_mode;              // 是否处于批量更新模式
+    // 热路径函数指针缓存（减少间接调用开销）
+    struct {
+        void (*glDrawArrays)(GLenum, GLint, GLsizei);
+        void (*glDrawElements)(GLenum, GLsizei, GLenum, const void*);
+        void (*glBindBuffer)(GLenum, GLuint);
+        void (*glBindTexture)(GLenum, GLuint);
+        void (*glTexParameteri)(GLenum, GLenum, GLint);
+        void (*glGetIntegerv)(GLenum, GLint*);
+        void (*glBufferData)(GLenum, GLsizeiptr, const void*, GLenum);
+        void (*glBufferSubData)(GLenum, GLintptr, GLsizeiptr, const void*);
+        void (*glCopyBufferSubData)(GLenum, GLenum, GLintptr, GLintptr, GLsizeiptr);
+        void (*glMapBufferRange)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
+        void (*glUnmapBuffer)(GLenum);
+        void (*glFlushMappedBufferRange)(GLenum, GLintptr, GLsizeiptr);
+    } fast_gl;
     // Swizzle 批量更新相关
     GLuint pending_swizzle_textures[64];  // 待更新的纹理ID列表
     int pending_swizzle_count;            // 待更新数量

@@ -55,7 +55,7 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
         return;
     }
 
-    // 第一遍：计算总大小并检查是否需要扩容
+    // 第一遍：计算总大小
     for (GLsizei i = 0; i < primcount; i++) {
         total += count[i];
     }
@@ -66,7 +66,7 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
     }
     GLsizei needed_size = total * typebytes;
 
-    // 检查是否需要扩容（使用指数增长策略，但限制最大大小）
+    // 环形缓冲区逻辑：检查是否需要扩容
     if(needed_size > current_context->multidraw_buffer_size) {
         // 扩容到2倍或足够大小，但不超过 16MB
         GLsizei new_size = needed_size * 2;
@@ -80,7 +80,28 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
         }
         current_context->fast_gl.glBufferData(GL_COPY_WRITE_BUFFER, new_size, NULL, GL_STREAM_DRAW);
         current_context->multidraw_buffer_size = new_size;
+        // 重置环形缓冲区
+        current_context->multidraw_ring_head = 0;
+        current_context->multidraw_ring_tail = 0;
+        current_context->multidraw_ring_wrapped = false;
+    } else {
+        // 检查环形缓冲区是否有足够空间
+        size_t available_space;
+        if(!current_context->multidraw_ring_wrapped) {
+            available_space = current_context->multidraw_buffer_size - current_context->multidraw_ring_head;
+        } else {
+            available_space = current_context->multidraw_ring_tail - current_context->multidraw_ring_head;
+        }
+
+        if(needed_size > available_space) {
+            // 空间不足，重置到缓冲区开头
+            current_context->multidraw_ring_head = 0;
+            current_context->multidraw_ring_wrapped = false;
+        }
     }
+
+    // 计算写入偏移量
+    size_t write_offset = current_context->multidraw_ring_head;
 
     // 优化：根据数据源选择最佳填充策略
     if(elementbuffer != 0) {
@@ -90,7 +111,7 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
             GLsizei icount = count[i];
             if(icount == 0) continue;
             icount *= typebytes;
-            current_context->fast_gl.glCopyBufferSubData(GL_ELEMENT_ARRAY_BUFFER, GL_COPY_WRITE_BUFFER, (GLintptr)indices[i], offset, icount);
+            current_context->fast_gl.glCopyBufferSubData(GL_ELEMENT_ARRAY_BUFFER, GL_COPY_WRITE_BUFFER, (GLintptr)indices[i], write_offset + offset, icount);
             offset += icount;
         }
     } else {
@@ -100,14 +121,24 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
             GLsizei icount = count[i];
             if(icount == 0) continue;
             icount *= typebytes;
-            current_context->fast_gl.glBufferSubData(GL_COPY_WRITE_BUFFER, offset, icount, indices[i]);
+            current_context->fast_gl.glBufferSubData(GL_COPY_WRITE_BUFFER, write_offset + offset, icount, indices[i]);
             offset += icount;
         }
     }
 
+    // 更新环形缓冲区头部
+    current_context->multidraw_ring_head += needed_size;
+    if(current_context->multidraw_ring_head >= current_context->multidraw_buffer_size) {
+        current_context->multidraw_ring_head = 0;
+        current_context->multidraw_ring_wrapped = true;
+    }
+    if(!current_context->multidraw_ring_wrapped) {
+        current_context->multidraw_ring_tail = current_context->multidraw_ring_head;
+    }
+
     // 绑定并绘制
     current_context->fast_gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, current_context->multidraw_element_buffer);
-    current_context->fast_gl.glDrawElements(mode, total, type, 0);
+    current_context->fast_gl.glDrawElements(mode, total, type, (const void*)write_offset);
 
     // 恢复原始绑定
     if(elementbuffer != 0) {

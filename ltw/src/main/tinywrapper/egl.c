@@ -272,8 +272,20 @@ static void init_incontext(context_t* tw_context) {
     memset(tw_context->format_cache, 0, sizeof(tw_context->format_cache));
     tw_context->format_cache_index = 0;
 
-    // 初始化multidraw缓冲区，预分配256KB
-    tw_context->multidraw_buffer_size = 256 * 1024;
+    // 自适应预分配 multidraw 缓冲区大小
+    // 根据设备内存动态调整：高配设备 512KB，低配设备 256KB
+    size_t device_memory_mb = detect_device_memory_mb();
+    if(device_memory_mb >= 6144) {  // >= 6GB
+        tw_context->multidraw_buffer_size = 512 * 1024;  // 512KB
+        LTW_ERROR_PRINTF("LTW: Using large multidraw buffer (512KB) for high-memory device");
+    } else if(device_memory_mb >= 4096) {  // >= 4GB
+        tw_context->multidraw_buffer_size = 384 * 1024;  // 384KB
+        LTW_ERROR_PRINTF("LTW: Using medium multidraw buffer (384KB) for mid-range device");
+    } else {  // < 4GB
+        tw_context->multidraw_buffer_size = 256 * 1024;  // 256KB
+        LTW_ERROR_PRINTF("LTW: Using small multidraw buffer (256KB) for low-memory device");
+    }
+
     es3_functions.glBindBuffer(GL_COPY_WRITE_BUFFER, tw_context->multidraw_element_buffer);
     es3_functions.glBufferData(GL_COPY_WRITE_BUFFER, tw_context->multidraw_buffer_size, NULL, GL_STREAM_DRAW);
     es3_functions.glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
@@ -296,6 +308,11 @@ static void init_incontext(context_t* tw_context) {
     tw_context->fast_gl.glMapBufferRange = es3_functions.glMapBufferRange;
     tw_context->fast_gl.glUnmapBuffer = es3_functions.glUnmapBuffer;
     tw_context->fast_gl.glFlushMappedBufferRange = es3_functions.glFlushMappedBufferRange;
+
+    // 初始化环形缓冲区字段
+    tw_context->multidraw_ring_head = 0;
+    tw_context->multidraw_ring_tail = 0;
+    tw_context->multidraw_ring_wrapped = false;
 }
 
 EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list) {
