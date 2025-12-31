@@ -317,11 +317,11 @@ const GLubyte* glGetString(GLenum name) {
     if(!current_context) return NULL;
     switch(name) {
         case GL_VERSION:
-            return (const GLubyte*)"3.0 OpenLTW";
+            return (const GLubyte*)"LTW-Turbo";
         case GL_SHADING_LANGUAGE_VERSION:
-            return (const GLubyte*)"4.60 LTW";
+            return (const GLubyte*)"4.6 LTW-Turbo";
         case GL_VENDOR:
-            return (const GLubyte*)"artDev, SerpentSpirale, CADIndie";
+            return (const GLubyte*)"MathCode";
         case GL_EXTENSIONS:
             if(current_context->extensions_string != NULL) return (const GLubyte*)current_context->extensions_string;
             return (const GLubyte*)es3_functions.glGetString(GL_EXTENSIONS);
