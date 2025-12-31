@@ -1,6 +1,9 @@
 name: Android CI - Build AAR
 
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build:
