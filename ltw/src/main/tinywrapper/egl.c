@@ -277,6 +277,11 @@ static void init_incontext(context_t* tw_context) {
     es3_functions.glBindBuffer(GL_COPY_WRITE_BUFFER, tw_context->multidraw_element_buffer);
     es3_functions.glBufferData(GL_COPY_WRITE_BUFFER, tw_context->multidraw_buffer_size, NULL, GL_STREAM_DRAW);
     es3_functions.glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+
+    // 初始化 swizzle 批量更新相关字段
+    tw_context->pending_swizzle_count = 0;
+    tw_context->swizzle_batch_mode = false;
+    memset(tw_context->pending_swizzle_textures, 0, sizeof(tw_context->pending_swizzle_textures));
 }
 
 EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list) {

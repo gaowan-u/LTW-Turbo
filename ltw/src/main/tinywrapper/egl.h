@@ -54,8 +54,10 @@ typedef struct {
 typedef struct {
     GLenum original_swizzle[4];  // 原始swizzle
     GLenum applied_swizzle[4];   // 已应用的swizzle（缓存）
+    GLenum pending_swizzle[4];   // 待应用的swizzle（批量更新）
     GLboolean goofy_byte_order;
     GLboolean upload_bgra;
+    GLboolean has_pending_update;  // 是否有待处理的更新
 } texture_swizzle_track_t;
 
 typedef struct {
@@ -112,6 +114,10 @@ typedef struct {
     int format_cache_index;    //格式缓存索引
     GLsizei multidraw_buffer_size;  //多重绘制缓冲区大小
     mempool_t* shader_info_pool;    //shader_info_t 内存池
+    // Swizzle 批量更新相关
+    GLuint pending_swizzle_textures[64];  // 待更新的纹理ID列表
+    int pending_swizzle_count;            // 待更新数量
+    bool swizzle_batch_mode;              // 是否处于批量更新模式
     mempool_t* program_info_pool;   //program_info_t 内存池
     mempool_t* framebuffer_pool;    //framebuffer_t 内存池
     mempool_t* swizzle_track_pool;  //texture_swizzle_track_t 内存池

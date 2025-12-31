@@ -561,3 +561,14 @@ void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
         LTW_DEBUG_PRINTF("LTW SUCCESS: glClearColor completed successfully");
     }
 }
+
+// 批量更新相关函数 - 用于优化纹理状态切换
+void glLTWBeginBatchUpdate(void) {
+    if(!current_context) return;
+    swizzle_begin_batch_update();
+}
+
+void glLTWEndBatchUpdate(void) {
+    if(!current_context) return;
+    swizzle_end_batch_update();
+}
