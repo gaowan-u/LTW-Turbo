@@ -7,6 +7,7 @@
 #include "proc.h"
 #include "egl.h"
 #include "mempool.h"
+#include "debug.h"
 #include <string.h>
 #include "libraryinternal.h"
 //#include <GL/glext.h>

@@ -149,16 +149,6 @@ static void print_cache_stats(void) {
 }
 #endif
 
-typedef struct {
-    GLenum shader_type;
-    GLchar* source;
-} shader_info_t;
-
-typedef struct {
-    GLuint frag_shader;
-    GLchar* colorbindings[MAX_DRAWBUFFERS];
-} program_info_t;
-
 GLuint glCreateProgram(void) {
     if(!current_context) return 0;
     GLuint phys_program = es3_functions.glCreateProgram();
