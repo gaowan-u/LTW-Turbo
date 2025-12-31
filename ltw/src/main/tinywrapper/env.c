@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "libraryinternal.h"
 #include <stdio.h>
+#include "debug.h"
 
 INTERNAL bool env_istrue_d(const char* name, bool _default) {
     const char* env = getenv(name);

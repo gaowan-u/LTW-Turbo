@@ -301,6 +301,7 @@ static void init_incontext(context_t* tw_context) {
     tw_context->fast_gl.glBindBuffer = es3_functions.glBindBuffer;
     tw_context->fast_gl.glBindTexture = es3_functions.glBindTexture;
     tw_context->fast_gl.glTexParameteri = es3_functions.glTexParameteri;
+    tw_context->fast_gl.glGetTexParameteriv = es3_functions.glGetTexParameteriv;
     tw_context->fast_gl.glGetIntegerv = es3_functions.glGetIntegerv;
     tw_context->fast_gl.glBufferData = es3_functions.glBufferData;
     tw_context->fast_gl.glBufferSubData = es3_functions.glBufferSubData;

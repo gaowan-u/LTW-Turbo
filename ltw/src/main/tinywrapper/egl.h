@@ -125,6 +125,7 @@ typedef struct {
         void (*glBindBuffer)(GLenum, GLuint);
         void (*glBindTexture)(GLenum, GLuint);
         void (*glTexParameteri)(GLenum, GLenum, GLint);
+        void (*glGetTexParameteriv)(GLenum, GLenum, GLint*);
         void (*glGetIntegerv)(GLenum, GLint*);
         void (*glBufferData)(GLenum, GLsizeiptr, const void*, GLenum);
         void (*glBufferSubData)(GLenum, GLintptr, GLsizeiptr, const void*);
