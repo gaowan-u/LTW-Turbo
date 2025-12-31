@@ -70,6 +70,17 @@ typedef struct {
 // 前向声明内存池
 typedef struct mempool mempool_t;
 
+// 前向声明 shader 和 program 信息结构体（在 shader_wrapper.c 中定义）
+typedef struct {
+    GLenum shader_type;
+    GLchar* source;
+} shader_info_t;
+
+typedef struct {
+    GLuint frag_shader;
+    GLchar* colorbindings[MAX_DRAWBUFFERS];
+} program_info_t;
+
 typedef struct {
     EGLContext phys_context;    //实际的EGL上下文句柄
     bool context_rdy;   //标记上下文是否已准备就绪
