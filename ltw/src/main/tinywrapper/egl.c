@@ -9,6 +9,7 @@
 #include "env.h"
 #include "mempool.h"
 #include "debug.h"
+#include "shader_wrapper.h"
 #include <string.h>
 #include <pthread.h>
 

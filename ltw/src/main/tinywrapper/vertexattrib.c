@@ -9,6 +9,9 @@
 #include "simd_utils.h"
 #include "debug.h"
 
+// SIMD 优化的归一化函数（前向声明）
+static void normalize_4values(const float* src, float* dst, float scale_pos, float scale_neg);
+
 /* glVertexAttribXs family */
 void glVertexAttrib1s( 	GLuint index,
                           GLshort v0) {
