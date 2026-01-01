@@ -52,10 +52,36 @@ typedef struct {
 } framebuffer_copier_t;
 
 typedef struct {
-    GLenum original_swizzle[4];
+    GLenum original_swizzle[4];  // 原始swizzle
+    GLenum applied_swizzle[4];   // 已应用的swizzle（缓存）
+    GLenum pending_swizzle[4];   // 待应用的swizzle（批量更新）
     GLboolean goofy_byte_order;
     GLboolean upload_bgra;
+    GLboolean has_pending_update;  // 是否有待处理的更新
 } texture_swizzle_track_t;
+
+typedef struct {
+    GLint internalformat;
+    GLenum type;
+    GLenum format;
+    bool valid;
+} format_cache_entry_t;
+
+#define FORMAT_CACHE_SIZE 64
+
+// 前向声明内存池
+typedef struct mempool mempool_t;
+
+// 前向声明 shader 和 program 信息结构体（在 shader_wrapper.c 中定义）
+typedef struct {
+    GLenum shader_type;
+    GLchar* source;
+} shader_info_t;
+
+typedef struct {
+    GLuint frag_shader;
+    GLchar* colorbindings[MAX_DRAWBUFFERS];
+} program_info_t;
 
 typedef struct {
     EGLContext phys_context;    //实际的EGL上下文句柄
@@ -77,10 +103,44 @@ typedef struct {
     GLuint program;     //当前使用的程序对象
     GLuint draw_framebuffer;    //绘制帧缓冲对象
     GLuint read_framebuffer;    //读取帧缓冲对象
+    framebuffer_t* cached_draw_framebuffer;   //缓存的绘制帧缓冲对象
+    framebuffer_t* cached_read_framebuffer;   //缓存的读取帧缓冲对象
     char* extensions_string;    //扩展字符串
+    size_t extensions_capacity; //扩展字符串分配的容量
     size_t nextras;         //额外扩展数量
     int nextensions_es;     //ES扩展数量
     char** extra_extensions_array;      //额外扩展字符串数组
+    format_cache_entry_t format_cache[FORMAT_CACHE_SIZE];   //纹理格式缓存
+    int format_cache_index;    //格式缓存索引
+    GLsizei multidraw_buffer_size;  //多重绘制缓冲区大小
+    mempool_t* shader_info_pool;    //shader_info_t 内存池
+    // Swizzle 批量更新相关
+    GLuint pending_swizzle_textures[64];  // 待更新的纹理ID列表
+    int pending_swizzle_count;            // 待更新数量
+    bool swizzle_batch_mode;              // 是否处于批量更新模式
+    // 热路径函数指针缓存（减少间接调用开销）
+    struct {
+        void (*glDrawArrays)(GLenum, GLint, GLsizei);
+        void (*glDrawElements)(GLenum, GLsizei, GLenum, const void*);
+        void (*glBindBuffer)(GLenum, GLuint);
+        void (*glBindTexture)(GLenum, GLuint);
+        void (*glTexParameteri)(GLenum, GLenum, GLint);
+        void (*glGetTexParameteriv)(GLenum, GLenum, GLint*);
+        void (*glGetIntegerv)(GLenum, GLint*);
+        void (*glBufferData)(GLenum, GLsizeiptr, const void*, GLenum);
+        void (*glBufferSubData)(GLenum, GLintptr, GLsizeiptr, const void*);
+        void (*glCopyBufferSubData)(GLenum, GLenum, GLintptr, GLintptr, GLsizeiptr);
+        void* (*glMapBufferRange)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
+        unsigned char (*glUnmapBuffer)(GLenum);
+        void (*glFlushMappedBufferRange)(GLenum, GLintptr, GLsizeiptr);
+    } fast_gl;
+    // MultiDraw 环形缓冲区相关
+    size_t multidraw_ring_head;  // 环形缓冲区头部位置
+    size_t multidraw_ring_tail;  // 环形缓冲区尾部位置
+    bool multidraw_ring_wrapped; // 是否已环绕
+    mempool_t* program_info_pool;   //program_info_t 内存池
+    mempool_t* framebuffer_pool;    //framebuffer_t 内存池
+    mempool_t* swizzle_track_pool;  //texture_swizzle_track_t 内存池
 } context_t;        //表示OpenGL ES的上下文状态信息
 
 extern thread_local context_t *current_context;

@@ -7,6 +7,7 @@
 #include "egl.h"
 #include <stdbool.h>
 #include "swizzle.h"
+#include "debug.h"
 void buffer_copier_init(context_t* context) {
     framebuffer_copier_t* copier = &context->framebuffer_copier;
     while(es3_functions.glGetError() != 0) {}
@@ -20,7 +21,7 @@ void buffer_copier_init(context_t* context) {
     es3_functions.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     GLenum error = es3_functions.glGetError();
     if(error != 0) {
-        printf("LTW: error while initializing buffer-copier: %x\n", error);
+        LTW_ERROR_PRINTF("LTW: error while initializing buffer-copier: %x", error);
         return;
     }
     copier->ready = true;
@@ -71,14 +72,19 @@ void glGetTexImage( 	GLenum target,
     GLint w, h;
     es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &w);
     es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_HEIGHT, &h);
+    if(!pixels) {
+        LTW_ERROR_PRINTF("LTW: glGetTexImage called with NULL pixels");
+        es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+        return;
+    }
     es3_functions.glReadPixels(0, 0, w, h, format, type, pixels);
     es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
     return;
     unsupported_esver:
-    printf("LTW: glGetTexImage only supported on OpenGL ES 3.1");
+    LTW_ERROR_PRINTF("LTW: glGetTexImage only supported on OpenGL ES 3.1");
     return;
     unsupported:
-    printf("LTW: unsupported parameters for glGetTexImage");
+    LTW_ERROR_PRINTF("LTW: unsupported parameters for glGetTexImage");
 }
 
 void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid * data) {
@@ -104,8 +110,10 @@ void glTexSubImage2D(GLenum target,
                      GLenum type,
                      const void * data) {
     if(!current_context) return;
+    // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查
+    bool is_depth = (format == GL_DEPTH_COMPONENT);
     swizzle_process_upload(target, &format, &type);
-    if(format == GL_DEPTH_COMPONENT) {
+    if(is_depth) {
         framebuffer_copier_t* copier = &current_context->framebuffer_copier;
         if(width == copier->depthWidth && height == copier->depthHeight && copier->depthData == data) {
             buffer_copier_release(target, level, xoffset, yoffset, width, height);

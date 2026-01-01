@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #include "string_utils.h"
 
@@ -12,8 +13,16 @@ char* gl4es_resize_if_needed(char* pBuffer, int *size, int addsize);
 
 char* gl4es_inplace_replace(char* pBuffer, int* size, const char* S, const char* D)
 {
+    if (!pBuffer || !S || !D) {
+        fprintf(stderr, "LTW: Invalid parameters in gl4es_inplace_replace (NULL pointer)\n");
+        return pBuffer;
+    }
     int lS = strlen(S), lD = strlen(D);
     pBuffer = gl4es_resize_if_needed(pBuffer, size, (lD-lS)*gl4es_count_string(pBuffer, S));
+    if (!pBuffer) {
+        fprintf(stderr, "LTW: gl4es_resize_if_needed failed in gl4es_inplace_replace\n");
+        return NULL;
+    }
     char* p = pBuffer;
     while((p = strstr(p, S)))
     {
@@ -28,13 +37,17 @@ char* gl4es_inplace_replace(char* pBuffer, int* size, const char* S, const char*
             p+=lD;
         } else p+=lS;
     }
-    
+
     return pBuffer;
 }
 
 
 char * InplaceReplaceByIndex(char* pBuffer, int* size, const int startIndex, const int endIndex, const char* replacement)
 {
+    if (!pBuffer || !replacement) {
+        fprintf(stderr, "LTW: Invalid parameters in InplaceReplaceByIndex (NULL pointer)\n");
+        return pBuffer;
+    }
     //SHUT_LOGD("BY INDEX: %s", replacement);
     //SHUT_LOGD("BY INDEX: %i", strlen(replacement));
 
@@ -47,6 +60,10 @@ char * InplaceReplaceByIndex(char* pBuffer, int* size, const int startIndex, con
         length_difference = strlen(replacement) - (endIndex - startIndex); // Can be negative if repl is smaller
 
     pBuffer = gl4es_resize_if_needed(pBuffer, size, length_difference);
+    if (!pBuffer) {
+        fprintf(stderr, "LTW: gl4es_resize_if_needed failed in InplaceReplaceByIndex\n");
+        return NULL;
+    }
     //SHUT_LOGD("BEFORE MOVING: \n%s", pBuffer);
     // Move the end of the string
     memmove(pBuffer + startIndex + strlen(replacement) , pBuffer + endIndex + 1, strlen(pBuffer) - endIndex + 1);
@@ -69,8 +86,16 @@ char * InplaceReplaceByIndex(char* pBuffer, int* size, const int startIndex, con
  * @return The shader as a string, maybe in a different memory location
  */
 char * InplaceInsertByIndex(char * source, int *sourceLength, const int insertPoint, const char *insertedString){
+    if (!source || !insertedString) {
+        fprintf(stderr, "LTW: Invalid parameters in InplaceInsertByIndex (NULL pointer)\n");
+        return source;
+    }
     int insertLength = strlen(insertedString);
     source = gl4es_resize_if_needed(source, sourceLength, insertLength);
+    if (!source) {
+        fprintf(stderr, "LTW: gl4es_resize_if_needed failed in InplaceInsertByIndex\n");
+        return NULL;
+    }
     memmove(source + insertPoint + insertLength,  source + insertPoint, strlen(source) - insertPoint + 1);
     memcpy(source + insertPoint, insertedString, insertLength);
 
@@ -79,7 +104,15 @@ char * InplaceInsertByIndex(char * source, int *sourceLength, const int insertPo
 
 char* gl4es_inplace_insert(char* pBuffer, const char* S, char* master, int* size)
 {
+    if (!pBuffer || !S || !master) {
+        fprintf(stderr, "LTW: Invalid parameters in gl4es_inplace_insert (NULL pointer)\n");
+        return master;
+    }
     char* m = gl4es_resize_if_needed(master, size, strlen(S));
+    if (!m) {
+        fprintf(stderr, "LTW: gl4es_resize_if_needed failed in gl4es_inplace_insert\n");
+        return NULL;
+    }
     if(m!=master) {
         pBuffer += (m-master);
         master = m;
@@ -174,18 +207,69 @@ char* gl4es_find_string_nc(char* pBuffer, const char* S)
 
 char* gl4es_resize_if_needed(char* pBuffer, int *size, int addsize) {
     char* p = pBuffer;
-    int newsize = strlen(pBuffer)+addsize+1;
-    if (newsize>*size) {
-        //newsize += 100;
-        p = (char*)realloc(pBuffer, newsize);
-        *size=newsize;
+    int current_size = *size;
+    int str_len = (int)strlen(pBuffer);
+    
+    // 检查 addsize 是否会导致溢出
+    if (addsize < 0 || str_len < 0) {
+        fprintf(stderr, "LTW: Invalid size parameters in gl4es_resize_if_needed\n");
+        return NULL;
+    }
+    
+    // 检查 newsize 是否溢出
+    if (str_len > INT_MAX - addsize - 1) {
+        fprintf(stderr, "LTW: Integer overflow in gl4es_resize_if_needed (newsize calculation)\n");
+        return NULL;
+    }
+    int newsize = str_len + addsize + 1;
+    
+    if (newsize > current_size) {
+        // Optimize: Pre-allocate extra space to reduce frequent realloc calls
+        // Use exponential growth strategy (1.5x or 2x) for better amortized performance
+        int growth_size = current_size + (current_size >> 1); // 1.5x growth
+        if (growth_size < current_size) {
+            // 溢出检查失败，使用更保守的增长策略
+            growth_size = current_size + 256;
+        }
+        if (growth_size < newsize) {
+            growth_size = newsize;
+        }
+        // Ensure minimum growth of 256 bytes to avoid tiny allocations
+        if (growth_size - current_size < 256) {
+            if (current_size > INT_MAX - 256) {
+                fprintf(stderr, "LTW: Integer overflow in gl4es_resize_if_needed (minimum growth)\n");
+                return NULL;
+            }
+            growth_size = current_size + 256;
+        }
+        // 最终溢出检查
+        if (growth_size < current_size || growth_size < newsize) {
+            fprintf(stderr, "LTW: Integer overflow in gl4es_resize_if_needed (final check)\n");
+            return NULL;
+        }
+        char* new_ptr = (char*)realloc(pBuffer, growth_size);
+        if (!new_ptr) {
+            // realloc failed, log error and return NULL to indicate failure
+            fprintf(stderr, "LTW: Failed to reallocate buffer in gl4es_resize_if_needed (requested %d bytes)\n", growth_size);
+            return NULL;
+        }
+        p = new_ptr;
+        *size = growth_size;
     }
     return p;
 }
 
 char* gl4es_append(char* pBuffer, int* size, const char* S) {
-    char* p =pBuffer;
+    if (!pBuffer || !S) {
+        fprintf(stderr, "LTW: Invalid parameters in gl4es_append (NULL pointer)\n");
+        return pBuffer;
+    }
+    char* p = pBuffer;
     p = gl4es_resize_if_needed(pBuffer, size, strlen(S));
+    if (!p) {
+        fprintf(stderr, "LTW: gl4es_resize_if_needed failed in gl4es_append\n");
+        return NULL;
+    }
     strcat(p, S);
     return p;
 }
@@ -217,7 +301,7 @@ int isValidFunctionName(char value){
 char* gl4es_str_next(char *pBuffer, const char* S) {
     if(!pBuffer) return NULL;
     char *p = strstr(pBuffer, S);
-    return (p)?p:(p+strlen(S));
+    return p ? p : NULL;
 }
 
 char* gl4es_next_str(char* pBuffer) {
@@ -286,8 +370,16 @@ int gl4es_countstring_simple(char* pBuffer, const char* S)
 
 char* gl4es_inplace_replace_simple(char* pBuffer, int* size, const char* S, const char* D)
 {
+    if (!pBuffer || !S || !D) {
+        fprintf(stderr, "LTW: Invalid parameters in gl4es_inplace_replace_simple (NULL pointer)\n");
+        return pBuffer;
+    }
     int lS = strlen(S), lD = strlen(D);
     pBuffer = gl4es_resize_if_needed(pBuffer, size, (lD-lS)*gl4es_countstring_simple(pBuffer, S));
+    if (!pBuffer) {
+        fprintf(stderr, "LTW: gl4es_resize_if_needed failed in gl4es_inplace_replace_simple\n");
+        return NULL;
+    }
     char* p = pBuffer;
     while((p = strstr(p, S)))
     {
@@ -299,7 +391,7 @@ char* gl4es_inplace_replace_simple(char* pBuffer, int* size, const char* S, cons
         // next
         p+=lD;
     }
-    
+
     return pBuffer;
 }
 #pragma GCC visibility pop(hidden)

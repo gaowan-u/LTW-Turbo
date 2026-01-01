@@ -9,6 +9,7 @@
 #include "glformats.h"
 #include "libraryinternal.h"
 #include "GL/gl.h"
+#include "debug.h"
 #include <stdio.h>
 
 static GLint pick_depth_internalformat(GLenum* type, bool* convert) {
@@ -101,8 +102,10 @@ void pick_format(GLint *internalformat, GLenum* type, GLenum* format) {
         // So, switch to that.
         case GL_R8_SNORM:
             *internalformat = GL_R16F;
+            break;
         case GL_RG8_SNORM:
             *internalformat = GL_RG16F;
+            break;
         case GL_RGBA8_SNORM:
             *internalformat = GL_RGBA16F;
             break;
@@ -117,6 +120,7 @@ void pick_format(GLint *internalformat, GLenum* type, GLenum* format) {
         case GL_RGB16F:
         case GL_RGB32F:
             *internalformat = GL_R11F_G11F_B10F;
+            break;
         case GL_RGB8UI:
             *internalformat = GL_RGB8;
             break;
@@ -195,15 +199,38 @@ void pick_format(GLint *internalformat, GLenum* type, GLenum* format) {
 
 
 INTERNAL void pick_internalformat(GLint *internalformat, GLenum* type, GLenum* format, GLvoid const** data) {
+    // 检查缓存
+    if(current_context && *data == NULL) {
+        // 使用简单的哈希来查找缓存
+        GLuint hash = ((GLuint)*internalformat ^ (GLuint)*type) % FORMAT_CACHE_SIZE;
+        format_cache_entry_t* cache = &current_context->format_cache[hash];
+        if(cache->valid && cache->internalformat == *internalformat && cache->type == *type) {
+            // 缓存命中
+            *internalformat = cache->internalformat;
+            *type = cache->type;
+            *format = cache->format;
+            return;
+        }
+    }
+
     if(*data == NULL) {
         // Appears that desktop GL completely discards type and format without data. Pick a correct (sized if unsized is unavailable)
         // format for the d
         pick_format(internalformat, type, format);
+        // 更新缓存
+        if(current_context) {
+            GLuint hash = ((GLuint)*internalformat ^ (GLuint)*type) % FORMAT_CACHE_SIZE;
+            format_cache_entry_t* cache = &current_context->format_cache[hash];
+            cache->internalformat = *internalformat;
+            cache->type = *type;
+            cache->format = *format;
+            cache->valid = true;
+        }
         return;
     }
     // Compared to OpenGL ES, desktop OpenGL implicitly supports way more depth/RGB formats without explicit sizing.
     // This function converts appropriate unsized formats to sized ones according to the type.
-    bool convert_data;
+    bool convert_data = false;
     switch (*internalformat) {
         case GL_DEPTH_COMPONENT32:
             // Select the equivalent type (32f for float, 24 for int)
@@ -320,6 +347,6 @@ INTERNAL void pick_internalformat(GLint *internalformat, GLenum* type, GLenum* f
             break;
     }
     if(*data != NULL && convert_data) {
-        printf("LTW: we don't support format conversion at the moment. Sorry!\n");
+        LTW_ERROR_PRINTF("LTW: we don't support format conversion at the moment. Sorry!");
     }
 }
