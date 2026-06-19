@@ -15,6 +15,7 @@
         <meta-data android:name="des" android:value="LTW-Turbo (OpenGL 3.2 and 4.6, All Version)" />
         <meta-data android:name="renderer" android:value="LTW:libltw_turbo.so:libltw_turbo.so" />
         <meta-data android:name="pojavEnv" android:value="LIBGL_ES=3:POJAV_RENDERER=opengles3_ltw" />
+        <meta-data android:name="boatEnv" android:value="" />
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
