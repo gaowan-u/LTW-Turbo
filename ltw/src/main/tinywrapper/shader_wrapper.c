@@ -268,9 +268,15 @@ void glLinkProgram(GLuint program) {
     if(compileStatus != GL_TRUE) {
         GLint logSize;
         es3_functions.glGetShaderiv(patched_shader, GL_INFO_LOG_LENGTH, &logSize);
-        GLchar log[logSize];
-        es3_functions.glGetShaderInfoLog(patched_shader, logSize, NULL, log);
-        LTW_ERROR_PRINTF("LTWShdrWp: failed to compile patched fragment shader, using default. Log:\n\n%s\n\nShader content:\n\n%s\n\n", log, const_source);
+        if(logSize > 0) {
+            GLchar* log = (GLchar*)malloc(logSize + 1);
+            if(log) {
+                es3_functions.glGetShaderInfoLog(patched_shader, logSize, NULL, log);
+                LTW_ERROR_PRINTF("LTWShdrWp: failed to compile patched fragment shader, using default. Log:\n\n%s\n\nShader content:\n\n%s\n\n", log, const_source);
+                free(log);
+            }
+        }
+        es3_functions.glDeleteShader(patched_shader);
         goto fallthrough;
     }
     es3_functions.glDetachShader(program, program_info->frag_shader);

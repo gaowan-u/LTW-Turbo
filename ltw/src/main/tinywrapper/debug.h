@@ -11,11 +11,7 @@
 
 extern bool debug;
 
-#ifdef LTW_DEBUG
-    #define LTW_DEBUG_PRINTF(fmt, ...) printf("[LTW DEBUG] " fmt "\n", ##__VA_ARGS__)
-#else
-    #define LTW_DEBUG_PRINTF(fmt, ...) ((void)0)
-#endif
+#define LTW_DEBUG_PRINTF(fmt, ...) do { if(debug) printf("[LTW DEBUG] " fmt "\n", ##__VA_ARGS__); } while(0)
 
 #define LTW_ERROR_PRINTF(fmt, ...) printf("[LTW ERROR] " fmt "\n", ##__VA_ARGS__)
 

@@ -29,46 +29,42 @@ void glClearDepth(GLdouble depth) {
 }
 
 //GL映射缓冲区
-void *glMapBuffer(GLenum target, GLenum access) {   //GLenum是unsigned int类型;GLint是int类型
+void *glMapBuffer(GLenum target, GLenum access) {
     if(!current_context) return NULL;
 
-    GLenum access_range;    //定义了一个GLenum类型的变量access_range
-    GLint length;   //定义了一个int类型的变量length
+    GLenum access_range = GL_MAP_READ_BIT;
+    GLint length = 0;
 
     switch (target) {
-        // GL 4.2
         case GL_ATOMIC_COUNTER_BUFFER:
-        // GL 4.3
         case GL_DISPATCH_INDIRECT_BUFFER:
         case GL_SHADER_STORAGE_BUFFER:
-        // GL 4.4
         case GL_QUERY_BUFFER:
             LTW_ERROR_PRINTF("glMapBuffer unsupported target=0x%x", target);
-            break; // not supported for now --> 现在暂不支持
-	    case GL_DRAW_INDIRECT_BUFFER:
+            return NULL;
+        case GL_DRAW_INDIRECT_BUFFER:
         case GL_TEXTURE_BUFFER:
             LTW_ERROR_PRINTF("glMapBuffer unimplemented target=0x%x", target);
-            break;
-    }   //选择GL版本
+            return NULL;
+    }
 
     switch (access) {
         case GL_READ_ONLY:
-            access_range = GL_MAP_READ_BIT; //图形库中的映射读取位
+            access_range = GL_MAP_READ_BIT;
             break;
-
         case GL_WRITE_ONLY:
-            access_range = GL_MAP_WRITE_BIT; //图形库中的映射写入位
+            access_range = GL_MAP_WRITE_BIT;
             break;
-
         case GL_READ_WRITE:
-            access_range = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;  //图形库中的映射读取位或映射写入位
+            access_range = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
             break;
-    }   //GL读写权限选择
+        default:
+            LTW_ERROR_PRINTF("glMapBuffer unknown access=0x%x", access);
+            return NULL;
+    }
 
-    es3_functions.glGetBufferParameteriv(target, GL_BUFFER_SIZE, &length);  //对应ltw\src\main\tinywrapper\es3_functions.h中的GLESFUNC(glGetBufferParameteriv,PFNGLGETBUFFERPARAMETERIVPROC)
-    //调用获取缓冲区参数iv函数查询数组缓冲区大小，参数为（版本号，GL宏，int类型的指针）
-    return es3_functions.glMapBufferRange(target, 0, length, access_range); //对应ltw\src\main\tinywrapper\es3_functions.h中的GLESFUNC(glMapBufferRange,PFNGLMAPBUFFERRANGEPROC)
-    //调用映射缓冲区范围函数，参数为（版本号，偏移量，长度，访问权限）
+    es3_functions.glGetBufferParameteriv(target, GL_BUFFER_SIZE, &length);
+    return es3_functions.glMapBufferRange(target, 0, length, access_range);
 }
 
 //判断是否为代理纹理
