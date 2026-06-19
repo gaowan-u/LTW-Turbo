@@ -63,15 +63,11 @@ __attribute__((used)) eglMustCastToProperFunctionPointerType glXGetProcAddress(c
 static eglMustCastToProperFunctionPointerType resolve_stub(const char* procname) {
     size_t procnamelen = strlen(procname);
     size_t stublen = procnamelen + 6;
-    // GL function names are typically < 50 chars; use heap allocation to avoid VLA stack overflow
-    char* stub_procname = malloc(stublen + 1);
-    if(!stub_procname) return NULL;
+    char stub_procname[stublen];
     memcpy(stub_procname, "stub_", 5);
     memcpy(stub_procname + 5, procname, procnamelen);
     stub_procname[stublen] = 0;
-    eglMustCastToProperFunctionPointerType func = dlsym(NULL, stub_procname);
-    free(stub_procname);
-    return func;
+    return dlsym(NULL, stub_procname);
 }
 
 eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *procname) {

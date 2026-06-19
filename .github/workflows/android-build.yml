@@ -7,10 +7,6 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,8 +14,6 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -40,16 +34,29 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Cache Android NDK
+    - name: Cache Gradle packages
       uses: actions/cache@v4
       with:
         path: |
-          ~/.android/ndk
-          ~/.gradle/ndk
-        key: ${{ runner.os }}-ndk-${{ hashFiles('ltw/build.gradle') }}
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          capacitor-android/.gradle
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
 
     - name: Sync Capacitor
-      run: npx cap sync
+      run: |
+        if [ -d "capacitor-android/app/src/main/assets/public" ]; then
+          echo "Checking if web assets changed..."
+          if git diff --name-only HEAD~1 HEAD | grep -qE '^(www/|node_modules/|package\.json)'; then
+            npx cap sync
+          else
+            echo "No web asset changes detected, skipping cap sync"
+          fi
+        else
+          npx cap sync
+        fi
 
     - name: Build Android APK
       run: |

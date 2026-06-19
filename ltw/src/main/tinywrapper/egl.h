@@ -58,7 +58,6 @@ typedef struct {
     GLboolean goofy_byte_order;
     GLboolean upload_bgra;
     GLboolean has_pending_update;  // 是否有待处理的更新
-    GLenum texture_target;         // 纹理目标类型（GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP等）
 } texture_swizzle_track_t;
 
 typedef struct {

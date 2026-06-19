@@ -392,24 +392,29 @@ EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGL
     // 新的上下文绑定
     if(!host_eglMakeCurrent(dpy, draw, read, ctx)) return EGL_FALSE;
 
-    // 获取上下文信息并初始化（在锁保护下进行，防止并发访问 context_map）
+    // 获取上下文信息（在锁外进行，避免死锁）
     pthread_mutex_lock(&egl_state_mutex);
     context_t* tw_context = unordered_map_get(context_map, ctx);
+    pthread_mutex_unlock(&egl_state_mutex);
 
     if(tw_context == NULL) {
-        pthread_mutex_unlock(&egl_state_mutex);
         LTW_ERROR_PRINTF("TinywrapperEGL: Failed to find context %p", ctx);
         abort();
     }
     if(!tw_context->context_rdy) {
-        // init_incontext 调用的是 GL 函数而非 EGL 函数，不会竞争 egl_state_mutex
         init_incontext(tw_context);
         tw_context->context_rdy = true;
     }
 
+    // 重新获取锁，验证状态一致性并更新
+    pthread_mutex_lock(&egl_state_mutex);
+
     // 验证状态是否被其他线程修改
+    // 如果状态被修改，说明有并发操作，此时我们仍然继续更新为新的上下文
+    // 因为 host_eglMakeCurrent 已经成功，说明底层 EGL 状态已经更新
     if (current_display != saved_display || current_draw_surface != saved_draw_surface ||
         current_read_surface != saved_read_surface || current_egl_context != saved_egl_context) {
+        // 状态被修改，记录警告但继续执行
         LTW_ERROR_PRINTF("TinywrapperEGL: State changed during MakeCurrent, continuing with new context");
     }
 

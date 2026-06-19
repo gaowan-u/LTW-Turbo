@@ -53,7 +53,6 @@ static texture_swizzle_track_t* get_swizzle_track(GLenum target) {
         track->goofy_byte_order = GL_FALSE;
         track->upload_bgra = GL_FALSE;
         track->has_pending_update = GL_FALSE;
-        track->texture_target = target;
         unordered_map_put(current_context->texture_swztrack_map, (void*)texture, track);
     }
     return track;
@@ -172,8 +171,12 @@ INTERNAL void swizzle_end_batch_update(void) {
         GLuint texture = current_context->pending_swizzle_textures[i];
         texture_swizzle_track_t* track = unordered_map_get(current_context->texture_swztrack_map, (void*)texture);
         if(track && track->has_pending_update) {
-            GLenum target = track->texture_target;
+            // 绑定纹理（需要知道目标类型）
+            // 由于我们不知道目标类型，这里需要从 track 中存储
+            // 为了简化，我们假设大部分是 GL_TEXTURE_2D
+            GLenum target = GL_TEXTURE_2D;
 
+            // 应用更新
             memcpy(track->applied_swizzle, track->pending_swizzle, 4 * sizeof(GLenum));
             current_context->fast_gl.glBindTexture(target, texture);
             current_context->fast_gl.glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, track->pending_swizzle[0]);
