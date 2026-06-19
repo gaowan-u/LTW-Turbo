@@ -68,14 +68,14 @@ static framebuffer_t* get_framebuffer(GLenum target) {
     return fb_obj;
 }
 
-static GLuint get_attachment_idx(GLenum attachment) {
+static int get_attachment_idx(GLenum attachment) {
     if(attachment == GL_DEPTH_ATTACHMENT ||
         attachment == GL_STENCIL_ATTACHMENT ||
         attachment == GL_DEPTH_STENCIL_ATTACHMENT ||
         attachment == GL_NONE) return -1;
     GLuint idx = attachment - GL_COLOR_ATTACHMENT0;
-    if(idx >= current_context->max_drawbuffers) return -1;
-    return idx;
+    if(idx >= (GLuint)current_context->max_drawbuffers) return -1;
+    return (int)idx;
 }
 
 static GLenum map_attachment(framebuffer_t* framebuffer, GLenum attachment) {
@@ -88,18 +88,13 @@ static GLenum map_attachment(framebuffer_t* framebuffer, GLenum attachment) {
 }
 
 void rebind_framebuffer(GLenum target, framebuffer_t *framebuffer, GLenum virt_attachment) {
-    GLuint virt_index = get_attachment_idx(virt_attachment);
+    int virt_index = get_attachment_idx(virt_attachment);
     if(virt_index == -1) return;
     GLenum phys_attachment = map_attachment(framebuffer, virt_attachment);
     if(phys_attachment == GL_NONE) return;
 
-    // 保存当前绑定的状态，避免重复绑定
-    GLenum cached_target = framebuffer->phys_drawbuffers[virt_index];
-    GLuint cached_object = framebuffer->color_objects[virt_index];
-    GLuint current_object = framebuffer->color_objects[virt_index];
-
-    // 如果目标已经绑定到正确的对象，跳过
-    if(cached_target != GL_NONE && cached_target == phys_attachment && cached_object == current_object) {
+    // 检查物理帧缓冲是否已经绑定了正确的对象，避免重复GL调用
+    if(framebuffer->phys_drawbuffers[virt_index] == phys_attachment) {
         return;
     }
 
