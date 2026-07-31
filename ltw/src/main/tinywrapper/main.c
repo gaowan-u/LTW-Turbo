@@ -313,9 +313,17 @@ const GLubyte* glGetString(GLenum name) {
     if(!current_context) return NULL;
     switch(name) {
         case GL_VERSION:
-            return (const GLubyte*)"LTW-Turbo";
+            const GLubyte* realVersion = es3_functions.glGetString(GL_VERSION);
+            if (!realVersion) return NULL;
+            static char buf[128];
+            snprintf(buf, sizeof(buf), "%s LTW-Turbo", realVersion);
+            return (const GLubyte*)buf;
         case GL_SHADING_LANGUAGE_VERSION:
-            return (const GLubyte*)"4.6 LTW-Turbo";
+            const GLubyte* realShadingVer = es3_functions.glGetString(GL_SHADING_LANGUAGE_VERSION);
+            if (!realShadingVer) return NULL;
+            static char buf2[128];
+            snprintf(buf2, sizeof(buf2), "%s LTW-Turbo", realShadingVer);
+            return (const GLubyte*)buf2;
         case GL_VENDOR:
             return (const GLubyte*)"MathCode";
         case GL_EXTENSIONS:
