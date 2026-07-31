@@ -131,6 +131,7 @@ void glClearBufferiv( 	GLenum buffer,
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
     es3_functions.glClearBufferiv(buffer, drawBuffer, value);
+    GLERR_CHECK("glClearBufferiv");
 }
 
 void glClearBufferuiv( 	GLenum buffer,
@@ -142,6 +143,7 @@ void glClearBufferuiv( 	GLenum buffer,
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
     es3_functions.glClearBufferuiv(buffer, drawBuffer, value);
+    GLERR_CHECK("glClearBufferuiv");
 }
 
 void glClearBufferfv( 	GLenum buffer,
@@ -153,6 +155,7 @@ void glClearBufferfv( 	GLenum buffer,
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
     es3_functions.glClearBufferfv(buffer, drawBuffer, value);
+    GLERR_CHECK("glClearBufferfv");
 }
 
 void glDrawBuffers(GLsizei n, const GLenum* buffers) {
@@ -176,6 +179,7 @@ void glDrawBuffers(GLsizei n, const GLenum* buffers) {
         else phys_drawbuffers[i] = GL_NONE;
     }
     es3_functions.glDrawBuffers(n, phys_drawbuffers);
+    GLERR_CHECK("glDrawBuffers");
 }
 
 void glDrawBuffer(GLenum buffer) {
@@ -378,4 +382,5 @@ void glBindFramebuffer(GLenum target, GLuint framebuffer) {
             current_context->cached_draw_framebuffer = NULL;
             break;
     }
+    GLERR_CHECK("glBindFramebuffer");
 }

@@ -98,6 +98,7 @@ void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format
         return;
     }
     es3_functions.glReadPixels(x, y, width, height, format, type, data);
+    GLERR_CHECK("glReadPixels");
 }
 
 void glTexSubImage2D(GLenum target,
@@ -121,6 +122,7 @@ void glTexSubImage2D(GLenum target,
         }
     }
     es3_functions.glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, data);
+    GLERR_CHECK("glTexSubImage2D");
 }
 
 void texture_blit_framebuffer(GLenum target,

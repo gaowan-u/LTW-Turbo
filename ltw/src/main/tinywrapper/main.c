@@ -176,6 +176,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
         if(data != NULL) swizzle_process_upload(target, &format, &type);
         pick_internalformat(&internalformat, &type, &format, &data);
         es3_functions.glTexImage2D(target, level, internalformat, width, height, border, format, type, data);
+        GLERR_CHECK("glTexImage2D");
     }
 }
 
@@ -210,6 +211,7 @@ void glTexParameteri( 	GLenum target,
     if(!filter_params_float(target, pname, (GLfloat)param)) return;
     swizzle_process_swizzle_param(target, pname, &param);
     es3_functions.glTexParameteri(target, pname, param);
+    GLERR_CHECK("glTexParameteri");
 }
 
 void glTexParameterfv( 	GLenum target,
@@ -561,7 +563,12 @@ __attribute((constructor)) void init_noerror() {
 
 GLenum glGetError() {
     if(noerror) return 0;
-    else return es3_functions.glGetError();
+    GLenum e = es3_functions.glGetError();
+    if(debug && e != GL_NO_ERROR) {
+        static unsigned int n = 0;
+        if((n++ & 0x3F) == 0) LTW_ERROR_PRINTF("LTW: glGetError -> 0x%x", (unsigned)e);
+    }
+    return e;
 }
 
 void glDebugMessageControl( 	GLenum source,
@@ -588,6 +595,7 @@ void glClear(GLbitfield mask) {
         LTW_DEBUG_PRINTF("LTW MAPPING: Mapping to es3_functions.glClear");
     }
     es3_functions.glClear(mask);
+    GLERR_CHECK("glClear");
     if(debug) {
         LTW_DEBUG_PRINTF("LTW SUCCESS: glClear completed successfully");
     }
@@ -608,11 +616,13 @@ void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     if(!current_context) return;
     current_context->fast_gl.glDrawArrays(mode, first, count);
+    GLERR_CHECK("glDrawArrays");
 }
 
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
     if(!current_context) return;
     current_context->fast_gl.glDrawElements(mode, count, type, indices);
+    GLERR_CHECK("glDrawElements");
 }
 
 // 批量更新相关函数 - 用于优化纹理状态切换
