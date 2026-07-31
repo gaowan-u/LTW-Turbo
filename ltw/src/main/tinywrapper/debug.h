@@ -30,4 +30,22 @@ extern bool glerr_trace;
     } \
 } } while(0)
 
+// Double-drain trace wrapper: drains stale errors, runs the call, then
+// checks for fresh errors - proves whether THIS call produced them.
+// Samples 1/16 of the time; zero overhead when glerr_trace is off.
+#define GLTRACE_CALL(fn, call_stmt) do { \
+    if(glerr_trace) { \
+        static unsigned int _g_n = 0; \
+        if((++_g_n & 0xF) == 0) { \
+            GLenum _s = es3_functions.glGetError(); \
+            call_stmt; \
+            GLenum _f = es3_functions.glGetError(); \
+            if(_s != GL_NO_ERROR) printf("[LTW ERROR] stale 0x%x before " #fn "\n", (unsigned)_s); \
+            if(_f != GL_NO_ERROR) printf("[LTW ERROR] " #fn " produced 0x%x\n", (unsigned)_f); \
+            break; \
+        } \
+    } \
+    call_stmt; \
+} while(0)
+
 #endif //POJAVLAUNCHER_DEBUG_H

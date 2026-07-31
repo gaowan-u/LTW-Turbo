@@ -210,24 +210,7 @@ void glTexParameteri( 	GLenum target,
     if(!filter_params_integer(target, pname, param)) return;
     if(!filter_params_float(target, pname, (GLfloat)param)) return;
     swizzle_process_swizzle_param(target, pname, &param);
-    if(glerr_trace) {
-        static unsigned int _trace_n = 0;
-        if((++_trace_n & 0xF) == 0) {
-            // Drain stale errors first, then the call, then read again:
-            // proves whether THIS call really produced the error.
-            GLenum stale = es3_functions.glGetError();
-            es3_functions.glTexParameteri(target, pname, param);
-            GLenum fresh = es3_functions.glGetError();
-            if(stale != GL_NO_ERROR)
-                printf("[LTW ERROR] stale 0x%x before glTexParameteri (not its fault)\n", (unsigned)stale);
-            if(fresh != GL_NO_ERROR)
-                printf("[LTW ERROR] glTexParameteri produced 0x%x target=0x%x pname=0x%x param=0x%x\n",
-                       (unsigned)fresh, (unsigned)target, (unsigned)pname, (unsigned)param);
-            return;
-        }
-    }
-    es3_functions.glTexParameteri(target, pname, param);
-    GLERR_CHECK("glTexParameteri target=0x%x pname=0x%x param=0x%x", target, pname, param);
+    GLTRACE_CALL(glTexParameteri, es3_functions.glTexParameteri(target, pname, param));
 }
 
 void glTexParameterfv( 	GLenum target,
@@ -397,6 +380,93 @@ void glDisable(GLenum cap) {
     if(!current_context) return;
     if(is_fixed_function_cap(cap)) return;
     es3_functions.glDisable(cap);
+}
+
+// Pass-through wrappers with double-drain error tracing (LTW_DEBUG trace
+// hunt for the recurring 0x500 INVALID_ENUM).
+void glBindTexture(GLenum target, GLuint texture) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBindTexture, es3_functions.glBindTexture(target, texture));
+}
+void glActiveTexture(GLenum texture) {
+    if(!current_context) return;
+    GLTRACE_CALL(glActiveTexture, es3_functions.glActiveTexture(texture));
+}
+void glPixelStorei(GLenum pname, GLint param) {
+    if(!current_context) return;
+    GLTRACE_CALL(glPixelStorei, es3_functions.glPixelStorei(pname, param));
+}
+void glGenerateMipmap(GLenum target) {
+    if(!current_context) return;
+    GLTRACE_CALL(glGenerateMipmap, es3_functions.glGenerateMipmap(target));
+}
+void glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
+    if(!current_context) return;
+    GLTRACE_CALL(glViewport, es3_functions.glViewport(x, y, width, height));
+}
+void glBlendFunc(GLenum sfactor, GLenum dfactor) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBlendFunc, es3_functions.glBlendFunc(sfactor, dfactor));
+}
+void glBlendFuncSeparate(GLenum sfactorRGB, GLenum dfactorRGB, GLenum sfactorAlpha, GLenum dfactorAlpha) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBlendFuncSeparate, es3_functions.glBlendFuncSeparate(sfactorRGB, dfactorRGB, sfactorAlpha, dfactorAlpha));
+}
+void glDepthFunc(GLenum func) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDepthFunc, es3_functions.glDepthFunc(func));
+}
+void glDepthMask(GLboolean flag) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDepthMask, es3_functions.glDepthMask(flag));
+}
+void glColorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha) {
+    if(!current_context) return;
+    GLTRACE_CALL(glColorMask, es3_functions.glColorMask(red, green, blue, alpha));
+}
+void glCullFace(GLenum mode) {
+    if(!current_context) return;
+    GLTRACE_CALL(glCullFace, es3_functions.glCullFace(mode));
+}
+void glStencilFunc(GLenum func, GLint ref, GLuint mask) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilFunc, es3_functions.glStencilFunc(func, ref, mask));
+}
+void glStencilMask(GLuint mask) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilMask, es3_functions.glStencilMask(mask));
+}
+void glLineWidth(GLfloat width) {
+    if(!current_context) return;
+    GLTRACE_CALL(glLineWidth, es3_functions.glLineWidth(width));
+}
+void glHint(GLenum target, GLenum mode) {
+    if(!current_context) return;
+    GLTRACE_CALL(glHint, es3_functions.glHint(target, mode));
+}
+void glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum usage) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBufferData, es3_functions.glBufferData(target, size, data, usage));
+}
+void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void* data) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBufferSubData, es3_functions.glBufferSubData(target, offset, size, data));
+}
+void glCompileShader(GLuint shader) {
+    if(!current_context) return;
+    GLTRACE_CALL(glCompileShader, es3_functions.glCompileShader(shader));
+}
+void glUniform1i(GLint location, GLint v0) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform1i, es3_functions.glUniform1i(location, v0));
+}
+void glUniform4f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform4f, es3_functions.glUniform4f(location, v0, v1, v2, v3));
+}
+void glUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniformMatrix4fv, es3_functions.glUniformMatrix4fv(location, count, transpose, value));
 }
 
 INTERNAL int get_buffer_index(GLenum buffer) {
