@@ -336,10 +336,49 @@ const GLubyte* glGetString(GLenum name) {
 
 bool debug = false;
 
+// Fixed-function pipeline state that GLES 3.x does not support. LWJGL2-era
+// apps (Minecraft <=1.16) toggle these caps every frame, e.g.
+// glEnable(GL_ALPHA_TEST). Forwarding them makes the driver raise
+// GL_INVALID_ENUM; on ES these states are no-ops (fully programmable
+// pipeline), so swallow them. GL_CLIP_PLANE* is intentionally absent:
+// it shares values with the valid GL_CLIP_DISTANCE* caps.
+static bool is_fixed_function_cap(GLenum cap) {
+    switch (cap) {
+        case GL_ALPHA_TEST:
+        case GL_LIGHTING:
+        case GL_LIGHT0: case GL_LIGHT1: case GL_LIGHT2: case GL_LIGHT3:
+        case GL_LIGHT4: case GL_LIGHT5: case GL_LIGHT6: case GL_LIGHT7:
+        case GL_FOG:
+        case GL_COLOR_MATERIAL:
+        case GL_NORMALIZE:
+        case GL_RESCALE_NORMAL:
+        case GL_TEXTURE_1D: case GL_TEXTURE_2D: case GL_TEXTURE_3D:
+        case GL_TEXTURE_CUBE_MAP:
+        case GL_TEXTURE_GEN_S: case GL_TEXTURE_GEN_T:
+        case GL_TEXTURE_GEN_R: case GL_TEXTURE_GEN_Q:
+        case GL_POINT_SMOOTH: case GL_LINE_SMOOTH: case GL_POLYGON_SMOOTH:
+        case GL_POLYGON_OFFSET_POINT: case GL_POLYGON_OFFSET_LINE:
+        case GL_VERTEX_ARRAY: case GL_NORMAL_ARRAY: case GL_COLOR_ARRAY:
+        case GL_TEXTURE_COORD_ARRAY: case GL_EDGE_FLAG_ARRAY:
+        case GL_FOG_COORD_ARRAY: case GL_SECONDARY_COLOR_ARRAY:
+        case GL_INDEX_ARRAY:
+            return true;
+        default:
+            return false;
+    }
+}
+
 void glEnable(GLenum cap) {
     if(!current_context) return;
     if(cap == GL_DEBUG_OUTPUT && !debug) return;
+    if(is_fixed_function_cap(cap)) return;
     es3_functions.glEnable(cap);
+}
+
+void glDisable(GLenum cap) {
+    if(!current_context) return;
+    if(is_fixed_function_cap(cap)) return;
+    es3_functions.glDisable(cap);
 }
 
 INTERNAL int get_buffer_index(GLenum buffer) {
