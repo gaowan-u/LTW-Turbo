@@ -211,7 +211,7 @@ void glTexParameteri( 	GLenum target,
     if(!filter_params_float(target, pname, (GLfloat)param)) return;
     swizzle_process_swizzle_param(target, pname, &param);
     es3_functions.glTexParameteri(target, pname, param);
-    GLERR_CHECK("glTexParameteri");
+    GLERR_CHECK("glTexParameteri target=0x%x pname=0x%x param=0x%x", target, pname, param);
 }
 
 void glTexParameterfv( 	GLenum target,

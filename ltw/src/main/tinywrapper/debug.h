@@ -20,12 +20,13 @@ extern bool glerr_trace;
 
 // Sample the driver error queue after a call (every 1024th call, zero
 // overhead otherwise). Clears pending errors it reads, so the caller must
-// not rely on glGetError() after a trace point.
-#define GLERR_CHECK(fn) do { if(glerr_trace) { \
+// not rely on glGetError() after a trace point. Optional extra args are
+// printf-style, e.g. GLERR_CHECK("glTexParameteri p=0x%x", pname).
+#define GLERR_CHECK(fn, ...) do { if(glerr_trace) { \
     static unsigned int _glerr_n = 0; \
     if((++_glerr_n & 0x3FFu) == 0) { \
         GLenum _e = es3_functions.glGetError(); \
-        if(_e != GL_NO_ERROR) printf("[LTW ERROR] GL error 0x%x after " fn "\n", (unsigned)_e); \
+        if(_e != GL_NO_ERROR) printf("[LTW ERROR] GL error 0x%x after " fn "\n", (unsigned)_e, ##__VA_ARGS__); \
     } \
 } } while(0)
 
