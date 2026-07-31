@@ -549,6 +549,8 @@ void glTexBufferRangeARB(GLenum target, GLenum internalFormat, GLuint buffer, GL
 }
 
 static bool noerror;
+// Flip to false once the GL error hunt is done.
+bool glerr_trace = true;
 
 __attribute((constructor)) void init_noerror() {
     noerror = env_istrue("LIBGL_NOERROR");
@@ -564,7 +566,7 @@ __attribute((constructor)) void init_noerror() {
 GLenum glGetError() {
     if(noerror) return 0;
     GLenum e = es3_functions.glGetError();
-    if(debug && e != GL_NO_ERROR) {
+    if(glerr_trace && e != GL_NO_ERROR) {
         static unsigned int n = 0;
         if((n++ & 0x3F) == 0) LTW_ERROR_PRINTF("LTW: glGetError -> 0x%x", (unsigned)e);
     }

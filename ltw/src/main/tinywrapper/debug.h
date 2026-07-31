@@ -10,15 +10,18 @@
 #include <stdbool.h>
 
 extern bool debug;
+// GL error queue tracing. Default ON while debugging; flip to false once
+// the 1280 INVALID_ENUM hunt is done (no launcher-side env vars available).
+extern bool glerr_trace;
 
 #define LTW_DEBUG_PRINTF(fmt, ...) do { if(debug) printf("[LTW DEBUG] " fmt "\n", ##__VA_ARGS__); } while(0)
 
 #define LTW_ERROR_PRINTF(fmt, ...) printf("[LTW ERROR] " fmt "\n", ##__VA_ARGS__)
 
-// Sample the driver error queue after a call (LTW_DEBUG only, every 1024th
-// call, zero overhead otherwise). Clears pending errors it reads, so the
-// caller must not rely on glGetError() after a trace point.
-#define GLERR_CHECK(fn) do { if(debug) { \
+// Sample the driver error queue after a call (every 1024th call, zero
+// overhead otherwise). Clears pending errors it reads, so the caller must
+// not rely on glGetError() after a trace point.
+#define GLERR_CHECK(fn) do { if(glerr_trace) { \
     static unsigned int _glerr_n = 0; \
     if((++_glerr_n & 0x3FFu) == 0) { \
         GLenum _e = es3_functions.glGetError(); \
