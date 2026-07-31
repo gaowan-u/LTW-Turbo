@@ -10,6 +10,9 @@
 #include <GLES3/gl3.h>
 #include <string.h>
 #include <time.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include "string_utils.h"
 #include "egl.h"
 #include "proc.h"
@@ -44,110 +47,232 @@ static inline uint64_t get_timestamp() {
 }
 
 typedef struct {
-    size_t source_hash;
+    size_t source_hash;      // djb2, primary hash
+    size_t source_hash2;     // FNV-1a 64, secondary hash: two hashes make collisions practically impossible
     GLenum shader_type;
     GLchar* optimized_source;
-    size_t source_size;  // 源代码大小，用于内存管理
-    uint32_t access_count;  // 访问计数，用于 LRU
-    uint64_t last_access;   // 最后访问时间
+    size_t source_size;      // optimized source size, for memory accounting
+    uint32_t access_count;   // LRU accounting
+    uint64_t last_access;
 } shader_cache_entry_t;
 
 static shader_cache_entry_t shader_cache[SHADER_CACHE_SIZE] = {0};
 static int shader_cache_count = 0;
 static uint64_t cache_hits = 0;
 static uint64_t cache_misses = 0;
-static size_t cache_total_memory = 0;  // 缓存总内存使用量
+static size_t cache_total_memory = 0;
 
 static inline size_t hash_string(const char* str) {
     size_t hash = 5381;
-    int c;
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + c;
+    while (*str) {
+        hash = ((hash << 5) + hash) + (unsigned char)*str++;
     }
     return hash;
 }
 
-static GLchar* get_cached_shader(size_t hash, GLenum shader_type) {
+static inline size_t hash_fnv1a(const char* str) {
+    size_t hash = 1469598103934665603ULL;
+    while (*str) {
+        hash ^= (unsigned char)*str++;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+static GLchar* cache_lookup(size_t hash1, size_t hash2, GLenum shader_type) {
     for (int i = 0; i < shader_cache_count; i++) {
-        if (shader_cache[i].source_hash == hash && 
-            shader_cache[i].shader_type == shader_type) {
-            // 更新访问统计
-            shader_cache[i].access_count++;
-            shader_cache[i].last_access = get_timestamp();
-            #ifdef SHADER_CACHE_STATS
+        shader_cache_entry_t* e = &shader_cache[i];
+        if (e->source_hash == hash1 && e->source_hash2 == hash2 && e->shader_type == shader_type) {
+            e->access_count++;
+            e->last_access = get_timestamp();
             cache_hits++;
-            #endif
-            return shader_cache[i].optimized_source;
+            return e->optimized_source;
         }
     }
-    #ifdef SHADER_CACHE_STATS
     cache_misses++;
-    #endif
     return NULL;
 }
 
-static void cache_shader(size_t hash, GLenum shader_type, const GLchar* optimized_source) {
+static int cache_evict_slot(void) {
+    int lru = 0;
+    for (int i = 1; i < shader_cache_count; i++) {
+        shader_cache_entry_t* a = &shader_cache[i];
+        shader_cache_entry_t* b = &shader_cache[lru];
+        if (a->access_count < b->access_count ||
+            (a->access_count == b->access_count && a->last_access < b->last_access)) {
+            lru = i;
+        }
+    }
+    return lru;
+}
+
+static void cache_store(size_t hash1, size_t hash2, GLenum shader_type, const GLchar* optimized_source) {
+    if (optimized_source == NULL) return;
     size_t source_size = strlen(optimized_source) + 1;
 
-    // 检查单个着色器是否过大
+    // Skip shaders too large to be worth caching
     if (source_size > SHADER_CACHE_MAX_MEMORY / 2) {
         LTW_DEBUG_PRINTF("LTW: shader source too large for cache: %zu bytes", source_size);
         return;
     }
 
-    if (shader_cache_count >= SHADER_CACHE_SIZE || cache_total_memory + source_size > SHADER_CACHE_MAX_MEMORY) {
-        // LRU 策略：替换访问次数最少且最久未使用的条目
-        int lru_index = 0;
-        uint32_t min_access = shader_cache[0].access_count;
-        uint64_t oldest_access = shader_cache[0].last_access;
-
-        for (int i = 1; i < shader_cache_count; i++) {
-            if (shader_cache[i].access_count < min_access ||
-                (shader_cache[i].access_count == min_access &&
-                 shader_cache[i].last_access < oldest_access)) {
-                min_access = shader_cache[i].access_count;
-                oldest_access = shader_cache[i].last_access;
-                lru_index = i;
-            }
-        }
-
-        // 释放被替换的条目
-        if (shader_cache[lru_index].optimized_source) {
-            cache_total_memory -= shader_cache[lru_index].source_size;
-            free(shader_cache[lru_index].optimized_source);
-        }
-
-        // 插入新条目
-        shader_cache[lru_index].source_hash = hash;
-        shader_cache[lru_index].shader_type = shader_type;
-        shader_cache[lru_index].optimized_source = strdup(optimized_source);
-        shader_cache[lru_index].source_size = source_size;
-        shader_cache[lru_index].access_count = 1;
-        shader_cache[lru_index].last_access = get_timestamp();
-        cache_total_memory += source_size;
+    int slot;
+    if (shader_cache_count < SHADER_CACHE_SIZE) {
+        slot = shader_cache_count++;
     } else {
-        // 缓存未满，直接添加
-        shader_cache[shader_cache_count].source_hash = hash;
-        shader_cache[shader_cache_count].shader_type = shader_type;
-        shader_cache[shader_cache_count].optimized_source = strdup(optimized_source);
-        shader_cache[shader_cache_count].source_size = source_size;
-        shader_cache[shader_cache_count].access_count = 1;
-        shader_cache[shader_cache_count].last_access = get_timestamp();
-        cache_total_memory += source_size;
-        shader_cache_count++;
+        // Full: evict the least recently used entry
+        slot = cache_evict_slot();
+        cache_total_memory -= shader_cache[slot].source_size;
+        free(shader_cache[slot].optimized_source);
     }
+
+    shader_cache_entry_t* e = &shader_cache[slot];
+    e->source_hash = hash1;
+    e->source_hash2 = hash2;
+    e->shader_type = shader_type;
+    e->optimized_source = strdup(optimized_source);
+    e->source_size = source_size;
+    e->access_count = 1;
+    e->last_access = get_timestamp();
+    cache_total_memory += source_size;
 }
 
 #ifdef SHADER_CACHE_STATS
 static void print_cache_stats(void) {
     if (cache_hits + cache_misses > 0) {
         float hit_rate = (float)cache_hits / (cache_hits + cache_misses) * 100.0f;
-        LTW_DEBUG_PRINTF("Shader cache stats: hits=%llu, misses=%llu, hit_rate=%.2f%%, size=%d/%d, memory=%.2fMB/%.2fMB",
+        LTW_DEBUG_PRINTF("Shader cache stats: hits=%" PRIu64 ", misses=%" PRIu64 ", hit_rate=%.2f%%, size=%d/%d, memory=%.2fMB/%.2fMB",
                         cache_hits, cache_misses, hit_rate, shader_cache_count, SHADER_CACHE_SIZE,
                         cache_total_memory / (1024.0f * 1024.0f), SHADER_CACHE_MAX_MEMORY / (1024.0f * 1024.0f));
     }
 }
 #endif
+
+/*
+ * ESSL 3.0 removed the built-in gl_FragColor / gl_FragData fragment outputs.
+ * The Mesa-based optimizer downgrades desktop GLSL to ESSL but leaves those
+ * identifiers untouched, which breaks fragment shaders written in the
+ * GLSL 1.10/1.20 style (e.g. Minecraft <=1.16 post-processing shaders).
+ * Rewrite them into explicit output variables with a single-pass scan.
+ * Returns a newly allocated string, or NULL if no rewrite was needed.
+ */
+#define MAX_FRAGDATA_SLOTS 16
+#define MAX_FRAG_REPLACES 64
+
+typedef struct {
+    size_t off;      // offset of the match in the source
+    uint8_t kind;    // 0: gl_FragColor, 1: gl_FragData[N]
+    uint8_t slot;    // draw buffer index for gl_FragData
+    size_t old_len;
+} frag_match_t;
+
+static inline bool is_ident_char(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+static int slot_in_list(const int* slots, int n, int slot) {
+    for (int i = 0; i < n; i++) if (slots[i] == slot) return 1;
+    return 0;
+}
+
+// Collect every gl_FragColor / gl_FragData[N] occurrence with proper
+// identifier boundaries. Returns the number of matches.
+static int collect_frag_matches(const GLchar* src, frag_match_t* m, int max_m,
+                                int* slots, int* nslots) {
+    const GLchar* p = src;
+    int n = 0;
+    while (n < max_m && (p = strstr(p, "gl_Frag")) != NULL) {
+        bool valid = (p == src || !is_ident_char(p[-1]));
+        if (p[7] == 'C' && strncmp(p, "gl_FragColor", 12) == 0 &&
+            valid && !is_ident_char(p[12])) {
+            m[n++] = (frag_match_t){ (size_t)(p - src), 0, 0, 12 };
+            p += 12;
+        } else if (p[7] == 'D' && strncmp(p, "gl_FragData", 11) == 0 &&
+                   valid && p[11] == '[') {
+            const GLchar* q = p + 12;
+            int slot = 0;
+            while (q[0] >= '0' && q[0] <= '9') { slot = slot * 10 + (q[0] - '0'); q++; }
+            if (q > p + 12 && q[0] == ']' && slot <= 255) {
+                if (*nslots < MAX_FRAGDATA_SLOTS && !slot_in_list(slots, *nslots, slot))
+                    slots[(*nslots)++] = slot;
+                m[n++] = (frag_match_t){ (size_t)(p - src), 1, (uint8_t)slot, (size_t)(q + 1 - p) };
+                p = q + 1;
+                continue;
+            }
+            p += 11;
+        } else {
+            p += 8;
+        }
+    }
+    return n;
+}
+
+// Byte offset right after the #version/#extension directive lines.
+static int find_insert_point(const GLchar* src) {
+    const GLchar* line = src;
+    while (*line == '#') {
+        line = strchr(line, '\n');
+        if (line == NULL) return -1;
+        line++;
+    }
+    return (int)(line - src);
+}
+
+static GLchar* rewrite_frag_outputs(const GLchar* src) {
+    frag_match_t m[MAX_FRAG_REPLACES];
+    int slots[MAX_FRAGDATA_SLOTS];
+    int nslots = 0;
+    int n = collect_frag_matches(src, m, MAX_FRAG_REPLACES, slots, &nslots);
+    if (n == 0) return NULL;
+
+    int insert = find_insert_point(src);
+    if (insert < 0) insert = (int)strlen(src);
+
+    // Build the output variable declarations.
+    char decl[1024];
+    char* d = decl;
+    int n_color = 0;
+    for (int i = 0; i < n; i++) if (m[i].kind == 0) n_color++;
+    if (n_color > 0) {
+        memcpy(d, "out highp vec4 ltw_FragColor;\n", 30);
+        d += 30;
+    }
+    for (int i = 0; i < nslots; i++) {
+        int l = snprintf(d, sizeof(decl) - (size_t)(d - decl),
+                         "layout(location = %d) out highp vec4 ltw_FragData%d;\n", slots[i], slots[i]);
+        d += l;
+    }
+    size_t decl_len = (size_t)(d - decl);
+
+    // gl_FragColor grows by 1 byte; gl_FragData[N] keeps the same length.
+    size_t new_len = strlen(src) + (size_t)n_color + decl_len;
+    GLchar* out = malloc(new_len + 1);
+    if (out == NULL) return NULL;
+
+    // src[0..insert) | declarations | src[insert..] with replacements.
+    size_t o = 0, s = (size_t)insert;
+    memcpy(out + o, src, (size_t)insert);
+    o += (size_t)insert;
+    memcpy(out + o, decl, decl_len);
+    o += decl_len;
+    for (int i = 0; i < n; i++) {
+        memcpy(out + o, src + s, m[i].off - s);
+        o += m[i].off - s;
+        if (m[i].kind == 0) {
+            memcpy(out + o, "ltw_FragColor", 13);
+            o += 13;
+        } else {
+            int l = snprintf((char*)out + o, 32, "ltw_FragData%d", m[i].slot);
+            o += (size_t)l;
+        }
+        s = m[i].off + m[i].old_len;
+    }
+    memcpy(out + o, src + s, strlen(src) - s);
+    o += strlen(src) - s;
+    out[o] = 0;
+    return out;
+}
 
 GLuint glCreateProgram(void) {
     if(!current_context) return 0;
@@ -335,7 +460,8 @@ void glShaderSource(GLuint shader, GLsizei count, const GLchar *const*string, co
 #undef SRC_LEN
 
     size_t source_hash = hash_string(target_string);
-    GLchar* cached_source = get_cached_shader(source_hash, shader_info->shader_type);
+    size_t source_hash2 = hash_fnv1a(target_string);
+    GLchar* cached_source = cache_lookup(source_hash, source_hash2, shader_info->shader_type);
 
     if (cached_source != NULL) {
         if(shader_info->source != NULL) free((void*)shader_info->source);
@@ -361,8 +487,22 @@ void glShaderSource(GLuint shader, GLsizei count, const GLchar *const*string, co
     }
 
     GLchar* new_source = optimize_shader(target_string, shader_info->shader_type, 460, current_context->shader_version);
-    cache_shader(source_hash, shader_info->shader_type, new_source);
-    //printf("\n\n\nShader Result\n%s\n\n\n", new_source);
+    if (new_source == NULL) {
+        // Conversion failed: fall back to the unmodified source instead of
+        // handing the driver a NULL pointer.
+        LTW_ERROR_PRINTF("LTWShdrWp: shader conversion failed for shader %u, using unmodified source", shader);
+        new_source = target_string;
+        target_string = NULL; // ownership transferred to new_source
+    } else {
+        // ESSL 3.0 removed the gl_FragColor/gl_FragData built-ins, rewrite
+        // them into explicit outputs (e.g. Minecraft <=1.16 post shaders).
+        GLchar* rewritten = rewrite_frag_outputs(new_source);
+        if (rewritten != NULL) {
+            free(new_source);
+            new_source = rewritten;
+        }
+        cache_store(source_hash, source_hash2, shader_info->shader_type, new_source);
+    }
     if(shader_info->source != NULL) free((void*)shader_info->source);
     shader_info->source = new_source;
     es3_functions.glShaderSource(shader, 1, &shader_info->source, 0);
