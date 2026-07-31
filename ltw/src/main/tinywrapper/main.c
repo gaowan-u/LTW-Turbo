@@ -175,8 +175,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
     } else {
         if(data != NULL) swizzle_process_upload(target, &format, &type);
         pick_internalformat(&internalformat, &type, &format, &data);
-        es3_functions.glTexImage2D(target, level, internalformat, width, height, border, format, type, data);
-        GLERR_CHECK("glTexImage2D");
+        GLTRACE_CALL(glTexImage2D, es3_functions.glTexImage2D(target, level, internalformat, width, height, border, format, type, data));
     }
 }
 
@@ -468,6 +467,112 @@ void glUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, cons
     if(!current_context) return;
     GLTRACE_CALL(glUniformMatrix4fv, es3_functions.glUniformMatrix4fv(location, count, transpose, value));
 }
+void glStencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilOp, es3_functions.glStencilOp(sfail, dpfail, dppass));
+}
+void glStencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilFuncSeparate, es3_functions.glStencilFuncSeparate(face, func, ref, mask));
+}
+void glStencilOpSeparate(GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilOpSeparate, es3_functions.glStencilOpSeparate(face, sfail, dpfail, dppass));
+}
+void glStencilMaskSeparate(GLenum face, GLuint mask) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilMaskSeparate, es3_functions.glStencilMaskSeparate(face, mask));
+}
+void glPolygonOffset(GLfloat factor, GLfloat units) {
+    if(!current_context) return;
+    GLTRACE_CALL(glPolygonOffset, es3_functions.glPolygonOffset(factor, units));
+}
+void glScissor(GLint x, GLint y, GLsizei width, GLsizei height) {
+    if(!current_context) return;
+    GLTRACE_CALL(glScissor, es3_functions.glScissor(x, y, width, height));
+}
+void glClearDepthf(GLclampf d) {
+    if(!current_context) return;
+    GLTRACE_CALL(glClearDepthf, es3_functions.glClearDepthf(d));
+}
+void glClearStencil(GLint s) {
+    if(!current_context) return;
+    GLTRACE_CALL(glClearStencil, es3_functions.glClearStencil(s));
+}
+void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei primcount) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDrawArraysInstanced, es3_functions.glDrawArraysInstanced(mode, first, count, primcount));
+}
+void glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei primcount) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDrawElementsInstanced, es3_functions.glDrawElementsInstanced(mode, count, type, indices, primcount));
+}
+void glVertexAttribDivisor(GLuint index, GLuint divisor) {
+    if(!current_context) return;
+    GLTRACE_CALL(glVertexAttribDivisor, es3_functions.glVertexAttribDivisor(index, divisor));
+}
+void glEnableVertexAttribArray(GLuint index) {
+    if(!current_context) return;
+    GLTRACE_CALL(glEnableVertexAttribArray, es3_functions.glEnableVertexAttribArray(index));
+}
+void glDisableVertexAttribArray(GLuint index) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDisableVertexAttribArray, es3_functions.glDisableVertexAttribArray(index));
+}
+void glUniform2f(GLint location, GLfloat v0, GLfloat v1) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform2f, es3_functions.glUniform2f(location, v0, v1));
+}
+void glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform3f, es3_functions.glUniform3f(location, v0, v1, v2));
+}
+void glUniform2fv(GLint location, GLsizei count, const GLfloat* value) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform2fv, es3_functions.glUniform2fv(location, count, value));
+}
+void glUniform3fv(GLint location, GLsizei count, const GLfloat* value) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform3fv, es3_functions.glUniform3fv(location, count, value));
+}
+GLint glGetUniformLocation(GLuint program, const GLchar* name) {
+    GLint ret = -1;
+    if(!current_context) return -1;
+    GLTRACE_CALL(glGetUniformLocation, ret = es3_functions.glGetUniformLocation(program, name));
+    return ret;
+}
+void glTexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const void* pixels) {
+    if(!current_context) return;
+    GLTRACE_CALL(glTexImage3D, es3_functions.glTexImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels));
+}
+void glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void* pixels) {
+    if(!current_context) return;
+    GLTRACE_CALL(glTexSubImage3D, es3_functions.glTexSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels));
+}
+void glCopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border) {
+    if(!current_context) return;
+    GLTRACE_CALL(glCopyTexImage2D, es3_functions.glCopyTexImage2D(target, level, internalformat, x, y, width, height, border));
+}
+void glBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBlitFramebuffer, es3_functions.glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter));
+}
+void glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDrawRangeElements, es3_functions.glDrawRangeElements(mode, start, end, count, type, indices));
+}
+void glSampleCoverage(GLfloat value, GLboolean invert) {
+    if(!current_context) return;
+    GLTRACE_CALL(glSampleCoverage, es3_functions.glSampleCoverage(value, invert));
+}
+void glFlush(void) {
+    if(!current_context) return;
+    GLTRACE_CALL(glFlush, es3_functions.glFlush());
+}
+void glFinish(void) {
+    if(!current_context) return;
+    GLTRACE_CALL(glFinish, es3_functions.glFinish());
+}
 
 INTERNAL int get_buffer_index(GLenum buffer) {
     switch (buffer) {
@@ -551,7 +656,7 @@ void glBindBufferRange(GLenum target, GLuint index, GLuint buffer, GLintptr offs
 
 void glUseProgram(GLuint program) {
     if(!current_context) return;
-    es3_functions.glUseProgram(program);
+    GLTRACE_CALL(glUseProgram, es3_functions.glUseProgram(program));
     current_context->program = program;
 }
 
@@ -682,8 +787,7 @@ void glClear(GLbitfield mask) {
         LTW_DEBUG_PRINTF("LTW INTERCEPT: glClear called with mask=0x%x", mask);
         LTW_DEBUG_PRINTF("LTW MAPPING: Mapping to es3_functions.glClear");
     }
-    es3_functions.glClear(mask);
-    GLERR_CHECK("glClear");
+    GLTRACE_CALL(glClear, es3_functions.glClear(mask));
     if(debug) {
         LTW_DEBUG_PRINTF("LTW SUCCESS: glClear completed successfully");
     }
@@ -691,26 +795,17 @@ void glClear(GLbitfield mask) {
 
 void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
     if(!current_context) return;
-    if(debug) {
-        LTW_DEBUG_PRINTF("LTW INTERCEPT: glClearColor called with RGBA=(%.2f, %.2f, %.2f, %.2f)", red, green, blue, alpha);
-        LTW_DEBUG_PRINTF("LTW MAPPING: Mapping to es3_functions.glClearColor");
-    }
-    es3_functions.glClearColor(red, green, blue, alpha);
-    if(debug) {
-        LTW_DEBUG_PRINTF("LTW SUCCESS: glClearColor completed successfully");
-    }
+    GLTRACE_CALL(glClearColor, es3_functions.glClearColor(red, green, blue, alpha));
 }
 
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     if(!current_context) return;
-    current_context->fast_gl.glDrawArrays(mode, first, count);
-    GLERR_CHECK("glDrawArrays");
+    GLTRACE_CALL(glDrawArrays, current_context->fast_gl.glDrawArrays(mode, first, count));
 }
 
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
     if(!current_context) return;
-    current_context->fast_gl.glDrawElements(mode, count, type, indices);
-    GLERR_CHECK("glDrawElements");
+    GLTRACE_CALL(glDrawElements, current_context->fast_gl.glDrawElements(mode, count, type, indices));
 }
 
 // 批量更新相关函数 - 用于优化纹理状态切换

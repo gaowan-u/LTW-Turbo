@@ -290,7 +290,7 @@ GLuint glCreateProgram(void) {
 
 void glDeleteProgram(GLuint program) {
     if(!current_context) return;
-    es3_functions.glDeleteProgram(program);
+    GLTRACE_CALL(glDeleteProgram, es3_functions.glDeleteProgram(program));
     program_info_t *old_programinfo = unordered_map_remove(current_context->program_map, (void*)program);
     if(old_programinfo == NULL) return;
     for(GLuint i = 0; i < MAX_DRAWBUFFERS; i++) {
@@ -303,7 +303,7 @@ void glDeleteProgram(GLuint program) {
 void glAttachShader( 	GLuint program,
                         GLuint shader) {
     if(!current_context) return;
-    es3_functions.glAttachShader(program, shader);
+    GLTRACE_CALL(glAttachShader, es3_functions.glAttachShader(program, shader));
     program_info_t* program_info = unordered_map_get(current_context->program_map, (void*)program);
     shader_info_t* shader_info = unordered_map_get(current_context->shader_map, (void*)shader);
     if(program_info == NULL || shader_info == NULL || shader_info->shader_type != GL_FRAGMENT_SHADER) return;
@@ -332,7 +332,7 @@ void glGetShaderiv(GLuint shader, GLenum pname, GLint* params) {
         *params = GL_TRUE;
         return;
     }
-    es3_functions.glGetShaderiv(shader, pname, params);
+    GLTRACE_CALL(glGetShaderiv, es3_functions.glGetShaderiv(shader, pname, params));
 }
 
 static void insert_fragout_pos(char* source, int* size, const char* name, GLuint pos) {
@@ -410,12 +410,13 @@ void glLinkProgram(GLuint program) {
     es3_functions.glDeleteShader(patched_shader);
     return;
     fallthrough:
-    es3_functions.glLinkProgram(program);
+    GLTRACE_CALL(glLinkProgram, es3_functions.glLinkProgram(program));
 }
 
 GLuint glCreateShader(GLenum shaderType) {
     if(!current_context) return 0;
-    GLuint phys_shader = es3_functions.glCreateShader(shaderType);
+    GLuint phys_shader;
+    GLTRACE_CALL(glCreateShader, phys_shader = es3_functions.glCreateShader(shaderType));
     if(phys_shader == 0) return 0;
     shader_info_t* info_struct = mempool_alloc(current_context->shader_info_pool);
     if(info_struct == NULL) {
@@ -430,7 +431,7 @@ GLuint glCreateShader(GLenum shaderType) {
 
 void glDeleteShader(GLuint shader) {
     if(!current_context) return;
-    es3_functions.glDeleteShader(shader);
+    GLTRACE_CALL(glDeleteShader, es3_functions.glDeleteShader(shader));
     shader_info_t * old_shaderinfo = unordered_map_remove(current_context->shader_map, (void*)shader);
     if(old_shaderinfo == NULL) return;
     if(old_shaderinfo->source != NULL) free((void*)old_shaderinfo->source);
@@ -505,6 +506,6 @@ void glShaderSource(GLuint shader, GLsizei count, const GLchar *const*string, co
     }
     if(shader_info->source != NULL) free((void*)shader_info->source);
     shader_info->source = new_source;
-    es3_functions.glShaderSource(shader, 1, &shader_info->source, 0);
+    GLTRACE_CALL(glShaderSource, es3_functions.glShaderSource(shader, 1, &shader_info->source, 0));
     free(target_string);
 }
