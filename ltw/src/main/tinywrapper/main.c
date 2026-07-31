@@ -210,6 +210,22 @@ void glTexParameteri( 	GLenum target,
     if(!filter_params_integer(target, pname, param)) return;
     if(!filter_params_float(target, pname, (GLfloat)param)) return;
     swizzle_process_swizzle_param(target, pname, &param);
+    if(glerr_trace) {
+        static unsigned int _trace_n = 0;
+        if((++_trace_n & 0xF) == 0) {
+            // Drain stale errors first, then the call, then read again:
+            // proves whether THIS call really produced the error.
+            GLenum stale = es3_functions.glGetError();
+            es3_functions.glTexParameteri(target, pname, param);
+            GLenum fresh = es3_functions.glGetError();
+            if(stale != GL_NO_ERROR)
+                printf("[LTW ERROR] stale 0x%x before glTexParameteri (not its fault)\n", (unsigned)stale);
+            if(fresh != GL_NO_ERROR)
+                printf("[LTW ERROR] glTexParameteri produced 0x%x target=0x%x pname=0x%x param=0x%x\n",
+                       (unsigned)fresh, (unsigned)target, (unsigned)pname, (unsigned)param);
+            return;
+        }
+    }
     es3_functions.glTexParameteri(target, pname, param);
     GLERR_CHECK("glTexParameteri target=0x%x pname=0x%x param=0x%x", target, pname, param);
 }
