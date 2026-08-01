@@ -117,6 +117,9 @@ void fp_unbind_default_program(void);
 // 必须在绘制时把数据拷贝到 VBO。返回 true 表示已设置。
 bool fp_prepare_client_arrays(GLsizei count);
 
+// 低频屏幕像素探针（调试用）
+void fp_pixel_probe(void);
+
 // 查询默认 shader 当前是否可用
 bool fp_default_program_ready(void);
 

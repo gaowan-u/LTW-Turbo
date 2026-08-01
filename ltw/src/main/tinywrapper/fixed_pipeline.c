@@ -679,6 +679,33 @@ static void fp_set_default_uniforms(void) {
     if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
 }
 
+// 低频屏幕像素探针：确认渲染结果（每 4096 次 fp 绘制读取一次屏幕
+// 几个固定点的像素颜色，直接验证画面内容）。
+static void fp_pixel_probe(void) {
+    static unsigned int probe_n = 0;
+    if((++probe_n & 0xFFF) != 1) return;
+    GLint vp[4] = {0};
+    es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
+    if(vp[2] <= 0 || vp[3] <= 0) return;
+    struct { int x, y; } pts[5] = {
+        {vp[2] / 2,         vp[3] / 2},                    // 中心
+        {vp[2] * 1 / 4,     vp[3] * 1 / 4},                // 左上
+        {vp[2] * 3 / 4,     vp[3] * 1 / 4},                // 右上
+        {vp[2] * 1 / 4,     vp[3] * 3 / 4},                // 左下
+        {vp[2] * 3 / 4,     vp[3] * 3 / 4},                // 右下
+    };
+    GLint old_rb = 0;
+    es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_rb);
+    printf("[LTW PIX] vp=%d,%d %dx%d", vp[0], vp[1], vp[2], vp[3]);
+    for(int i = 0; i < 5; i++) {
+        uint8_t px[4] = {0};
+        es3_functions.glReadPixels(pts[i].x, pts[i].y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        printf(" p%d=(%u,%u,%u,%u)", i, px[0], px[1], px[2], px[3]);
+    }
+    printf(" fb=%d\n", old_rb);
+    fflush(stdout);
+}
+
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
 // 若应用通过固定管线 API（glVertexPointer 等）提供了客户端数组/VBO 偏移，
 // 这里把它们设置成 attribute；否则用即时模式缓冲/默认值。
