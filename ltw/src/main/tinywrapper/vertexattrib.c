@@ -6,6 +6,7 @@
 
 #include <proc.h>
 #include <egl.h>
+#include <stdio.h>
 #include "simd_utils.h"
 #include "debug.h"
 
