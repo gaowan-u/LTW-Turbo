@@ -623,18 +623,22 @@ bool fp_bind_default_program(void) {
     if(fp_vao) es3_functions.glBindVertexArray(fp_vao);
 
     // 顶点属性：优先用应用设置的客户端数组（MC 1.12 GUI 的 glVertexPointer
-    // 路径），pointer 在 ARRAY_BUFFER 绑定时是 VBO 偏移。
-    if(fp_client_vertex_enabled && fp_client_vertex_size > 0) {
+    // 路径）。GLES 3.x 禁止客户端数组指针（绑定非零 VAO 时），所以只有
+    // ARRAY_BUFFER 已绑定非 0 buffer（pointer 是 VBO 偏移）时才设置；
+    // 否则跳过，避免驱动报错导致状态混乱。
+    GLint abo = 0;
+    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &abo);
+    if(fp_client_vertex_enabled && fp_client_vertex_size > 0 && abo != 0) {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
         es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
                                             GL_FALSE, fp_client_vertex_stride, fp_client_vertex_ptr);
     }
-    if(fp_client_color_enabled && fp_client_color_size > 0) {
+    if(fp_client_color_enabled && fp_client_color_size > 0 && abo != 0) {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
         es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
                                             GL_TRUE, fp_client_color_stride, fp_client_color_ptr);
     }
-    if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0) {
+    if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0 && abo != 0) {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
         es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
                                             GL_FALSE, fp_client_texcoord_stride, fp_client_texcoord_ptr);

@@ -194,6 +194,18 @@ void glNormal3fv(const GLfloat* v) {
 // ---- 客户端数组 ----
 void glVertexPointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
     if(!current_context) return;
+    {
+        // 一次性诊断：pointer 是 VBO 偏移还是客户端 CPU 指针
+        static bool diag = false;
+        if(!diag) {
+            diag = true;
+            GLint eab = 0;
+            es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &eab);
+            printf("[LTW DIAG] glVertexPointer size=%d type=0x%x stride=%d ptr=%p abo=%d\n",
+                   size, type, stride, pointer, eab);
+            fflush(stdout);
+        }
+    }
     fp_vertex_pointer(size, type, stride, pointer);
 }
 void glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
