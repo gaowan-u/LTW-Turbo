@@ -66,6 +66,7 @@ static GLint fp_usetex_loc = -1;
 static GLint fp_usecolor_loc = -1;
 static GLuint fp_vbo = 0;
 static GLuint fp_vao = 0;
+static GLuint fp_saved_vao = 0;
 static bool fp_init_done = false;
 
 // 矩阵栈
@@ -609,12 +610,35 @@ static void fp_set_default_uniforms(void) {
 }
 
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
-// 绑定纹理到 unit 0（若需要）。
+// 若应用通过固定管线 API（glVertexPointer 等）提供了客户端数组/VBO 偏移，
+// 这里把它们设置成 attribute；否则用即时模式缓冲/默认值。
 bool fp_bind_default_program(void) {
     fp_ensure_program();
     if(!fp_program) return false;
     es3_functions.glUseProgram(fp_program);
     fp_set_default_uniforms();
+
+    // 使用私有 VAO，避免污染应用绑定的 VAO 的 attribute 状态
+    es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, (GLint*)&fp_saved_vao);
+    if(fp_vao) es3_functions.glBindVertexArray(fp_vao);
+
+    // 顶点属性：优先用应用设置的客户端数组（MC 1.12 GUI 的 glVertexPointer
+    // 路径），pointer 在 ARRAY_BUFFER 绑定时是 VBO 偏移。
+    if(fp_client_vertex_enabled && fp_client_vertex_size > 0) {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+        es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
+                                            GL_FALSE, fp_client_vertex_stride, fp_client_vertex_ptr);
+    }
+    if(fp_client_color_enabled && fp_client_color_size > 0) {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+        es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
+                                            GL_TRUE, fp_client_color_stride, fp_client_color_ptr);
+    }
+    if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0) {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+        es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
+                                            GL_FALSE, fp_client_texcoord_stride, fp_client_texcoord_ptr);
+    }
 
     if(fp_bound_texture != 0) {
         GLint old_active_tex = 0;
@@ -629,6 +653,7 @@ bool fp_bind_default_program(void) {
 
 void fp_unbind_default_program(void) {
     if(!fp_program) return;
+    if(fp_saved_vao != 0) es3_functions.glBindVertexArray(fp_saved_vao);
     es3_functions.glUseProgram(0);
 }
 
