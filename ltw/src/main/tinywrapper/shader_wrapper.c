@@ -533,13 +533,13 @@ void glShaderSourceARB(GLhandleARB shaderObj, GLsizei count, const GLcharARB **s
 }
 void glCompileShaderARB(GLhandleARB shaderObj) { glCompileShader((GLuint)shaderObj); }
 void glAttachObjectARB(GLhandleARB containerObj, GLhandleARB obj) { glAttachShader((GLuint)containerObj, (GLuint)obj); }
-void glDetachObjectARB(GLhandleARB containerObj, GLhandleARB obj) { glDetachShader((GLuint)containerObj, (GLuint)obj); }
+void glDetachObjectARB(GLhandleARB containerObj, GLhandleARB obj) { es3_functions.glDetachShader((GLuint)containerObj, (GLuint)obj); }
 void glLinkProgramARB(GLhandleARB programObj) { glLinkProgram((GLuint)programObj); }
 void glUseProgramObjectARB(GLhandleARB programObj) { glUseProgram((GLuint)programObj); }
-void glValidateProgramARB(GLhandleARB programObj) { glValidateProgram((GLuint)programObj); }
+void glValidateProgramARB(GLhandleARB programObj) { es3_functions.glValidateProgram((GLuint)programObj); }
 GLint glGetUniformLocationARB(GLhandleARB programObj, const GLcharARB *name) { return glGetUniformLocation((GLuint)programObj, (const GLchar*)name); }
-GLint glGetAttribLocationARB(GLhandleARB programObj, const GLcharARB *name) { return glGetAttribLocation((GLuint)programObj, (const GLchar*)name); }
-void glBindAttribLocationARB(GLhandleARB programObj, GLuint index, const GLcharARB *name) { glBindAttribLocation((GLuint)programObj, index, (const GLchar*)name); }
+GLint glGetAttribLocationARB(GLhandleARB programObj, const GLcharARB *name) { return es3_functions.glGetAttribLocation((GLuint)programObj, (const GLchar*)name); }
+void glBindAttribLocationARB(GLhandleARB programObj, GLuint index, const GLcharARB *name) { es3_functions.glBindAttribLocation((GLuint)programObj, index, (const GLchar*)name); }
 
 void glDeleteObjectARB(GLhandleARB obj) {
     if(ltws_is_program((GLuint)obj)) glDeleteProgram((GLuint)obj);
