@@ -288,13 +288,31 @@ static void fp_flush_immediate(void) {
     GLenum mode = fp_immediate_mode;
     GLsizei count = fp_immediate_count;
 
+    // 先保存应用绑定状态，并把 fp_vbo 绑定为当前 ARRAY_BUFFER，
+    // glBufferData 操作的是"当前绑定的 buffer"，必须先绑定。
+    GLint old_vao = 0;
+    GLint old_array_buffer = 0;
+    GLint old_program = 0;
+    es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &old_vao);
+    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_array_buffer);
+    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
+
     // QUADS -> TRIANGLES：复制顶点展开
     if(mode == GL_QUADS && count >= 4 && (count & 3) == 0) {
         GLsizei quads = count >> 2;
         GLsizei tri_count = quads * 6;
-        if(tri_count > FP_MAX_VERTICES) { fp_immediate_count = 0; return; }
+        if(tri_count > FP_MAX_VERTICES) {
+            es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
+            fp_immediate_count = 0;
+            return;
+        }
         GLfloat* expanded = (GLfloat*)malloc((size_t)tri_count * FP_VERTEX_BYTES);
-        if(!expanded) { fp_immediate_count = 0; return; }
+        if(!expanded) {
+            es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
+            fp_immediate_count = 0;
+            return;
+        }
         for(GLsizei q = 0; q < quads; q++) {
             GLfloat* a = fp_immediate_vertices + (size_t)(q * 4 + 0) * FP_STRIDE;
             GLfloat* b = fp_immediate_vertices + (size_t)(q * 4 + 1) * FP_STRIDE;
@@ -318,16 +336,8 @@ static void fp_flush_immediate(void) {
     }
 
     // 绑定默认 program + 属性（使用私有 VAO，避免污染应用绑定的 VAO）
-    GLint old_vao = 0;
-    GLint old_array_buffer = 0;
-    es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &old_vao);
-    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_array_buffer);
-    GLint old_program = 0;
-    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
-
     es3_functions.glBindVertexArray(fp_vao);
     es3_functions.glUseProgram(fp_program);
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
     es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
     es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
