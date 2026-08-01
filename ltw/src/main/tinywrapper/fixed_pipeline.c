@@ -344,6 +344,24 @@ static void fp_flush_immediate(void) {
     fp_ensure_program();
     if(!fp_program) { fp_immediate_count = 0; return; }
 
+    // 诊断：即时模式顶点数据（字形候选路径）——前 2 次 + 每 256 次
+    {
+        static unsigned int im_n = 0;
+        im_n++;
+        if(im_n <= 2 || (im_n & 0xFF) == 1) {
+            printf("[LTW DUMP] imm n=%u count=%d mode=0x%x tex=%u blend=%d atest=%d single=%d\n",
+                   im_n, fp_immediate_count, (unsigned)fp_immediate_mode, fp_bound_texture,
+                   fp_blend_enabled ? 1 : 0, fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0);
+            int vn = fp_immediate_count < 4 ? fp_immediate_count : 4;
+            for(int vi = 0; vi < vn; vi++) {
+                const GLfloat* v = fp_immediate_vertices + (size_t)vi * FP_STRIDE;
+                printf("[LTW DUMP]   v%d pos=(%f,%f,%f) col=(%f,%f,%f,%f) uv=(%f,%f)\n",
+                       vi, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
+            }
+            fflush(stdout);
+        }
+    }
+
     GLenum mode = fp_immediate_mode;
     GLsizei count = fp_immediate_count;
 

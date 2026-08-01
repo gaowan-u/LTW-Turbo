@@ -1095,6 +1095,17 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     }
     if(ltw_quads_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
     if(fp_try_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
+    {
+        // 透传诊断：prog != 0 的绘制（字形/文字候选路径）
+        static bool pt_diag = false;
+        if(!pt_diag) {
+            GLint prog = 0;
+            es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+            printf("[LTW DIAG] passthrough glDrawArrays mode=0x%x first=%d count=%d prog=%d\n",
+                   (unsigned)mode, first, count, prog);
+            fflush(stdout);
+        }
+    }
     GLTRACE_CALL(glDrawArrays, current_context->fast_gl.glDrawArrays(mode, first, count));
     LTW_EXIT();
 }
@@ -1112,6 +1123,17 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices
     }
     if(ltw_quads_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
     if(fp_try_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
+    {
+        // 透传诊断：prog != 0 的绘制（字形/文字候选路径）
+        static bool pte_diag = false;
+        if(!pte_diag) {
+            GLint prog = 0;
+            es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+            printf("[LTW DIAG] passthrough glDrawElements mode=0x%x count=%d type=0x%x prog=%d\n",
+                   (unsigned)mode, count, type, prog);
+            fflush(stdout);
+        }
+    }
     GLTRACE_CALL(glDrawElements, current_context->fast_gl.glDrawElements(mode, count, type, indices));
     LTW_EXIT();
 }
