@@ -211,10 +211,30 @@ void glVertexPointer(GLint size, GLenum type, GLsizei stride, const void* pointe
 }
 void glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
     if(!current_context) return;
+    {
+        // 一次性诊断
+        static bool diag = false;
+        if(!diag) {
+            diag = true;
+            printf("[LTW DIAG] glTexCoordPointer size=%d type=0x%x stride=%d ptr=%p\n",
+                   size, type, stride, pointer);
+            fflush(stdout);
+        }
+    }
     fp_texcoord_pointer(size, type, stride, pointer);
 }
 void glColorPointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
     if(!current_context) return;
+    {
+        // 一次性诊断
+        static bool diag = false;
+        if(!diag) {
+            diag = true;
+            printf("[LTW DIAG] glColorPointer size=%d type=0x%x stride=%d ptr=%p\n",
+                   size, type, stride, pointer);
+            fflush(stdout);
+        }
+    }
     fp_color_pointer(size, type, stride, pointer);
 }
 void glNormalPointer(GLenum type, GLsizei stride, const void* pointer) {

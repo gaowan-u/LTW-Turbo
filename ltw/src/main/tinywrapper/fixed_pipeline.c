@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <math.h>
 #include <GLES3/gl3.h>
 #include "GL/gl.h"
@@ -670,20 +671,47 @@ static size_t fp_type_bytes(GLenum type) {
     }
 }
 
-// 把客户端数组（CPU 指针）上传到独立 VBO 并设置 attribute。
-// 上传后恢复 ARRAY_BUFFER 绑定，避免污染应用状态。
-static void fp_upload_client_array(GLuint attr, GLuint vbo, GLint size, GLenum type, GLsizei stride,
-                                   const void* ptr, GLsizei count) {
-    if(!ptr || count <= 0 || size <= 0) return;
-    size_t tsize = fp_type_bytes(type);
-    size_t vsize = stride ? (size_t)stride : (size_t)size * tsize;
-    if(vsize == 0 || (size_t)count > (size_t)FP_MAX_VERTICES) return;
+// 把客户端交错数组上传到单个 VBO，并按各数组指针相对顶点指针的偏移
+// 设置 attribute（MC 1.12 的 Tessellator 用交错布局：stride 内依次是
+// 位置+纹理+颜色，glColorPointer/glTexCoordPointer 的指针指向块内偏移）。
+static void fp_upload_client_arrays(GLsizei count) {
+    if(!fp_client_vertex_enabled || fp_client_vertex_size <= 0 || !fp_client_vertex_ptr) return;
     GLint old_abo = 0;
     es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_abo);
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count, ptr, GL_STREAM_DRAW);
-    es3_functions.glEnableVertexAttribArray(attr);
-    es3_functions.glVertexAttribPointer(attr, size, type, GL_FALSE, stride, NULL);
+
+    size_t tsize = fp_type_bytes(fp_client_vertex_type);
+    size_t vsize = fp_client_vertex_stride ? (size_t)fp_client_vertex_stride
+                                           : (size_t)fp_client_vertex_size * tsize;
+    if(vsize == 0 || (size_t)count > (size_t)FP_MAX_VERTICES) return;
+
+    // 一次上传整个交错数组
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
+    es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count, fp_client_vertex_ptr, GL_STREAM_DRAW);
+
+    // 位置 attribute：offset 0
+    es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+    es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
+                                        GL_FALSE, fp_client_vertex_stride, NULL);
+
+    // 纹理 attribute：偏移 = texcoord 指针 - 顶点指针（交错布局内）
+    if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0 && fp_client_texcoord_ptr) {
+        ptrdiff_t off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
+        if(off >= 0 && (size_t)off < vsize) {
+            es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+            es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
+                                                GL_FALSE, fp_client_vertex_stride, (const void*)off);
+        }
+    }
+    // 颜色 attribute：偏移 = color 指针 - 顶点指针
+    if(fp_client_color_enabled && fp_client_color_size > 0 && fp_client_color_ptr) {
+        ptrdiff_t off = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
+        if(off >= 0 && (size_t)off < vsize) {
+            es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+            es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
+                                                GL_TRUE, fp_client_vertex_stride, (const void*)off);
+        }
+    }
+
     es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
 }
 
@@ -696,16 +724,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
     // （pointer 是 VBO 偏移）→ 直通。不能用绘制时的当前绑定判断（应用
     // 可能在 glVertexPointer 之后绑定/解绑了 ARRAY_BUFFER 做别的事）。
     if(fp_client_vertex_abo == 0) {
-        // 客户端数组：上传到独立 VBO
-        if(fp_client_vertex_enabled && fp_client_vertex_size > 0)
-            fp_upload_client_array(FP_ATTR_POS, fp_vbo_pos, fp_client_vertex_size, fp_client_vertex_type,
-                                   fp_client_vertex_stride, fp_client_vertex_ptr, count);
-        if(fp_client_color_enabled && fp_client_color_size > 0)
-            fp_upload_client_array(FP_ATTR_COLOR, fp_vbo_color, fp_client_color_size, fp_client_color_type,
-                                   fp_client_color_stride, fp_client_color_ptr, count);
-        if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0)
-            fp_upload_client_array(FP_ATTR_UV, fp_vbo_uv, fp_client_texcoord_size, fp_client_texcoord_type,
-                                   fp_client_texcoord_stride, fp_client_texcoord_ptr, count);
+        fp_upload_client_arrays(count);
     } else {
         // VBO 路径：pointer 是偏移，直通
         if(fp_client_vertex_enabled && fp_client_vertex_size > 0) {
