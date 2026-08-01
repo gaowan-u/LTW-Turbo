@@ -65,6 +65,9 @@ static GLint fp_tex_loc = -1;
 static GLint fp_usetex_loc = -1;
 static GLint fp_usecolor_loc = -1;
 static GLuint fp_vbo = 0;
+static GLuint fp_vbo_pos = 0;
+static GLuint fp_vbo_color = 0;
+static GLuint fp_vbo_uv = 0;
 static GLuint fp_vao = 0;
 static GLuint fp_saved_vao = 0;
 static bool fp_init_done = false;
@@ -275,6 +278,9 @@ static void fp_ensure_program(void) {
     fp_usecolor_loc = es3_functions.glGetUniformLocation(prog, "uUseColor");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
+    es3_functions.glGenBuffers(1, &fp_vbo_pos);
+    es3_functions.glGenBuffers(1, &fp_vbo_color);
+    es3_functions.glGenBuffers(1, &fp_vbo_uv);
     es3_functions.glGenVertexArrays(1, &fp_vao);
 
     es3_functions.glDeleteShader(vs);
@@ -546,17 +552,33 @@ void fp_normal3f(GLfloat x, GLfloat y, GLfloat z) { (void)x; (void)y; (void)z; /
 void fp_normal3fv(const GLfloat* v) { if(v) fp_normal3f(v[0], v[1], v[2]); }
 
 // ---- 客户端数组 ----
+// 记录各数组设置时的 ARRAY_BUFFER 绑定状态：设置时未绑定 buffer（abo==0）
+// 说明 pointer 是客户端 CPU 指针（GLES 禁止，绘制时需拷贝到 VBO）；
+// 已绑定（abo!=0）说明 pointer 是 VBO 偏移（可直通）。
+static GLint fp_client_vertex_abo = 0;
+static GLint fp_client_texcoord_abo = 0;
+static GLint fp_client_color_abo = 0;
+
+static GLint fp_current_abo(void) {
+    GLint abo = 0;
+    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &abo);
+    return abo;
+}
+
 void fp_vertex_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
     fp_client_vertex_size = size; fp_client_vertex_type = type;
     fp_client_vertex_stride = stride; fp_client_vertex_ptr = pointer;
+    fp_client_vertex_abo = fp_current_abo();
 }
 void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
     fp_client_texcoord_size = size; fp_client_texcoord_type = type;
     fp_client_texcoord_stride = stride; fp_client_texcoord_ptr = pointer;
+    fp_client_texcoord_abo = fp_current_abo();
 }
 void fp_color_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
     fp_client_color_size = size; fp_client_color_type = type;
     fp_client_color_stride = stride; fp_client_color_ptr = pointer;
+    fp_client_color_abo = fp_current_abo();
 }
 void fp_normal_pointer(GLenum type, GLsizei stride, const void* pointer) {
     fp_client_normal_type = type; fp_client_normal_stride = stride; fp_client_normal_ptr = pointer;
@@ -648,38 +670,41 @@ static size_t fp_type_bytes(GLenum type) {
     }
 }
 
-// 把客户端数组（CPU 指针）上传到 fp_vbo 并设置 attribute。
-static void fp_upload_client_array(GLuint attr, GLint size, GLenum type, GLsizei stride,
+// 把客户端数组（CPU 指针）上传到独立 VBO 并设置 attribute。
+// 上传后恢复 ARRAY_BUFFER 绑定，避免污染应用状态。
+static void fp_upload_client_array(GLuint attr, GLuint vbo, GLint size, GLenum type, GLsizei stride,
                                    const void* ptr, GLsizei count) {
     if(!ptr || count <= 0 || size <= 0) return;
     size_t tsize = fp_type_bytes(type);
     size_t vsize = stride ? (size_t)stride : (size_t)size * tsize;
     if(vsize == 0 || (size_t)count > (size_t)FP_MAX_VERTICES) return;
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
+    GLint old_abo = 0;
+    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_abo);
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, vbo);
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count, ptr, GL_STREAM_DRAW);
     es3_functions.glEnableVertexAttribArray(attr);
     es3_functions.glVertexAttribPointer(attr, size, type, GL_FALSE, stride, NULL);
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
 }
 
 bool fp_prepare_client_arrays(GLsizei count) {
     if(!fp_program) fp_ensure_program();
     if(!fp_program) return false;
 
-    // GLES 3.x 禁止客户端数组指针：仅当 ARRAY_BUFFER 未绑定（或 pointer 是
-    // CPU 地址）时，把数据拷贝到 fp_vbo。若 ARRAY_BUFFER 已绑定（pointer
-    // 是 VBO 偏移），直接设置 attribute 指向偏移。
-    GLint abo = 0;
-    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &abo);
-    if(abo == 0) {
-        // 客户端数组：上传到 fp_vbo
+    // GLES 3.x 禁止客户端数组指针。用数组"设置时"的 ARRAY_BUFFER 绑定判断：
+    // 设置时未绑定（pointer 是 CPU 地址）→ 拷贝到 fp_vbo；设置时已绑定
+    // （pointer 是 VBO 偏移）→ 直通。不能用绘制时的当前绑定判断（应用
+    // 可能在 glVertexPointer 之后绑定/解绑了 ARRAY_BUFFER 做别的事）。
+    if(fp_client_vertex_abo == 0) {
+        // 客户端数组：上传到独立 VBO
         if(fp_client_vertex_enabled && fp_client_vertex_size > 0)
-            fp_upload_client_array(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
+            fp_upload_client_array(FP_ATTR_POS, fp_vbo_pos, fp_client_vertex_size, fp_client_vertex_type,
                                    fp_client_vertex_stride, fp_client_vertex_ptr, count);
         if(fp_client_color_enabled && fp_client_color_size > 0)
-            fp_upload_client_array(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
+            fp_upload_client_array(FP_ATTR_COLOR, fp_vbo_color, fp_client_color_size, fp_client_color_type,
                                    fp_client_color_stride, fp_client_color_ptr, count);
         if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0)
-            fp_upload_client_array(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
+            fp_upload_client_array(FP_ATTR_UV, fp_vbo_uv, fp_client_texcoord_size, fp_client_texcoord_type,
                                    fp_client_texcoord_stride, fp_client_texcoord_ptr, count);
     } else {
         // VBO 路径：pointer 是偏移，直通
