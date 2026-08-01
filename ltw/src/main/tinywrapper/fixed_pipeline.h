@@ -1,0 +1,112 @@
+/**
+ * 固定管线（桌面 GL 1.x 兼容层）模拟。
+ *
+ * GLES 3.x 移除了全部固定管线：glBegin/glEnd 即时模式、矩阵栈、
+ * 客户端顶点数组、GL_TEXTURE_2D 开关等。MC <=1.12（经 lwjglx）的
+ * 界面/加载屏/部分绘制走固定管线：glBegin(GL_QUADS) +
+ * glTexCoord2fv + glVertex3fv。这些调用在 GLES 上原本全部被
+ * functionMissingAbort 丢弃导致黑屏。这里在 LTW 内部用一个默认
+ * shader（MVP 矩阵 + 顶点色 + 纹理）模拟固定管线：
+ *
+ *  - 即时模式：glBegin 开始收集顶点，glVertex3fv/glTexCoord2fv/
+ *    glColor4f 等追加，glEnd 时上传 VBO 并 glDrawArrays
+ *  - 矩阵栈：MODELVIEW/PROJECTION/TEXTURE 矩阵跟踪，MVP = P * M
+ *  - 绘制挂钩：main.c 的 glDrawArrays/glDrawElements 在无 program
+ *    绑定时自动切换到默认 shader
+ */
+#ifndef LTW_FIXED_PIPELINE_H
+#define LTW_FIXED_PIPELINE_H
+
+#include <GLES3/gl3.h>
+#include <stdbool.h>
+
+// GLES3/gl3.h 不含 GLdouble（桌面 GL 类型）。仓库 GL/gl.h 定义了它；
+// 若两者都包含会重复 typedef，这里用宏守卫保证只定义一次。
+#ifndef GLdouble
+typedef double GLdouble;
+#endif
+
+#define FP_MATRIX_SIZE 16
+
+typedef enum {
+    FP_MATRIX_MODELVIEW = 0,
+    FP_MATRIX_PROJECTION = 1,
+    FP_MATRIX_TEXTURE = 2,
+    FP_MATRIX_COUNT = 3
+} fp_matrix_mode_t;
+
+// 初始化固定管线状态（context 创建时调用一次）
+void fp_init(void);
+
+// 矩阵栈
+void fp_matrix_mode(GLenum mode);
+void fp_load_identity(void);
+void fp_load_matrixf(const GLfloat* m);
+void fp_load_matrixd(const GLdouble* m);
+void fp_mult_matrixf(const GLfloat* m);
+void fp_mult_matrixd(const GLdouble* m);
+void fp_push_matrix(void);
+void fp_pop_matrix(void);
+void fp_ortho(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar);
+void fp_frustum(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar);
+void fp_translatef(GLfloat x, GLfloat y, GLfloat z);
+void fp_translated(GLdouble x, GLdouble y, GLdouble z);
+void fp_scalef(GLfloat x, GLfloat y, GLfloat z);
+void fp_scaled(GLdouble x, GLdouble y, GLdouble z);
+void fp_rotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z);
+void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z);
+
+// 即时模式
+void fp_begin(GLenum mode);
+void fp_end(void);
+void fp_vertex3fv(const GLfloat* v);
+void fp_vertex3f(GLfloat x, GLfloat y, GLfloat z);
+void fp_vertex3d(GLdouble x, GLdouble y, GLdouble z);
+void fp_vertex2f(GLfloat x, GLfloat y);
+void fp_vertex2d(GLdouble x, GLdouble y);
+void fp_vertex4f(GLfloat x, GLfloat y, GLfloat z, GLfloat w);
+void fp_vertex3iv(const GLint* v);
+void fp_vertex3sv(const GLshort* v);
+void fp_vertex4fv(const GLfloat* v);
+void fp_vertex2fv(const GLfloat* v);
+void fp_color4f(GLfloat r, GLfloat g, GLfloat b, GLfloat a);
+void fp_color3f(GLfloat r, GLfloat g, GLfloat b);
+void fp_color4ub(GLubyte r, GLubyte g, GLubyte b, GLubyte a);
+void fp_color3ub(GLubyte r, GLubyte g, GLubyte b);
+void fp_color4fv(const GLfloat* v);
+void fp_color3fv(const GLfloat* v);
+void fp_color4ubv(const GLubyte* v);
+void fp_texcoord2f(GLfloat s, GLfloat t);
+void fp_texcoord2fv(const GLfloat* v);
+void fp_texcoord1f(GLfloat s);
+void fp_texcoord3f(GLfloat s, GLfloat t, GLfloat r);
+void fp_texcoord4f(GLfloat s, GLfloat t, GLfloat r, GLfloat q);
+void fp_texcoord2d(GLdouble s, GLdouble t);
+void fp_normal3f(GLfloat x, GLfloat y, GLfloat z);
+void fp_normal3fv(const GLfloat* v);
+
+// 客户端顶点数组
+void fp_vertex_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer);
+void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer);
+void fp_color_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer);
+void fp_normal_pointer(GLenum type, GLsizei stride, const void* pointer);
+void fp_enable_client_state(GLenum cap);
+void fp_disable_client_state(GLenum cap);
+void fp_array_element(GLint i);
+
+// 纹理状态
+void fp_set_texture_enabled(bool enabled);
+void fp_set_active_texture(GLuint unit);
+
+// 无 program 时的绘制挂钩：返回 true 表示已用固定管线绘制
+bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count);
+bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* indices);
+
+// 查询默认 shader 当前是否可用
+bool fp_default_program_ready(void);
+
+// 查询固定管线矩阵（GL_MODELVIEW_MATRIX/GL_PROJECTION_MATRIX/GL_TEXTURE_MATRIX），
+// 返回 true 表示 pname 是固定管线矩阵且已写入 out（16 floats）
+bool fp_get_matrix(GLenum pname, GLfloat* out);
+
+#endif //LTW_FIXED_PIPELINE_H

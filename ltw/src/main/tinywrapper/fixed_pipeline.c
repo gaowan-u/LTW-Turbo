@@ -1,0 +1,582 @@
+/**
+ * 固定管线模拟实现，见 fixed_pipeline.h。
+ *
+ * 设计要点：
+ *  - 默认 shader 懒加载（首次绘制时），GLSL 300 es
+ *  - 即时模式顶点收集到 CPU 缓冲，glEnd 时一次性上传
+ *  - 矩阵列主序（与桌面 GL 一致），MVP = Projection * ModelView
+ *  - 客户端数组模式下顶点由应用侧指针提供，绘制时绑定
+ *  - 所有状态都是 context 无关的进程级状态（固定管线只有一个）
+ */
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <math.h>
+#include <GLES3/gl3.h>
+#include "GL/gl.h"
+#include "fixed_pipeline.h"
+#include "egl.h"
+#include "debug.h"
+
+// ---- 内部常量 ----
+#define FP_MAX_STACK_DEPTH 32
+#define FP_MAX_VERTICES 65536
+#define FP_STRIDE (3 + 4 + 2)          // pos3 + color4 + uv2
+#define FP_VERTEX_BYTES (FP_STRIDE * sizeof(GLfloat))
+
+#define FP_ATTR_POS 0
+#define FP_ATTR_COLOR 1
+#define FP_ATTR_UV 2
+
+// ---- 默认 shader ----
+static const char* fp_vertex_shader_src =
+    "#version 300 es\n"
+    "layout(location=0) in vec4 aPos;\n"
+    "layout(location=1) in vec4 aColor;\n"
+    "layout(location=2) in vec2 aUV;\n"
+    "uniform mat4 uMVP;\n"
+    "out vec4 vColor;\n"
+    "out vec2 vUV;\n"
+    "void main() {\n"
+    "    vColor = aColor;\n"
+    "    vUV = aUV;\n"
+    "    gl_Position = uMVP * aPos;\n"
+    "}\n";
+
+static const char* fp_fragment_shader_src =
+    "#version 300 es\n"
+    "precision mediump float;\n"
+    "in vec4 vColor;\n"
+    "in vec2 vUV;\n"
+    "uniform sampler2D uTex;\n"
+    "uniform bool uUseTex;\n"
+    "uniform bool uUseColor;\n"
+    "out vec4 fragColor;\n"
+    "void main() {\n"
+    "    vec4 c = uUseTex ? texture(uTex, vUV) : vec4(1.0);\n"
+    "    fragColor = uUseColor ? c * vColor : c;\n"
+    "}\n";
+
+// ---- 内部状态 ----
+static GLuint fp_program = 0;
+static GLint fp_mvp_loc = -1;
+static GLint fp_tex_loc = -1;
+static GLint fp_usetex_loc = -1;
+static GLint fp_usecolor_loc = -1;
+static GLuint fp_vbo = 0;
+static bool fp_init_done = false;
+
+// 矩阵栈
+static GLfloat fp_matrix_stack[FP_MATRIX_COUNT][FP_MAX_STACK_DEPTH][FP_MATRIX_SIZE];
+static GLint fp_matrix_top[FP_MATRIX_COUNT] = {0, 0, 0};
+static fp_matrix_mode_t fp_current_matrix = FP_MATRIX_MODELVIEW;
+
+// 即时模式
+static bool fp_immediate_active = false;
+static GLenum fp_immediate_mode = 0;
+static GLfloat* fp_immediate_vertices = NULL;
+static GLsizei fp_immediate_count = 0;
+static GLsizei fp_immediate_capacity = 0;
+static GLfloat fp_current_color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+static GLfloat fp_current_texcoord[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+
+// 客户端数组
+static GLint fp_client_vertex_size = 0;
+static GLenum fp_client_vertex_type = GL_FLOAT;
+static GLsizei fp_client_vertex_stride = 0;
+static const void* fp_client_vertex_ptr = NULL;
+static GLint fp_client_texcoord_size = 0;
+static GLenum fp_client_texcoord_type = GL_FLOAT;
+static GLsizei fp_client_texcoord_stride = 0;
+static const void* fp_client_texcoord_ptr = NULL;
+static GLint fp_client_color_size = 0;
+static GLenum fp_client_color_type = GL_FLOAT;
+static GLsizei fp_client_color_stride = 0;
+static const void* fp_client_color_ptr = NULL;
+static GLenum fp_client_normal_type = GL_FLOAT;
+static GLsizei fp_client_normal_stride = 0;
+static const void* fp_client_normal_ptr = NULL;
+static bool fp_client_vertex_enabled = false;
+static bool fp_client_texcoord_enabled = false;
+static bool fp_client_color_enabled = false;
+static bool fp_client_normal_enabled = false;
+
+// 纹理状态
+static bool fp_texture_enabled = false;
+static bool fp_texture_bound = false;
+static GLuint fp_bound_texture = 0;
+
+// ---- 内部工具 ----
+static void fp_mat_mul(GLfloat* out, const GLfloat* a, const GLfloat* b) {
+    // out = a * b（列主序 4x4）
+    GLfloat t[FP_MATRIX_SIZE];
+    for(int c = 0; c < 4; c++) {
+        for(int r = 0; r < 4; r++) {
+            t[c * 4 + r] =
+                a[0 * 4 + r] * b[c * 4 + 0] +
+                a[1 * 4 + r] * b[c * 4 + 1] +
+                a[2 * 4 + r] * b[c * 4 + 2] +
+                a[3 * 4 + r] * b[c * 4 + 3];
+        }
+    }
+    memcpy(out, t, sizeof(t));
+}
+
+static void fp_mat_identity(GLfloat* m) {
+    memset(m, 0, FP_MATRIX_SIZE * sizeof(GLfloat));
+    m[0] = m[5] = m[10] = m[15] = 1.0f;
+}
+
+static void fp_mat_ortho(GLfloat* m, GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f) {
+    fp_mat_identity(m);
+    if(r == l || t == b || f == n) return;
+    m[0]  = (GLfloat)(2.0 / (r - l));
+    m[5]  = (GLfloat)(2.0 / (t - b));
+    m[10] = (GLfloat)(-2.0 / (f - n));
+    m[12] = (GLfloat)(-(r + l) / (r - l));
+    m[13] = (GLfloat)(-(t + b) / (t - b));
+    m[14] = (GLfloat)(-(f + n) / (f - n));
+}
+
+static void fp_mat_frustum(GLfloat* m, GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f) {
+    fp_mat_identity(m);
+    if(r == l || t == b || f == n) return;
+    m[0]  = (GLfloat)(2.0 * n / (r - l));
+    m[5]  = (GLfloat)(2.0 * n / (t - b));
+    m[8]  = (GLfloat)((r + l) / (r - l));
+    m[9]  = (GLfloat)((t + b) / (t - b));
+    m[10] = (GLfloat)(-(f + n) / (f - n));
+    m[11] = -1.0f;
+    m[14] = (GLfloat)(-2.0 * f * n / (f - n));
+}
+
+static GLfloat* fp_current_matrix_ptr(void) {
+    return fp_matrix_stack[fp_current_matrix][fp_matrix_top[fp_current_matrix]];
+}
+
+static void fp_apply_translate(GLfloat x, GLfloat y, GLfloat z) {
+    GLfloat t[FP_MATRIX_SIZE];
+    fp_mat_identity(t);
+    t[12] = x; t[13] = y; t[14] = z;
+    GLfloat m[FP_MATRIX_SIZE];
+    memcpy(m, fp_current_matrix_ptr(), sizeof(m));
+    fp_mat_mul(fp_current_matrix_ptr(), m, t);
+}
+
+static void fp_apply_scale(GLfloat x, GLfloat y, GLfloat z) {
+    GLfloat t[FP_MATRIX_SIZE];
+    fp_mat_identity(t);
+    t[0] = x; t[5] = y; t[10] = z;
+    GLfloat m[FP_MATRIX_SIZE];
+    memcpy(m, fp_current_matrix_ptr(), sizeof(m));
+    fp_mat_mul(fp_current_matrix_ptr(), m, t);
+}
+
+static void fp_apply_rotate(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) {
+    GLfloat rad = angle * (GLfloat)3.14159265358979 / 180.0f;
+    GLfloat c = (GLfloat)cos(rad);
+    GLfloat s = (GLfloat)sin(rad);
+    GLfloat len = (GLfloat)sqrt(x * x + y * y + z * z);
+    if(len == 0.0f) return;
+    x /= len; y /= len; z /= len;
+    GLfloat t[FP_MATRIX_SIZE];
+    t[0]  = x * x * (1 - c) + c;     t[4]  = x * y * (1 - c) - z * s; t[8]  = x * z * (1 - c) + y * s; t[12] = 0;
+    t[1]  = y * x * (1 - c) + z * s; t[5]  = y * y * (1 - c) + c;     t[9]  = y * z * (1 - c) - x * s; t[13] = 0;
+    t[2]  = x * z * (1 - c) - y * s; t[6]  = y * z * (1 - c) + x * s; t[10] = z * z * (1 - c) + c;     t[14] = 0;
+    t[3] = 0; t[7] = 0; t[11] = 0; t[15] = 1;
+    GLfloat m[FP_MATRIX_SIZE];
+    memcpy(m, fp_current_matrix_ptr(), sizeof(m));
+    fp_mat_mul(fp_current_matrix_ptr(), m, t);
+}
+
+// 即时模式顶点追加
+static void fp_immediate_push(GLfloat x, GLfloat y, GLfloat z) {
+    if(!fp_immediate_active) return;
+    if(fp_immediate_count >= fp_immediate_capacity) {
+        GLsizei newcap = fp_immediate_capacity == 0 ? 1024 : fp_immediate_capacity * 2;
+        if(newcap > FP_MAX_VERTICES) newcap = FP_MAX_VERTICES;
+        if(newcap <= fp_immediate_capacity) return;   // 已到上限，丢弃
+        GLfloat* nb = (GLfloat*)realloc(fp_immediate_vertices, (size_t)newcap * FP_VERTEX_BYTES);
+        if(!nb) return;
+        fp_immediate_vertices = nb;
+        fp_immediate_capacity = newcap;
+    }
+    GLfloat* v = fp_immediate_vertices + (size_t)fp_immediate_count * FP_STRIDE;
+    v[0] = x; v[1] = y; v[2] = z;
+    v[3] = fp_current_color[0];
+    v[4] = fp_current_color[1];
+    v[5] = fp_current_color[2];
+    v[6] = fp_current_color[3];
+    v[7] = fp_current_texcoord[0];
+    v[8] = fp_current_texcoord[1];
+    fp_immediate_count++;
+}
+
+// 编译默认 shader（懒加载）
+static void fp_ensure_program(void) {
+    if(fp_init_done) return;
+    fp_init_done = true;
+    if(!current_context) return;
+
+    GLuint vs = es3_functions.glCreateShader(GL_VERTEX_SHADER);
+    GLuint fs = es3_functions.glCreateShader(GL_FRAGMENT_SHADER);
+    if(!vs || !fs) { es3_functions.glDeleteShader(vs); es3_functions.glDeleteShader(fs); return; }
+
+    es3_functions.glShaderSource(vs, 1, &fp_vertex_shader_src, NULL);
+    es3_functions.glCompileShader(vs);
+    GLint ok = 0;
+    es3_functions.glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+    if(!ok) {
+        GLchar log[512] = {0};
+        es3_functions.glGetShaderInfoLog(vs, sizeof(log), NULL, log);
+        LTW_ERROR_PRINTF("fp: vertex shader compile failed: %s", log);
+        es3_functions.glDeleteShader(vs);
+        es3_functions.glDeleteShader(fs);
+        return;
+    }
+
+    es3_functions.glShaderSource(fs, 1, &fp_fragment_shader_src, NULL);
+    es3_functions.glCompileShader(fs);
+    es3_functions.glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+    if(!ok) {
+        GLchar log[512] = {0};
+        es3_functions.glGetShaderInfoLog(fs, sizeof(log), NULL, log);
+        LTW_ERROR_PRINTF("fp: fragment shader compile failed: %s", log);
+        es3_functions.glDeleteShader(vs);
+        es3_functions.glDeleteShader(fs);
+        return;
+    }
+
+    GLuint prog = es3_functions.glCreateProgram();
+    es3_functions.glAttachShader(prog, vs);
+    es3_functions.glAttachShader(prog, fs);
+    es3_functions.glLinkProgram(prog);
+    es3_functions.glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    if(!ok) {
+        GLchar log[512] = {0};
+        es3_functions.glGetProgramInfoLog(prog, sizeof(log), NULL, log);
+        LTW_ERROR_PRINTF("fp: program link failed: %s", log);
+        es3_functions.glDeleteProgram(prog);
+        es3_functions.glDeleteShader(vs);
+        es3_functions.glDeleteShader(fs);
+        return;
+    }
+
+    fp_program = prog;
+    fp_mvp_loc = es3_functions.glGetUniformLocation(prog, "uMVP");
+    fp_tex_loc = es3_functions.glGetUniformLocation(prog, "uTex");
+    fp_usetex_loc = es3_functions.glGetUniformLocation(prog, "uUseTex");
+    fp_usecolor_loc = es3_functions.glGetUniformLocation(prog, "uUseColor");
+
+    es3_functions.glGenBuffers(1, &fp_vbo);
+
+    es3_functions.glDeleteShader(vs);
+    es3_functions.glDeleteShader(fs);
+
+    LTW_DEBUG_PRINTF("fp: default program ready (prog=%u)", fp_program);
+}
+
+// 提交即时模式顶点
+static void fp_flush_immediate(void) {
+    if(!fp_immediate_active || fp_immediate_count == 0) return;
+    fp_ensure_program();
+    if(!fp_program) { fp_immediate_count = 0; return; }
+
+    GLenum mode = fp_immediate_mode;
+    GLsizei count = fp_immediate_count;
+
+    // QUADS -> TRIANGLES：复制顶点展开
+    if(mode == GL_QUADS && count >= 4 && (count & 3) == 0) {
+        GLsizei quads = count >> 2;
+        GLsizei tri_count = quads * 6;
+        if(tri_count > FP_MAX_VERTICES) { fp_immediate_count = 0; return; }
+        GLfloat* expanded = (GLfloat*)malloc((size_t)tri_count * FP_VERTEX_BYTES);
+        if(!expanded) { fp_immediate_count = 0; return; }
+        for(GLsizei q = 0; q < quads; q++) {
+            GLfloat* a = fp_immediate_vertices + (size_t)(q * 4 + 0) * FP_STRIDE;
+            GLfloat* b = fp_immediate_vertices + (size_t)(q * 4 + 1) * FP_STRIDE;
+            GLfloat* c = fp_immediate_vertices + (size_t)(q * 4 + 2) * FP_STRIDE;
+            GLfloat* d = fp_immediate_vertices + (size_t)(q * 4 + 3) * FP_STRIDE;
+            GLfloat* t = expanded + (size_t)(q * 6) * FP_STRIDE;
+            memcpy(t + 0 * FP_STRIDE, a, FP_VERTEX_BYTES);
+            memcpy(t + 1 * FP_STRIDE, b, FP_VERTEX_BYTES);
+            memcpy(t + 2 * FP_STRIDE, c, FP_VERTEX_BYTES);
+            memcpy(t + 3 * FP_STRIDE, a, FP_VERTEX_BYTES);
+            memcpy(t + 4 * FP_STRIDE, c, FP_VERTEX_BYTES);
+            memcpy(t + 5 * FP_STRIDE, d, FP_VERTEX_BYTES);
+        }
+        es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)tri_count * FP_VERTEX_BYTES, expanded, GL_STREAM_DRAW);
+        free(expanded);
+        count = tri_count;
+        mode = GL_TRIANGLES;
+    } else {
+        es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)fp_immediate_count * FP_VERTEX_BYTES,
+                                   fp_immediate_vertices, GL_STREAM_DRAW);
+    }
+
+    // 绑定默认 program + 属性
+    es3_functions.glUseProgram(fp_program);
+    GLint old_program = 0;
+    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
+
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
+    es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+    es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+    es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+    es3_functions.glVertexAttribPointer(FP_ATTR_POS, 3, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES, NULL);
+    es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, 4, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
+                                        (const void*)(3 * sizeof(GLfloat)));
+    es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
+                                        (const void*)(7 * sizeof(GLfloat)));
+
+    // MVP = Projection * ModelView
+    GLfloat mvp[FP_MATRIX_SIZE];
+    fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
+               fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
+    if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
+    if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
+    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, fp_texture_enabled ? 1 : 0);
+    if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, 1);
+
+    // 纹理绑定到 unit 0
+    GLint old_active_tex = 0;
+    GLint old_bound_tex = 0;
+    if(fp_texture_enabled && fp_bound_texture != 0) {
+        es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_tex);
+        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_bound_tex);
+        es3_functions.glActiveTexture(GL_TEXTURE0);
+        es3_functions.glBindTexture(GL_TEXTURE_2D, fp_bound_texture);
+    }
+
+    es3_functions.glDrawArrays(mode, 0, count);
+
+    // 恢复状态
+    if(fp_texture_enabled && fp_bound_texture != 0) {
+        es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)old_bound_tex);
+        es3_functions.glActiveTexture((GLenum)old_active_tex);
+    }
+    es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+    es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+    es3_functions.glDisableVertexAttribArray(FP_ATTR_POS);
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, 0);
+    if(old_program != (GLint)fp_program) es3_functions.glUseProgram((GLuint)old_program);
+
+    fp_immediate_count = 0;
+}
+
+// ---- 矩阵 API ----
+void fp_init(void) {
+    for(int m = 0; m < FP_MATRIX_COUNT; m++) {
+        fp_matrix_top[m] = 0;
+        fp_mat_identity(fp_matrix_stack[m][0]);
+    }
+    fp_current_matrix = FP_MATRIX_MODELVIEW;
+    fp_immediate_active = false;
+    fp_immediate_count = 0;
+    fp_immediate_capacity = 0;
+    fp_immediate_vertices = NULL;
+    fp_current_color[0] = fp_current_color[1] = fp_current_color[2] = fp_current_color[3] = 1.0f;
+    fp_current_texcoord[0] = fp_current_texcoord[1] = 0.0f;
+    fp_current_texcoord[2] = 0.0f; fp_current_texcoord[3] = 1.0f;
+    fp_client_vertex_enabled = fp_client_texcoord_enabled = fp_client_color_enabled = fp_client_normal_enabled = false;
+    fp_texture_enabled = false;
+    fp_texture_bound = false;
+    fp_bound_texture = 0;
+}
+
+void fp_matrix_mode(GLenum mode) {
+    switch(mode) {
+        case GL_MODELVIEW:  fp_current_matrix = FP_MATRIX_MODELVIEW;  break;
+        case GL_PROJECTION: fp_current_matrix = FP_MATRIX_PROJECTION; break;
+        case GL_TEXTURE:    fp_current_matrix = FP_MATRIX_TEXTURE;    break;
+        default: break;
+    }
+}
+
+void fp_load_identity(void) {
+    fp_mat_identity(fp_current_matrix_ptr());
+}
+
+void fp_load_matrixf(const GLfloat* m) {
+    if(m) memcpy(fp_current_matrix_ptr(), m, FP_MATRIX_SIZE * sizeof(GLfloat));
+}
+
+void fp_load_matrixd(const GLdouble* m) {
+    if(!m) return;
+    GLfloat* dst = fp_current_matrix_ptr();
+    for(int i = 0; i < FP_MATRIX_SIZE; i++) dst[i] = (GLfloat)m[i];
+}
+
+void fp_mult_matrixf(const GLfloat* m) {
+    if(!m) return;
+    GLfloat cur[FP_MATRIX_SIZE];
+    memcpy(cur, fp_current_matrix_ptr(), sizeof(cur));
+    fp_mat_mul(fp_current_matrix_ptr(), cur, m);
+}
+
+void fp_mult_matrixd(const GLdouble* m) {
+    if(!m) return;
+    GLfloat mm[FP_MATRIX_SIZE];
+    for(int i = 0; i < FP_MATRIX_SIZE; i++) mm[i] = (GLfloat)m[i];
+    fp_mult_matrixf(mm);
+}
+
+void fp_push_matrix(void) {
+    GLint* top = &fp_matrix_top[fp_current_matrix];
+    if(*top >= FP_MAX_STACK_DEPTH - 1) return;
+    memcpy(fp_matrix_stack[fp_current_matrix][*top + 1], fp_matrix_stack[fp_current_matrix][*top],
+           FP_MATRIX_SIZE * sizeof(GLfloat));
+    (*top)++;
+}
+
+void fp_pop_matrix(void) {
+    GLint* top = &fp_matrix_top[fp_current_matrix];
+    if(*top <= 0) return;
+    (*top)--;
+}
+
+void fp_ortho(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f) {
+    fp_mat_ortho(fp_current_matrix_ptr(), l, r, b, t, n, f);
+}
+
+void fp_frustum(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f) {
+    fp_mat_frustum(fp_current_matrix_ptr(), l, r, b, t, n, f);
+}
+
+void fp_translatef(GLfloat x, GLfloat y, GLfloat z) { fp_apply_translate(x, y, z); }
+void fp_translated(GLdouble x, GLdouble y, GLdouble z) { fp_apply_translate((GLfloat)x, (GLfloat)y, (GLfloat)z); }
+void fp_scalef(GLfloat x, GLfloat y, GLfloat z) { fp_apply_scale(x, y, z); }
+void fp_scaled(GLdouble x, GLdouble y, GLdouble z) { fp_apply_scale((GLfloat)x, (GLfloat)y, (GLfloat)z); }
+void fp_rotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) { fp_apply_rotate(angle, x, y, z); }
+void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) { fp_apply_rotate((GLfloat)angle, (GLfloat)x, (GLfloat)y, (GLfloat)z); }
+
+// ---- 即时模式 ----
+void fp_begin(GLenum mode) {
+    fp_immediate_mode = mode;
+    fp_immediate_active = true;
+    fp_immediate_count = 0;
+}
+
+void fp_end(void) {
+    if(!fp_immediate_active) return;
+    fp_flush_immediate();
+    fp_immediate_active = false;
+}
+
+void fp_vertex3fv(const GLfloat* v) { if(v) fp_immediate_push(v[0], v[1], v[2]); }
+void fp_vertex3f(GLfloat x, GLfloat y, GLfloat z) { fp_immediate_push(x, y, z); }
+void fp_vertex3d(GLdouble x, GLdouble y, GLdouble z) { fp_immediate_push((GLfloat)x, (GLfloat)y, (GLfloat)z); }
+void fp_vertex2f(GLfloat x, GLfloat y) { fp_immediate_push(x, y, 0.0f); }
+void fp_vertex2d(GLdouble x, GLdouble y) { fp_immediate_push((GLfloat)x, (GLfloat)y, 0.0f); }
+void fp_vertex4f(GLfloat x, GLfloat y, GLfloat z, GLfloat w) {
+    if(w != 0.0f) fp_immediate_push(x / w, y / w, z / w);
+}
+void fp_vertex3iv(const GLint* v) { if(v) fp_immediate_push((GLfloat)v[0], (GLfloat)v[1], (GLfloat)v[2]); }
+void fp_vertex3sv(const GLshort* v) { if(v) fp_immediate_push((GLfloat)v[0], (GLfloat)v[1], (GLfloat)v[2]); }
+void fp_vertex4fv(const GLfloat* v) { if(v) fp_vertex4f(v[0], v[1], v[2], v[3]); }
+void fp_vertex2fv(const GLfloat* v) { if(v) fp_immediate_push(v[0], v[1], 0.0f); }
+
+void fp_color4f(GLfloat r, GLfloat g, GLfloat b, GLfloat a) {
+    fp_current_color[0] = r; fp_current_color[1] = g; fp_current_color[2] = b; fp_current_color[3] = a;
+}
+void fp_color3f(GLfloat r, GLfloat g, GLfloat b) { fp_color4f(r, g, b, 1.0f); }
+void fp_color4ub(GLubyte r, GLubyte g, GLubyte b, GLubyte a) {
+    fp_color4f(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
+}
+void fp_color3ub(GLubyte r, GLubyte g, GLubyte b) { fp_color4ub(r, g, b, 255); }
+void fp_color4fv(const GLfloat* v) { if(v) fp_color4f(v[0], v[1], v[2], v[3]); }
+void fp_color3fv(const GLfloat* v) { if(v) fp_color3f(v[0], v[1], v[2]); }
+void fp_color4ubv(const GLubyte* v) { if(v) fp_color4ub(v[0], v[1], v[2], v[3]); }
+
+void fp_texcoord2f(GLfloat s, GLfloat t) {
+    fp_current_texcoord[0] = s; fp_current_texcoord[1] = t;
+}
+void fp_texcoord2fv(const GLfloat* v) { if(v) fp_texcoord2f(v[0], v[1]); }
+void fp_texcoord1f(GLfloat s) { fp_texcoord2f(s, 0.0f); }
+void fp_texcoord3f(GLfloat s, GLfloat t, GLfloat r) { fp_texcoord2f(s, t); fp_current_texcoord[2] = r; }
+void fp_texcoord4f(GLfloat s, GLfloat t, GLfloat r, GLfloat q) { fp_texcoord2f(s, t); fp_current_texcoord[2] = r; fp_current_texcoord[3] = q; }
+void fp_texcoord2d(GLdouble s, GLdouble t) { fp_texcoord2f((GLfloat)s, (GLfloat)t); }
+
+void fp_normal3f(GLfloat x, GLfloat y, GLfloat z) { (void)x; (void)y; (void)z; /* 光照模拟未实现 */ }
+void fp_normal3fv(const GLfloat* v) { if(v) fp_normal3f(v[0], v[1], v[2]); }
+
+// ---- 客户端数组 ----
+void fp_vertex_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
+    fp_client_vertex_size = size; fp_client_vertex_type = type;
+    fp_client_vertex_stride = stride; fp_client_vertex_ptr = pointer;
+}
+void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
+    fp_client_texcoord_size = size; fp_client_texcoord_type = type;
+    fp_client_texcoord_stride = stride; fp_client_texcoord_ptr = pointer;
+}
+void fp_color_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
+    fp_client_color_size = size; fp_client_color_type = type;
+    fp_client_color_stride = stride; fp_client_color_ptr = pointer;
+}
+void fp_normal_pointer(GLenum type, GLsizei stride, const void* pointer) {
+    fp_client_normal_type = type; fp_client_normal_stride = stride; fp_client_normal_ptr = pointer;
+}
+void fp_enable_client_state(GLenum cap) {
+    switch(cap) {
+        case GL_VERTEX_ARRAY:  fp_client_vertex_enabled = true;   break;
+        case GL_TEXTURE_COORD_ARRAY: fp_client_texcoord_enabled = true; break;
+        case GL_COLOR_ARRAY:   fp_client_color_enabled = true;    break;
+        case GL_NORMAL_ARRAY:  fp_client_normal_enabled = true;   break;
+        default: break;
+    }
+}
+void fp_disable_client_state(GLenum cap) {
+    switch(cap) {
+        case GL_VERTEX_ARRAY:  fp_client_vertex_enabled = false;  break;
+        case GL_TEXTURE_COORD_ARRAY: fp_client_texcoord_enabled = false; break;
+        case GL_COLOR_ARRAY:   fp_client_color_enabled = false;   break;
+        case GL_NORMAL_ARRAY:  fp_client_normal_enabled = false;  break;
+        default: break;
+    }
+}
+void fp_array_element(GLint i) {
+    // 从客户端数组取第 i 个顶点（未实现，客户端数组路径在 MC 1.12 中很少用）
+    (void)i;
+}
+
+// ---- 纹理状态 ----
+void fp_set_texture_enabled(bool enabled) { fp_texture_enabled = enabled; }
+void fp_set_active_texture(GLuint unit) {
+    // 只跟踪 unit 0 的绑定纹理（固定管线场景下 MC 1.12 只用 unit 0）
+    if(unit == 0) {
+        fp_texture_bound = true;
+        GLint tex = 0;
+        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+        fp_bound_texture = (GLuint)tex;
+    }
+}
+
+// ---- 绘制挂钩 ----
+bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
+    (void)first; (void)count; (void)mode;
+    // 客户端数组路径：目前仅即时模式通过 glEnd 提交，这里不拦截
+    return false;
+}
+
+bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
+    (void)mode; (void)count; (void)type; (void)indices;
+    return false;
+}
+
+bool fp_default_program_ready(void) {
+    return fp_program != 0;
+}
+
+bool fp_get_matrix(GLenum pname, GLfloat* out) {
+    if(!out) return false;
+    fp_matrix_mode_t mode;
+    switch(pname) {
+        case GL_MODELVIEW_MATRIX:  mode = FP_MATRIX_MODELVIEW;  break;
+        case GL_PROJECTION_MATRIX: mode = FP_MATRIX_PROJECTION; break;
+        case GL_TEXTURE_MATRIX:    mode = FP_MATRIX_TEXTURE;    break;
+        default: return false;
+    }
+    memcpy(out, fp_matrix_stack[mode][fp_matrix_top[mode]], FP_MATRIX_SIZE * sizeof(GLfloat));
+    return true;
+}

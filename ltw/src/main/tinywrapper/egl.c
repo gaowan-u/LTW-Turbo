@@ -9,6 +9,7 @@
 #include "env.h"
 #include "mempool.h"
 #include "debug.h"
+#include "fixed_pipeline.h"
 #include <string.h>
 #include <pthread.h>
 
@@ -378,6 +379,8 @@ static void init_incontext(context_t* tw_context) {
     // 初始化 swizzle 批量更新相关字段
     tw_context->pending_swizzle_count = 0;
     tw_context->swizzle_batch_mode = false;
+
+    fp_init();
     memset(tw_context->pending_swizzle_textures, 0, sizeof(tw_context->pending_swizzle_textures));
 
     // 初始化热路径函数指针缓存

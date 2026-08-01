@@ -22,6 +22,7 @@
 #include "mempool.h"
 #include "debug.h"
 #include "quads.h"
+#include "fixed_pipeline.h"
 
 //GL清空深度缓存使用glClearDepth这个GL的api
 void glClearDepth(GLdouble depth) {
@@ -443,13 +444,19 @@ static bool is_fixed_function_cap(GLenum cap) {
 void glEnable(GLenum cap) {
     if(!current_context) return;
     if(cap == GL_DEBUG_OUTPUT && !debug) return;
-    if(is_fixed_function_cap(cap)) return;
+    if(is_fixed_function_cap(cap)) {
+        if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(true);
+        return;
+    }
     es3_functions.glEnable(cap);
 }
 
 void glDisable(GLenum cap) {
     if(!current_context) return;
-    if(is_fixed_function_cap(cap)) return;
+    if(is_fixed_function_cap(cap)) {
+        if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(false);
+        return;
+    }
     es3_functions.glDisable(cap);
 }
 
@@ -458,6 +465,7 @@ void glDisable(GLenum cap) {
 void glBindTexture(GLenum target, GLuint texture) {
     if(!current_context) return;
     GLTRACE_CALL(glBindTexture, es3_functions.glBindTexture(target, texture));
+    if(target == GL_TEXTURE_2D) fp_set_active_texture(0);
 }
 void glActiveTexture(GLenum texture) {
     if(!current_context) return;
@@ -885,6 +893,7 @@ void glGetIntegerv(GLenum pname, GLint* data) {
             *data = current_context->max_drawbuffers;
             break;
         default:
+            if(fp_get_matrix(pname, (GLfloat*)data)) break;
             es3_functions.glGetIntegerv(pname, data);
     }
     LTW_EXIT();

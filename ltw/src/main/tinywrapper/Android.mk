@@ -401,6 +401,8 @@ LOCAL_SRC_FILES := \
     stubs.c \
     multidraw.c \
     quads.c \
+    fixed_pipeline.c \
+    fixed_pipeline_gl.c \
     vertexattrib.c \
     swizzle.c \
     license_notice.c \
