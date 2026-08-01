@@ -247,6 +247,8 @@ void build_extension_string(context_t* context) {
         add_extra_extension(context, &length, legacy_exts[i]);
     }
 
+    LTW_ERROR_PRINTF("LTW: injected %d extra extensions (total %d)", context->nextras, context->nextensions_es + context->nextras);
+
     // More extensions are possible, but will need way more wraps and tracking.
     fin_extra_extensions(context, length);
 }

@@ -303,6 +303,17 @@ void glFlushMappedBufferRange( 	GLenum target,
 
 const GLubyte* glGetStringi(GLenum name, GLuint index) {
     if(!current_context || name != GL_EXTENSIONS) return NULL;
+    static int dbg_count = 0;
+    if(dbg_count < 8) {
+        const GLubyte* s;
+        if(index < current_context->nextras && current_context->extra_extensions_array != NULL)
+            s = (const GLubyte*)current_context->extra_extensions_array[index];
+        else
+            s = es3_functions.glGetStringi(name, index - current_context->nextras);
+        printf("[LTW DBG] glGetStringi[%u] = %s\n", index, s ? (const char*)s : "(null)");
+        dbg_count++;
+        return s;
+    }
     if(index < current_context->nextras && current_context->extra_extensions_array != NULL) {
         return (const GLubyte*)current_context->extra_extensions_array[index];
     } else {
