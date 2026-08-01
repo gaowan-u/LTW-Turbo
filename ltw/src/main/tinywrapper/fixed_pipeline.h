@@ -99,8 +99,14 @@ void fp_set_texture_enabled(bool enabled);
 void fp_set_active_texture(GLuint unit);
 
 // 无 program 时的绘制挂钩：返回 true 表示已用固定管线绘制
+// 这些函数假定当前绑定的 VAO 已设置好 attribute 数组（应用自己的
+// glVertexAttribPointer/glVertexPointer 已被 LTW 转换），只切换 program。
 bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count);
 bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* indices);
+
+// 绑定/解绑固定管线默认 program（供 quads 等内部绘制路径在无 program 时使用）
+bool fp_bind_default_program(void);
+void fp_unbind_default_program(void);
 
 // 查询默认 shader 当前是否可用
 bool fp_default_program_ready(void);

@@ -108,6 +108,9 @@ static bool fp_texture_enabled = false;
 static bool fp_texture_bound = false;
 static GLuint fp_bound_texture = 0;
 
+// 前向声明
+static void fp_set_default_uniforms(void);
+
 // ---- 内部工具 ----
 static void fp_mat_mul(GLfloat* out, const GLfloat* a, const GLfloat* b) {
     // out = a * b（列主序 4x4）
@@ -338,6 +341,7 @@ static void fp_flush_immediate(void) {
     // 绑定默认 program + 属性（使用私有 VAO，避免污染应用绑定的 VAO）
     es3_functions.glBindVertexArray(fp_vao);
     es3_functions.glUseProgram(fp_program);
+    fp_set_default_uniforms();
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
     es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
     es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
@@ -347,19 +351,10 @@ static void fp_flush_immediate(void) {
     es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
                                         (const void*)(7 * sizeof(GLfloat)));
 
-    // MVP = Projection * ModelView
-    GLfloat mvp[FP_MATRIX_SIZE];
-    fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
-               fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
-    if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
-    if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
-    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, fp_texture_enabled ? 1 : 0);
-    if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, 1);
-
     // 纹理绑定到 unit 0
     GLint old_active_tex = 0;
     GLint old_bound_tex = 0;
-    if(fp_texture_enabled && fp_bound_texture != 0) {
+    if(fp_bound_texture != 0) {
         es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_tex);
         es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_bound_tex);
         es3_functions.glActiveTexture(GL_TEXTURE0);
@@ -369,7 +364,7 @@ static void fp_flush_immediate(void) {
     es3_functions.glDrawArrays(mode, 0, count);
 
     // 恢复状态
-    if(fp_texture_enabled && fp_bound_texture != 0) {
+    if(fp_bound_texture != 0) {
         es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)old_bound_tex);
         es3_functions.glActiveTexture((GLenum)old_active_tex);
     }
@@ -568,15 +563,64 @@ void fp_set_active_texture(GLuint unit) {
 }
 
 // ---- 绘制挂钩 ----
+// 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 由绑定纹理决定：
+// GLES 纹理始终启用，绑定过纹理就采样，否则用顶点色。
+static void fp_set_default_uniforms(void) {
+    GLfloat mvp[FP_MATRIX_SIZE];
+    fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
+               fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
+    if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
+    if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
+    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, fp_bound_texture ? 1 : 0);
+    if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, 1);
+}
+
+// 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
+// 绑定纹理到 unit 0（若需要）。
+bool fp_bind_default_program(void) {
+    fp_ensure_program();
+    if(!fp_program) return false;
+    es3_functions.glUseProgram(fp_program);
+    fp_set_default_uniforms();
+
+    if(fp_bound_texture != 0) {
+        GLint old_active_tex = 0;
+        GLint old_bound_tex = 0;
+        es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_tex);
+        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_bound_tex);
+        es3_functions.glActiveTexture(GL_TEXTURE0);
+        es3_functions.glBindTexture(GL_TEXTURE_2D, fp_bound_texture);
+    }
+    return true;
+}
+
+void fp_unbind_default_program(void) {
+    if(!fp_program) return;
+    es3_functions.glUseProgram(0);
+}
+
+// 无 program 时用默认 shader 绘制。应用已设置好 VAO attribute（MC 1.12
+// 的 Tessellator 用 glVertexAttribPointer + VBO），这里只切换 program。
 bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
-    (void)first; (void)count; (void)mode;
-    // 客户端数组路径：目前仅即时模式通过 glEnd 提交，这里不拦截
-    return false;
+    if(!current_context) return false;
+    GLint prog = 0;
+    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+    if(prog != 0) return false;
+    if(!fp_bind_default_program()) return false;
+    es3_functions.glDrawArrays(mode, first, count);
+    fp_unbind_default_program();
+    return true;
 }
 
 bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
-    (void)mode; (void)count; (void)type; (void)indices;
-    return false;
+    if(!current_context) return false;
+    GLint prog = 0;
+    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+    if(prog != 0) return false;
+    if(!fp_bind_default_program()) return false;
+    es3_functions.glDrawElements(mode, count, type, indices);
+    fp_unbind_default_program();
+    return true;
 }
 
 bool fp_default_program_ready(void) {

@@ -13,6 +13,7 @@
 #include "proc.h"
 #include "egl.h"
 #include "debug.h"
+#include "fixed_pipeline.h"
 
 #ifndef GL_QUADS
 #define GL_QUADS 0x0007
@@ -86,7 +87,10 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices) {
 
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ctx->quads_scratch_buffer);
     es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)tri_count * 4, indices, GL_STREAM_DRAW);
+    // 无 program 时用固定管线默认 shader（MC 1.12 GUI 的 QUADS 即时模式路径）
+    bool fp_bound = fp_bind_default_program();
     es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+    if(fp_bound) fp_unbind_default_program();
     {
         // 诊断（仅 LTW_DEBUG）：绘制后检查错误与关键状态
         static unsigned int dn = 0;
