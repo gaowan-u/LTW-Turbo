@@ -666,6 +666,11 @@ void glUseProgram(GLuint program) {
     if(!current_context) return;
     GLTRACE_CALL(glUseProgram, es3_functions.glUseProgram(program));
     current_context->program = program;
+    {
+        static unsigned int un = 0;
+        if((++un & 0xFF) == 0)
+            printf("[LTW ERROR] useProgram: %u\n", program);
+    }
 }
 
 void glGetIntegerv(GLenum pname, GLint* data) {
@@ -826,7 +831,6 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices
     LTW_EXIT();
 }
 
-// 批量更新相关函数 - 用于优化纹理状态切换
 void glLTWBeginBatchUpdate(void) {
     if(!current_context) return;
     swizzle_begin_batch_update();
