@@ -550,6 +550,11 @@ void glUniform3fv(GLint location, GLsizei count, const GLfloat* value) {
 GLint glGetUniformLocation(GLuint program, const GLchar* name) {
     GLint ret = -1;
     if(!current_context) return -1;
+    static int dbg_n = 0;
+    if(dbg_n < 10) {
+        printf("[LTW DBG] glGetUniformLocation(prog=%u, name=%s)\n", program, name ? name : "(null)");
+        dbg_n++;
+    }
     GLTRACE_CALL(glGetUniformLocation, ret = es3_functions.glGetUniformLocation(program, name));
     return ret;
 }

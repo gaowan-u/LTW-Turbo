@@ -276,6 +276,8 @@ static GLchar* rewrite_frag_outputs(const GLchar* src) {
 
 GLuint glCreateProgram(void) {
     if(!current_context) return 0;
+    static int dbg_n = 0;
+    if(dbg_n < 10) { printf("[LTW DBG] glCreateProgram called\n"); dbg_n++; }
     GLuint phys_program = es3_functions.glCreateProgram();
     if(phys_program == 0) return phys_program;
     program_info_t *prog_info = mempool_alloc(current_context->program_info_pool);
