@@ -87,6 +87,9 @@ eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *procname) {
 #define GLESOVERRIDE(name)                                        \
     if(!strcmp(procname, #name)) {                                \
         printf("LTW: Overridden %s\n", #name);                        \
+        if(!strcmp(procname, "glUseProgram") || !strcmp(procname, "glLinkProgram") || \
+           !strcmp(procname, "glDrawArrays") || !strcmp(procname, "glGetError")) \
+            printf("[LTW PROBE] resolved %s -> LTW override\n", procname); \
         return (eglMustCastToProperFunctionPointerType) name;     \
     }
 #include "es3_overrides.h"
@@ -95,5 +98,7 @@ eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *procname) {
 fallback:
     function = host_eglGetProcAddress(procname);
     if(function == NULL) function = resolve_stub(procname);
+    if(!strcmp(procname, "glUseProgram") || !strcmp(procname, "glGetError"))
+        printf("[LTW PROBE] resolved %s -> host/stub %p\n", procname, (void*)function);
     return function;
 }
