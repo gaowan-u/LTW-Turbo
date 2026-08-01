@@ -289,6 +289,12 @@ static void fp_ensure_program(void) {
 
 // 提交即时模式顶点
 static void fp_flush_immediate(void) {
+    static bool fp_flush_printed = false;
+    if(!fp_flush_printed) {
+        fp_flush_printed = true;
+        printf("[LTW FP] glEnd flush count=%d mode=0x%x\n", fp_immediate_count, (unsigned)fp_immediate_mode);
+        fflush(stdout);
+    }
     if(!fp_immediate_active || fp_immediate_count == 0) return;
     fp_ensure_program();
     if(!fp_program) { fp_immediate_count = 0; return; }
