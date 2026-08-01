@@ -65,6 +65,7 @@ static GLint fp_tex_loc = -1;
 static GLint fp_usetex_loc = -1;
 static GLint fp_usecolor_loc = -1;
 static GLuint fp_vbo = 0;
+static GLuint fp_vao = 0;
 static bool fp_init_done = false;
 
 // 矩阵栈
@@ -270,6 +271,7 @@ static void fp_ensure_program(void) {
     fp_usecolor_loc = es3_functions.glGetUniformLocation(prog, "uUseColor");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
+    es3_functions.glGenVertexArrays(1, &fp_vao);
 
     es3_functions.glDeleteShader(vs);
     es3_functions.glDeleteShader(fs);
@@ -315,11 +317,16 @@ static void fp_flush_immediate(void) {
                                    fp_immediate_vertices, GL_STREAM_DRAW);
     }
 
-    // 绑定默认 program + 属性
-    es3_functions.glUseProgram(fp_program);
+    // 绑定默认 program + 属性（使用私有 VAO，避免污染应用绑定的 VAO）
+    GLint old_vao = 0;
+    GLint old_array_buffer = 0;
+    es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &old_vao);
+    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_array_buffer);
     GLint old_program = 0;
     es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
 
+    es3_functions.glBindVertexArray(fp_vao);
+    es3_functions.glUseProgram(fp_program);
     es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
     es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
@@ -356,10 +363,8 @@ static void fp_flush_immediate(void) {
         es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)old_bound_tex);
         es3_functions.glActiveTexture((GLenum)old_active_tex);
     }
-    es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
-    es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
-    es3_functions.glDisableVertexAttribArray(FP_ATTR_POS);
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, 0);
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
+    es3_functions.glBindVertexArray((GLuint)old_vao);
     if(old_program != (GLint)fp_program) es3_functions.glUseProgram((GLuint)old_program);
 
     fp_immediate_count = 0;
