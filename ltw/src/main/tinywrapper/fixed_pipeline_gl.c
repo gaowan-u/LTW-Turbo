@@ -267,6 +267,12 @@ void glPopAttrib(void) {
     if(!current_context) return;
 }
 
+// alpha test（MC 1.12 文字渲染依赖；GLES 无此功能，由默认 shader discard 模拟）
+void glAlphaFunc(GLenum func, GLfloat ref) {
+    if(!current_context) return;
+    fp_alpha_func(func, ref);
+}
+
 // ---- 状态查询：固定管线矩阵走内部栈，其余透传 GLES ----
 void glGetFloatv(GLenum pname, GLfloat* params) {
     if(!current_context) return;

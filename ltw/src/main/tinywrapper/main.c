@@ -446,6 +446,7 @@ void glEnable(GLenum cap) {
     if(cap == GL_DEBUG_OUTPUT && !debug) return;
     if(is_fixed_function_cap(cap)) {
         if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(true);
+        if(cap == GL_ALPHA_TEST) fp_set_alpha_test(true);
         return;
     }
     if(cap == GL_BLEND) {
@@ -463,6 +464,7 @@ void glDisable(GLenum cap) {
     if(!current_context) return;
     if(is_fixed_function_cap(cap)) {
         if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(false);
+        if(cap == GL_ALPHA_TEST) fp_set_alpha_test(false);
         return;
     }
     if(cap == GL_BLEND) {

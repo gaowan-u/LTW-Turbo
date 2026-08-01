@@ -53,10 +53,22 @@ static const char* fp_fragment_shader_src =
     "uniform sampler2D uTex;\n"
     "uniform bool uUseTex;\n"
     "uniform bool uUseColor;\n"
+    "uniform int uAlphaFunc;\n"
+    "uniform float uAlphaRef;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
     "    vec4 c = uUseTex ? texture(uTex, vUV) : vec4(1.0);\n"
-    "    fragColor = uUseColor ? c * vColor : c;\n"
+    "    vec4 fc = uUseColor ? c * vColor : c;\n"
+    "    bool atpass = true;\n"
+    "    if(uAlphaFunc == 0) atpass = false;\n"
+    "    else if(uAlphaFunc == 1) atpass = fc.a < uAlphaRef;\n"
+    "    else if(uAlphaFunc == 2) atpass = abs(fc.a - uAlphaRef) < 0.0039;\n"
+    "    else if(uAlphaFunc == 3) atpass = fc.a <= uAlphaRef;\n"
+    "    else if(uAlphaFunc == 4) atpass = fc.a > uAlphaRef;\n"
+    "    else if(uAlphaFunc == 5) atpass = abs(fc.a - uAlphaRef) >= 0.0039;\n"
+    "    else if(uAlphaFunc == 6) atpass = fc.a >= uAlphaRef;\n"
+    "    if(!atpass) discard;\n"
+    "    fragColor = fc;\n"
     "}\n";
 
 // ---- 内部状态 ----
@@ -65,6 +77,8 @@ static GLint fp_mvp_loc = -1;
 static GLint fp_tex_loc = -1;
 static GLint fp_usetex_loc = -1;
 static GLint fp_usecolor_loc = -1;
+static GLint fp_alphafunc_loc = -1;
+static GLint fp_alpharef_loc = -1;
 static GLuint fp_vbo = 0;
 static GLuint fp_vbo_pos = 0;
 static GLuint fp_vbo_color = 0;
@@ -72,6 +86,11 @@ static GLuint fp_vbo_uv = 0;
 static GLuint fp_vao = 0;
 static GLuint fp_saved_vao = 0;
 static bool fp_init_done = false;
+
+// alpha test 状态（MC 1.12 文字渲染依赖 GL_ALPHA_TEST）
+static bool fp_alpha_test = false;
+static GLenum fp_alpha_test_func = 0x0207;   // GL_ALWAYS
+static GLfloat fp_alpha_ref = 0.0f;
 
 // 矩阵栈
 static GLfloat fp_matrix_stack[FP_MATRIX_COUNT][FP_MAX_STACK_DEPTH][FP_MATRIX_SIZE];
@@ -277,6 +296,8 @@ static void fp_ensure_program(void) {
     fp_tex_loc = es3_functions.glGetUniformLocation(prog, "uTex");
     fp_usetex_loc = es3_functions.glGetUniformLocation(prog, "uUseTex");
     fp_usecolor_loc = es3_functions.glGetUniformLocation(prog, "uUseColor");
+    fp_alphafunc_loc = es3_functions.glGetUniformLocation(prog, "uAlphaFunc");
+    fp_alpharef_loc = es3_functions.glGetUniformLocation(prog, "uAlphaRef");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
     es3_functions.glGenBuffers(1, &fp_vbo_pos);
@@ -619,6 +640,10 @@ void fp_set_active_texture(GLuint unit) {
     }
 }
 
+// ---- alpha test ----
+void fp_set_alpha_test(bool enabled) { fp_alpha_test = enabled; }
+void fp_alpha_func(GLenum func, GLfloat ref) { fp_alpha_test_func = func; fp_alpha_ref = ref; }
+
 // ---- 绘制挂钩 ----
 // 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 由绑定纹理决定：
 // GLES 纹理始终启用，绑定过纹理就采样，否则用顶点色。
@@ -630,6 +655,8 @@ static void fp_set_default_uniforms(void) {
     if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
     if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, fp_bound_texture ? 1 : 0);
     if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, 1);
+    if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, fp_alpha_test ? (GLint)fp_alpha_test_func : 7);
+    if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
 }
 
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
