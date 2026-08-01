@@ -259,6 +259,7 @@ void buffer_copier_init(context_t* context);
 // arguments for every GL error via this callback. KHR_debug constants
 // (GLES 3.2 core) hardcoded as the stub headers lack them.
 #define LTW_DEBUG_OUTPUT             0x92E0
+#define LTW_DEBUG_OUTPUT_SYNC        0x8242
 #define LTW_DEBUG_TYPE_ERROR         0x824C
 #define LTW_DEBUG_TYPE_UNDEF_BEHAV   0x824E
 #define LTW_DONT_CARE                0x1100
@@ -286,6 +287,7 @@ static void init_debug_callback() {
         ctrl(LTW_DONT_CARE, LTW_DEBUG_TYPE_ERROR, LTW_DONT_CARE, 0, NULL, GL_TRUE);
         ctrl(LTW_DONT_CARE, LTW_DEBUG_TYPE_UNDEF_BEHAV, LTW_DONT_CARE, 0, NULL, GL_TRUE);
     }
+    es3_functions.glEnable(LTW_DEBUG_OUTPUT_SYNC);
     es3_functions.glEnable(LTW_DEBUG_OUTPUT);
 }
 
