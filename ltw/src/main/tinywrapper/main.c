@@ -215,6 +215,19 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
     } else {
         if(data != NULL) swizzle_process_upload(target, &format, &type);
         pick_internalformat(&internalformat, &type, &format, &data);
+        {
+            // 低频诊断：纹理上传格式（前 8 次 + 每 256 次）
+            static unsigned int ti_n = 0;
+            ti_n++;
+            if(ti_n <= 8 || (ti_n & 0xFF) == 1) {
+                GLint tex = 0;
+                es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+                printf("[LTW DIAG] glTexImage2D #%u tex=%d %dx%d level=%d intfmt=0x%x fmt=0x%x type=0x%x data=%s\n",
+                       ti_n, tex, width, height, level, internalformat, format, type,
+                       data ? "yes" : "null");
+                fflush(stdout);
+            }
+        }
         GLTRACE_CALL(glTexImage2D, es3_functions.glTexImage2D(target, level, internalformat, width, height, border, format, type, data));
     }
 }
