@@ -3,6 +3,7 @@
  * glColor 系列、矩阵栈函数等，全部转发到 fixed_pipeline.c 的模拟实现。
  * 这些函数在 GLES 上不存在，此前被 functionMissingAbort 静默丢弃。
  */
+#include <stdio.h>
 #include <GLES3/gl3.h>
 #include "GL/gl.h"
 #include "fixed_pipeline.h"
