@@ -144,12 +144,46 @@ static void proxy_getlevelparameter(GLenum target, GLint level, GLenum pname, GL
     }
 }
 
+// GLES 3.x 中 glGetTexLevelParameter 可查询的 pname（纹理状态 pname 如
+// GL_TEXTURE_WRAP_S/T 不是 level 参数，透传会让驱动报 GL_INVALID_ENUM）。
+static bool is_gles_texlevelparam_pname(GLenum pname) {
+    switch (pname) {
+        case GL_TEXTURE_WIDTH:
+        case GL_TEXTURE_HEIGHT:
+        case GL_TEXTURE_DEPTH:
+        case GL_TEXTURE_INTERNAL_FORMAT:
+        case GL_TEXTURE_RED_SIZE:
+        case GL_TEXTURE_GREEN_SIZE:
+        case GL_TEXTURE_BLUE_SIZE:
+        case GL_TEXTURE_ALPHA_SIZE:
+        case GL_TEXTURE_DEPTH_SIZE:
+        case GL_TEXTURE_STENCIL_SIZE:
+        case GL_TEXTURE_COMPRESSED:
+        case 0x86A0: /* GL_TEXTURE_COMPRESSED_IMAGE_SIZE */
+        case 0x8C3F: /* GL_TEXTURE_SHARED_SIZE */
+        case 0x8C10: /* GL_TEXTURE_RED_TYPE */   case 0x8C11: /* GREEN */
+        case 0x8C12: /* GL_TEXTURE_BLUE_TYPE */  case 0x8C13: /* ALPHA */
+        case 0x8C14: /* GL_TEXTURE_DEPTH_TYPE */
+        case 0x9106: /* GL_TEXTURE_SAMPLES */
+        case 0x9107: /* GL_TEXTURE_FIXED_SAMPLE_LOCATIONS */
+        case 0x919D: /* GL_TEXTURE_BUFFER_SIZE (GLES 3.2) */
+        case 0x919E: /* GL_TEXTURE_BUFFER_OFFSET */
+            return true;
+        default:
+            return false;
+    }
+}
+
 void glGetTexLevelParameterfv(GLenum target, GLint level, GLenum pname, GLfloat *params) {
     if(!current_context) return;
     if(isProxyTexture(target)) {
         GLint param = 0;
         proxy_getlevelparameter(target, level, pname, &param);
         *params = (GLfloat) param;
+        return;
+    }
+    if(!is_gles_texlevelparam_pname(pname)) {
+        *params = 0.0f;
         return;
     }
     if(!check_texlevelparameter()) return;
@@ -160,6 +194,10 @@ void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *p
     if(!current_context) return;
     if (isProxyTexture(target)) {
         proxy_getlevelparameter(target, level, pname, params);
+        return;
+    }
+    if(!is_gles_texlevelparam_pname(pname)) {
+        *params = 0;
         return;
     }
     if(!check_texlevelparameter()) return;
@@ -183,6 +221,16 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
 INTERNAL bool filter_params_integer(GLenum target, GLenum pname, GLint param) {
     return true;
 }
+// GLES 没有 GL_CLAMP(0x2900)（桌面 GL 1.x 遗留），老游戏（MC <=1.16）常给
+// WRAP_S/T/R 设 GL_CLAMP，GLES 驱动会报 GL_INVALID_ENUM 且状态不生效。
+// 统一映射为 GL_CLAMP_TO_EDGE，语义最接近，也消除了 0x500 错误的来源。
+INTERNAL GLint sanitize_texparam_value(GLenum pname, GLint param) {
+    if(param == GL_CLAMP &&
+       (pname == GL_TEXTURE_WRAP_S || pname == GL_TEXTURE_WRAP_T || pname == GL_TEXTURE_WRAP_R)) {
+        return GL_CLAMP_TO_EDGE;
+    }
+    return param;
+}
 INTERNAL bool filter_params_float(GLenum target, GLenum pname, GLfloat param) {
     if(pname == GL_TEXTURE_LOD_BIAS) {
         if(param != 0.0f) {
@@ -201,6 +249,7 @@ void glTexParameterf( 	GLenum target,
     if(!current_context) return;
     if(!filter_params_integer(target, pname, (GLint) param)) return;
     if(!filter_params_float(target, pname, param)) return;
+    param = (GLfloat)sanitize_texparam_value(pname, (GLint)param);
     es3_functions.glTexParameterf(target, pname, param);
 }
 void glTexParameteri( 	GLenum target,
@@ -209,6 +258,7 @@ void glTexParameteri( 	GLenum target,
     if(!current_context) return;
     if(!filter_params_integer(target, pname, param)) return;
     if(!filter_params_float(target, pname, (GLfloat)param)) return;
+    param = sanitize_texparam_value(pname, param);
     swizzle_process_swizzle_param(target, pname, &param);
     GLTRACE_CALL(glTexParameteri, es3_functions.glTexParameteri(target, pname, param));
 }
@@ -219,7 +269,12 @@ void glTexParameterfv( 	GLenum target,
     if(!current_context) return;
     if(!filter_params_integer(target, pname, (GLint)*params)) return;
     if(!filter_params_float(target, pname, *params)) return;
-    es3_functions.glTexParameterfv(target, pname, params);
+    GLfloat sanitized[4];
+    memcpy(sanitized, params, 4 * sizeof(GLfloat));
+    if(pname == GL_TEXTURE_WRAP_S || pname == GL_TEXTURE_WRAP_T || pname == GL_TEXTURE_WRAP_R) {
+        for(int i = 0; i < 4; i++) sanitized[i] = (GLfloat)sanitize_texparam_value(pname, (GLint)sanitized[i]);
+    }
+    es3_functions.glTexParameterfv(target, pname, sanitized);
 }
 void glTexParameteriv( 	GLenum target,
                           GLenum pname,
@@ -227,8 +282,13 @@ void glTexParameteriv( 	GLenum target,
     if(!current_context) return;
     if(!filter_params_integer(target, pname, *params)) return;
     if(!filter_params_float(target, pname, (GLfloat)*params)) return;
-    swizzle_process_swizzle_param(target, pname, params);
-    es3_functions.glTexParameteriv(target, pname, params);
+    GLint sanitized[4];
+    memcpy(sanitized, params, 4 * sizeof(GLint));
+    if(pname == GL_TEXTURE_WRAP_S || pname == GL_TEXTURE_WRAP_T || pname == GL_TEXTURE_WRAP_R) {
+        for(int i = 0; i < 4; i++) sanitized[i] = sanitize_texparam_value(pname, sanitized[i]);
+    }
+    swizzle_process_swizzle_param(target, pname, (const GLenum*)sanitized);
+    es3_functions.glTexParameteriv(target, pname, sanitized);
 }
 static bool trigger_gltexparameteri = false;
 void glTexParameterIiv( 	GLenum target,
@@ -591,10 +651,127 @@ void glFinish(void) {
     GLTRACE_CALL(glFinish, es3_functions.glFinish());
 }
 
+// GLES 3.x 中 glGetTexParameter 支持查询的 pname。桌面 GL 独有的 pname
+// （GL_TEXTURE_PRIORITY/RESIDENT/GENERATE_MIPMAP/DEPTH_TEXTURE_MODE 等）一旦
+// 透传，GLES 驱动就会报 GL_INVALID_ENUM(0x500)，污染错误队列并触发
+// "stale 0x500" 连锁。不支持的 pname 由调用方返回规范默认值，不透传。
+static bool is_gles_texparam_pname(GLenum pname) {
+    switch (pname) {
+        case GL_TEXTURE_MAG_FILTER:
+        case GL_TEXTURE_MIN_FILTER:
+        case GL_TEXTURE_WRAP_S:
+        case GL_TEXTURE_WRAP_T:
+        case GL_TEXTURE_WRAP_R:
+        case GL_TEXTURE_MIN_LOD:
+        case GL_TEXTURE_MAX_LOD:
+        case GL_TEXTURE_BASE_LEVEL:
+        case GL_TEXTURE_MAX_LEVEL:
+        case GL_TEXTURE_BORDER_COLOR:
+            return true;
+        // 数值常量：GL_TEXTURE_COMPARE_MODE 0x884C / FUNC 0x884D,
+        // GL_TEXTURE_SWIZZLE_R/G/B/A 0x8B42..0x8B45,
+        // GL_TEXTURE_IMMUTABLE_FORMAT 0x912F / IMMUTABLE_LEVELS 0x82DF
+        case 0x884C:
+        case 0x884D:
+        case 0x8B42:
+        case 0x8B43:
+        case 0x8B44:
+        case 0x8B45:
+        case 0x912F:
+        case 0x82DF:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// GLES 3.x 中 glGetTexParameter 接受的目标。桌面遗留目标（GL_TEXTURE_1D
+// 等）透传同样会报 INVALID_ENUM。
+static bool is_gles_texparam_target(GLenum target) {
+    switch (target) {
+        case GL_TEXTURE_2D:
+        case GL_TEXTURE_3D:
+        case GL_TEXTURE_CUBE_MAP:
+        case 0x8C1A: /* GL_TEXTURE_2D_ARRAY */
+        case 0x9009: /* GL_TEXTURE_CUBE_MAP_ARRAY */
+        case 0x9100: /* GL_TEXTURE_2D_MULTISAMPLE */
+        case 0x9102: /* GL_TEXTURE_2D_MULTISAMPLE_ARRAY */
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void texparam_defaults(GLenum pname, GLint* params) {
+    switch (pname) {
+        case GL_TEXTURE_WRAP_S:
+        case GL_TEXTURE_WRAP_T:
+        case GL_TEXTURE_WRAP_R:
+            params[0] = GL_REPEAT;
+            break;
+        case GL_TEXTURE_MIN_FILTER:
+            params[0] = GL_NEAREST_MIPMAP_LINEAR;
+            break;
+        case GL_TEXTURE_MAG_FILTER:
+            params[0] = GL_LINEAR;
+            break;
+        case GL_TEXTURE_MIN_LOD:
+            params[0] = -1000;
+            break;
+        case GL_TEXTURE_MAX_LOD:
+        case GL_TEXTURE_MAX_LEVEL:
+            params[0] = 1000;
+            break;
+        case GL_TEXTURE_BASE_LEVEL:
+        case 0x82DF: /* GL_TEXTURE_IMMUTABLE_LEVELS */
+        case 0x912F: /* GL_TEXTURE_IMMUTABLE_FORMAT */
+            params[0] = 0;
+            break;
+        case 0x884C: /* GL_TEXTURE_COMPARE_MODE */
+            params[0] = GL_NONE;
+            break;
+        case 0x884D: /* GL_TEXTURE_COMPARE_FUNC */
+            params[0] = GL_LEQUAL;
+            break;
+        case 0x8B42: params[0] = GL_RED;   break;
+        case 0x8B43: params[0] = GL_GREEN; break;
+        case 0x8B44: params[0] = GL_BLUE;  break;
+        case 0x8B45: params[0] = GL_ALPHA; break;
+        case GL_TEXTURE_BORDER_COLOR:
+            params[0] = params[1] = params[2] = params[3] = 0;
+            break;
+        default:
+            params[0] = 0;
+    }
+}
+
 void glGetTexParameteriv(GLenum target, GLenum pname, GLint* params) {
     LTW_ENTER("glGetTexParameteriv");
     if(!current_context) { LTW_EXIT(); return; }
+    if(!is_gles_texparam_target(target) || !is_gles_texparam_pname(pname)) {
+        // 不透传：驱动不会收到非法枚举，错误队列保持干净
+        texparam_defaults(pname, params);
+        LTW_EXIT();
+        return;
+    }
     GLTRACE_CALL(glGetTexParameteriv, es3_functions.glGetTexParameteriv(target, pname, params));
+    LTW_EXIT();
+}
+
+void glGetTexParameterfv(GLenum target, GLenum pname, GLfloat* params) {
+    LTW_ENTER("glGetTexParameterfv");
+    if(!current_context) { LTW_EXIT(); return; }
+    if(!is_gles_texparam_target(target) || !is_gles_texparam_pname(pname)) {
+        GLint def[4] = {0};
+        texparam_defaults(pname, def);
+        params[0] = (GLfloat)def[0];
+        params[1] = (GLfloat)def[1];
+        params[2] = (GLfloat)def[2];
+        params[3] = (GLfloat)def[3];
+        LTW_EXIT();
+        return;
+    }
+    GLTRACE_CALL(glGetTexParameterfv, es3_functions.glGetTexParameterfv(target, pname, params));
     LTW_EXIT();
 }
 
@@ -774,13 +951,17 @@ void glTexBufferRangeARB(GLenum target, GLenum internalFormat, GLuint buffer, GL
 }
 
 static bool noerror;
-// Flip to false once the GL error hunt is done.
-bool glerr_trace = true;
+// GL error queue tracing. Was ON by default during the 1280 INVALID_ENUM
+// hunt; the hunt is over, so default OFF (the trace consumed the game's
+// own glGetError results and spammed stale-error messages). Enable with
+// the LTW_GLERR_TRACE env var when hunting regressions again.
+bool glerr_trace = false;
 _Thread_local const char* ltw_last_glfn = NULL;
 
 __attribute((constructor)) void init_noerror() {
     noerror = env_istrue("LIBGL_NOERROR");
     debug = env_istrue("LTW_DEBUG");
+    glerr_trace = env_istrue("LTW_GLERR_TRACE");
     never_flush_buffers = env_istrue_d("LTW_NEVER_FLUSH_BUFFERS", true);
     coherent_dynamic_storage = env_istrue_d("LTW_COHERENT_DYNAMIC_STORAGE", true);
     if(!noerror) LTW_ERROR_PRINTF("LTW will NOT ignore GL errors. This may break mods, consider yourself warned.");
