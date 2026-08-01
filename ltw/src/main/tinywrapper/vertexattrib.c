@@ -271,6 +271,16 @@ void glVertexAttrib4Niv( 	GLuint index,
 }
 
 void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer) {
+    {
+        // 一次性诊断：确认 MC 的顶点属性设置方式（VBO 偏移 vs 客户端指针）
+        static bool va_printed = false;
+        if(!va_printed) {
+            va_printed = true;
+            printf("[LTW DIAG] glVertexAttribPointer idx=%u size=%d type=0x%x norm=%d stride=%d ptr=%p\n",
+                   index, size, type, normalized, stride, pointer);
+            fflush(stdout);
+        }
+    }
     // 在初期，为了保持程序能运行，我们先直接调用底层的 GLES 函数
     es3_functions.glVertexAttribPointer(index, size, type, normalized, stride, pointer);
 }

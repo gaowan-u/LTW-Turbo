@@ -820,6 +820,15 @@ INTERNAL GLenum get_base_buffer_enum(int buffer_index) {
 
 void glBindBuffer(GLenum buffer, GLuint name) {
     if(!current_context) return;
+    {
+        // 一次性诊断：确认 MC 的 buffer 使用模式
+        static bool diag = false;
+        if(!diag) {
+            diag = true;
+            printf("[LTW DIAG] glBindBuffer target=0x%x name=%u\n", buffer, name);
+            fflush(stdout);
+        }
+    }
     es3_functions.glBindBuffer(buffer, name);
     int buffer_index = get_buffer_index(buffer);
     if(buffer_index == -1) return;

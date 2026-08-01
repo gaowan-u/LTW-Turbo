@@ -407,6 +407,14 @@ void fp_init(void) {
 }
 
 void fp_matrix_mode(GLenum mode) {
+    {
+        static bool diag = false;
+        if(!diag) {
+            diag = true;
+            printf("[LTW DIAG] glMatrixMode 0x%x\n", (unsigned)mode);
+            fflush(stdout);
+        }
+    }
     switch(mode) {
         case GL_MODELVIEW:  fp_current_matrix = FP_MATRIX_MODELVIEW;  break;
         case GL_PROJECTION: fp_current_matrix = FP_MATRIX_PROJECTION; break;
@@ -458,6 +466,14 @@ void fp_pop_matrix(void) {
 }
 
 void fp_ortho(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f) {
+    {
+        static bool diag = false;
+        if(!diag) {
+            diag = true;
+            printf("[LTW DIAG] glOrtho l=%f r=%f b=%f t=%f n=%f f=%f\n", l, r, b, t, n, f);
+            fflush(stdout);
+        }
+    }
     fp_mat_ortho(fp_current_matrix_ptr(), l, r, b, t, n, f);
 }
 
