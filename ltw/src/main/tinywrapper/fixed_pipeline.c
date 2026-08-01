@@ -92,8 +92,7 @@ static GLint fp_single_loc = -1;
 static GLuint fp_vbo = 0;
 static GLuint fp_vbo_pos = 0;
 static GLuint fp_vbo_color = 0;
-static GLuint fp_vbo_uv = 0;
-static GLuint fp_vao = 0;
+static GLuint fp_vbo_uv = 0;static GLuint fp_vao = 0;
 static GLuint fp_saved_vao = 0;
 static bool fp_init_done = false;
 
@@ -105,6 +104,8 @@ static GLfloat fp_alpha_ref = 0.0f;
 static bool fp_blend_enabled = false;
 // 客户端颜色数组是否真实启用（决定 shader 用顶点色还是当前色）
 static bool fp_client_color_active = false;
+// 绑定的纹理是否为单通道（GL_ALPHA 映射 GL_R8），shader 走 uSingle 分支
+static bool fp_bound_single_channel = false;
 
 // 矩阵栈
 static GLfloat fp_matrix_stack[FP_MATRIX_COUNT][FP_MAX_STACK_DEPTH][FP_MATRIX_SIZE];
@@ -663,7 +664,6 @@ void fp_array_element(GLint i) {
 }
 
 // ---- 纹理状态 ----
-static bool fp_bound_single_channel = false;
 void fp_set_texture_enabled(bool enabled) { fp_texture_enabled = enabled; }
 void fp_set_active_texture(GLuint unit) {
     // 只跟踪 unit 0 的绑定纹理（固定管线场景下 MC 1.12 只用 unit 0）
