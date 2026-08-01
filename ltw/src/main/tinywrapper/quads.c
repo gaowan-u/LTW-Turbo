@@ -86,6 +86,21 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices) {
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ctx->quads_scratch_buffer);
     es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)tri_count * 4, indices, GL_STREAM_DRAW);
     es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+    {
+        // 诊断：绘制后检查错误与关键状态，首次 16 次打印
+        static unsigned int dn = 0;
+        if((++dn & 0xF) == 0) {
+            GLenum de = es3_functions.glGetError();
+            GLint dbuf[4] = {0};
+            es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, dbuf);
+            GLint vp[4] = {0};
+            es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
+            GLint program = 0;
+            es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+            printf("[LTW ERROR] QUADS draw: err=0x%x fb=%d vp=%d,%d,%dx%d prog=%d\n",
+                   de, dbuf[0], vp[0], vp[1], vp[2], vp[3], program);
+        }
+    }
 
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
 }
