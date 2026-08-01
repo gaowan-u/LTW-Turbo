@@ -686,6 +686,8 @@ void glUseProgram(GLuint program) {
         static unsigned int un = 0;
         if((++un & 0xFF) == 0)
             printf("[LTW ERROR] useProgram: %u\n", program);
+        if(un <= 10)
+            printf("[LTW DBG] useProgram(prog=%u)\n", program);
     }
 }
 
