@@ -279,7 +279,12 @@ static void fp_ensure_program(void) {
     es3_functions.glDeleteShader(vs);
     es3_functions.glDeleteShader(fs);
 
-    LTW_DEBUG_PRINTF("fp: default program ready (prog=%u)", fp_program);
+    static bool fp_ready_printed = false;
+    if(!fp_ready_printed) {
+        fp_ready_printed = true;
+        printf("[LTW FP] default program ready (prog=%u)\n", fp_program);
+        fflush(stdout);
+    }
 }
 
 // 提交即时模式顶点
@@ -463,6 +468,12 @@ void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) { fp_apply_r
 
 // ---- 即时模式 ----
 void fp_begin(GLenum mode) {
+    static bool fp_begin_printed = false;
+    if(!fp_begin_printed) {
+        fp_begin_printed = true;
+        printf("[LTW FP] glBegin mode=0x%x\n", (unsigned)mode);
+        fflush(stdout);
+    }
     fp_immediate_mode = mode;
     fp_immediate_active = true;
     fp_immediate_count = 0;
@@ -606,6 +617,12 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     GLint prog = 0;
     es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
     if(prog != 0) return false;
+    static bool fp_draw_printed = false;
+    if(!fp_draw_printed) {
+        fp_draw_printed = true;
+        printf("[LTW FP] draw arrays prog=0 mode=0x%x first=%d count=%d\n", (unsigned)mode, first, count);
+        fflush(stdout);
+    }
     if(!fp_bind_default_program()) return false;
     es3_functions.glDrawArrays(mode, first, count);
     fp_unbind_default_program();
@@ -617,6 +634,12 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     GLint prog = 0;
     es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
     if(prog != 0) return false;
+    static bool fp_drawe_printed = false;
+    if(!fp_drawe_printed) {
+        fp_drawe_printed = true;
+        printf("[LTW FP] draw elements prog=0 mode=0x%x count=%d\n", (unsigned)mode, count);
+        fflush(stdout);
+    }
     if(!fp_bind_default_program()) return false;
     es3_functions.glDrawElements(mode, count, type, indices);
     fp_unbind_default_program();
