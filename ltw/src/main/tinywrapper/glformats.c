@@ -81,6 +81,12 @@ void pick_format(GLint *internalformat, GLenum* type, GLenum* format) {
         case GL_RGBA16:
             *internalformat = GL_RGBA16F;
             break;
+        // GL_ALPHA（桌面/GLES1.x 遗留）：GLES 3.0 移除了该格式，MC 1.12 的
+        // 字体纹理用它上传（单通道 alpha 字形）。映射为 GL_R8（GLES 3.0
+        // 支持），shader 采样时把 R 通道当 alpha 用（见 fixed_pipeline）。
+        case GL_ALPHA:
+            *internalformat = GL_R8;
+            break;
         // Always use 32-bit float depth for GL_DEPTH_COMPONENT, because the 16-bit depth buffer
         // causes z-fighting in the distance
         case GL_DEPTH_COMPONENT:
@@ -133,7 +139,7 @@ void pick_format(GLint *internalformat, GLenum* type, GLenum* format) {
         case GL_RGBA: *format=GL_RGBA; *type = GL_UNSIGNED_BYTE; break;
         case GL_LUMINANCE_ALPHA: *format=GL_LUMINANCE_ALPHA; *type = GL_UNSIGNED_BYTE; break;
         case GL_LUMINANCE: *format=GL_LUMINANCE; *type = GL_UNSIGNED_BYTE; break;
-        case GL_ALPHA: *format=GL_ALPHA; *type = GL_UNSIGNED_BYTE; break;
+        case GL_ALPHA: *format=GL_RED; *type = GL_UNSIGNED_BYTE; break;
         // Sized Formats
         case GL_R8: *format=GL_RED; *type=GL_UNSIGNED_BYTE; break;
         case GL_R8_SNORM: *format=GL_RED; *type=GL_BYTE; break;

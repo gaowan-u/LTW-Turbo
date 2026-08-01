@@ -53,11 +53,17 @@ static const char* fp_fragment_shader_src =
     "uniform sampler2D uTex;\n"
     "uniform bool uUseTex;\n"
     "uniform bool uUseColor;\n"
+    "uniform bool uSingle;\n"
     "uniform int uAlphaFunc;\n"
     "uniform float uAlphaRef;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
-    "    vec4 c = uUseTex ? texture(uTex, vUV) : vec4(1.0);\n"
+    "    vec4 c = vec4(1.0);\n"
+    "    if(uUseTex) {\n"
+    "        vec4 t = texture(uTex, vUV);\n"
+    "        if(uSingle) c = vec4(t.r, t.r, t.r, t.r);\n"
+    "        else c = t;\n"
+    "    }\n"
     "    vec4 fc = uUseColor ? c * vColor : c;\n"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
@@ -79,6 +85,7 @@ static GLint fp_usetex_loc = -1;
 static GLint fp_usecolor_loc = -1;
 static GLint fp_alphafunc_loc = -1;
 static GLint fp_alpharef_loc = -1;
+static GLint fp_single_loc = -1;
 static GLuint fp_vbo = 0;
 static GLuint fp_vbo_pos = 0;
 static GLuint fp_vbo_color = 0;
@@ -298,6 +305,7 @@ static void fp_ensure_program(void) {
     fp_usecolor_loc = es3_functions.glGetUniformLocation(prog, "uUseColor");
     fp_alphafunc_loc = es3_functions.glGetUniformLocation(prog, "uAlphaFunc");
     fp_alpharef_loc = es3_functions.glGetUniformLocation(prog, "uAlphaRef");
+    fp_single_loc = es3_functions.glGetUniformLocation(prog, "uSingle");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
     es3_functions.glGenBuffers(1, &fp_vbo_pos);
@@ -629,6 +637,7 @@ void fp_array_element(GLint i) {
 }
 
 // ---- 纹理状态 ----
+static bool fp_bound_single_channel = false;
 void fp_set_texture_enabled(bool enabled) { fp_texture_enabled = enabled; }
 void fp_set_active_texture(GLuint unit) {
     // 只跟踪 unit 0 的绑定纹理（固定管线场景下 MC 1.12 只用 unit 0）
@@ -637,6 +646,16 @@ void fp_set_active_texture(GLuint unit) {
         GLint tex = 0;
         es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
         fp_bound_texture = (GLuint)tex;
+        // 查询纹理格式：GL_R8/GL_RED 等单通道纹理（GL_ALPHA 映射而来）
+        // shader 采样时把 R 通道当 alpha/灰度用
+        fp_bound_single_channel = false;
+        if(tex != 0) {
+            GLint fmt = 0;
+            es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
+            if(fmt == GL_R8 || fmt == GL_RED || fmt == GL_R16F || fmt == GL_R32F) {
+                fp_bound_single_channel = true;
+            }
+        }
     }
 }
 
@@ -655,6 +674,7 @@ static void fp_set_default_uniforms(void) {
     if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
     if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, fp_bound_texture ? 1 : 0);
     if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, 1);
+    if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
     if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, fp_alpha_test ? (GLint)fp_alpha_test_func : 7);
     if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
 }
