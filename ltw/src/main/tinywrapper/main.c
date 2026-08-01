@@ -448,6 +448,14 @@ void glEnable(GLenum cap) {
         if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(true);
         return;
     }
+    if(cap == GL_BLEND) {
+        static bool blend_diag = false;
+        if(!blend_diag) {
+            blend_diag = true;
+            printf("[LTW DIAG] glEnable(GL_BLEND)\n");
+            fflush(stdout);
+        }
+    }
     es3_functions.glEnable(cap);
 }
 
@@ -457,6 +465,14 @@ void glDisable(GLenum cap) {
         if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(false);
         return;
     }
+    if(cap == GL_BLEND) {
+        static bool blend_diag = false;
+        if(!blend_diag) {
+            blend_diag = true;
+            printf("[LTW DIAG] glDisable(GL_BLEND)\n");
+            fflush(stdout);
+        }
+    }
     es3_functions.glDisable(cap);
 }
 
@@ -464,6 +480,16 @@ void glDisable(GLenum cap) {
 // hunt for the recurring 0x500 INVALID_ENUM).
 void glBindTexture(GLenum target, GLuint texture) {
     if(!current_context) return;
+    {
+        // 低频诊断：确认纹理绑定（每 512 次打印一次）
+        static unsigned int bt_n = 0;
+        if((++bt_n & 0x1FF) == 1) {
+            GLint act = 0;
+            es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &act);
+            printf("[LTW DIAG] glBindTexture #%u target=0x%x tex=%u unit=0x%x\n", bt_n, target, texture, act);
+            fflush(stdout);
+        }
+    }
     GLTRACE_CALL(glBindTexture, es3_functions.glBindTexture(target, texture));
     if(target == GL_TEXTURE_2D) fp_set_active_texture(0);
 }

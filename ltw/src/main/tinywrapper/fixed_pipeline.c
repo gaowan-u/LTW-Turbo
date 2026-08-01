@@ -712,6 +712,22 @@ static void fp_upload_client_arrays(GLsizei count) {
         }
     }
 
+    {
+        // 低频诊断：确认上传时的关键参数（每 256 次打印一次）
+        static unsigned int up_n = 0;
+        if((++up_n & 0xFF) == 1) {
+            ptrdiff_t uv_off = 0, col_off = 0;
+            if(fp_client_texcoord_enabled && fp_client_texcoord_ptr)
+                uv_off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            if(fp_client_color_enabled && fp_client_color_ptr)
+                col_off = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            printf("[LTW DIAG] upload n=%u count=%d stride=%d vsize=%zu uv_off=%td col_off=%td tex=%u usetex=%d\n",
+                   up_n, count, fp_client_vertex_stride, vsize, uv_off, col_off,
+                   fp_bound_texture, fp_bound_texture ? 1 : 0);
+            fflush(stdout);
+        }
+    }
+
     es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
 }
 
