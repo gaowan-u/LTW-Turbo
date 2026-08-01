@@ -208,6 +208,45 @@ void build_extension_string(context_t* context) {
     }
     add_extra_extension(context, &length, "GL_ARB_draw_elements_base_vertex");
 
+    // LWJGL2-era games (Minecraft <=1.16) decide their render path from the
+    // extension list and GL version tokens. LWJGL3's GLCapabilities sets
+    // OpenGL20/OpenGL21/etc. from "GL_VERSION_x_y" tokens in the extension
+    // string, and lwjglx mirrors those into ContextCapabilities.OpenGLNN.
+    // Without them the game believes shaders are unsupported and falls back
+    // to the fixed-function pipeline, which GLES does not have -> black screen.
+    // Report the core feature set that GLES 3.x actually covers (desktop GL 3.1+).
+    //
+    // NOTE: deliberately NOT advertising GL_ARB_shader_objects /
+    // GL_ARB_vertex_shader / GL_ARB_fragment_shader: LWJGL2 games then route
+    // shaders through glUseProgramObjectARB & friends, which GLES drivers do
+    // not export (NULL pointers -> crash). The GL_VERSION_2_0 token alone
+    // makes them pick the GL20 path that LTW wraps.
+    static const char* const legacy_exts[] = {
+        "GL_VERSION_1_1",
+        "GL_VERSION_1_2",
+        "GL_VERSION_1_3",
+        "GL_VERSION_1_4",
+        "GL_VERSION_1_5",
+        "GL_VERSION_2_0",
+        "GL_VERSION_2_1",
+        "GL_VERSION_3_0",
+        "GL_VERSION_3_1",
+        "GL_VERSION_3_2",
+        "GL_ARB_multitexture",
+        "GL_ARB_vertex_buffer_object",
+        "GL_ARB_framebuffer_object",
+        "GL_ARB_vertex_array_object",
+        "GL_ARB_texture_non_power_of_two",
+        "GL_ARB_texture_float",
+        "GL_ARB_sync",
+        "GL_ARB_map_buffer_range",
+        "GL_ARB_uniform_buffer_object",
+        "GL_ARB_texture_rectangle",
+    };
+    for(size_t i = 0; i < sizeof(legacy_exts)/sizeof(legacy_exts[0]); i++) {
+        add_extra_extension(context, &length, legacy_exts[i]);
+    }
+
     // More extensions are possible, but will need way more wraps and tracking.
     fin_extra_extensions(context, length);
 }
