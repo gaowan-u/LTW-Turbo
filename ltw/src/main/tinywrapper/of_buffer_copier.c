@@ -114,10 +114,10 @@ void glTexSubImage2D(GLenum target,
     bool is_depth = (format == GL_DEPTH_COMPONENT);
     swizzle_process_upload(target, &format, &type);
     {
-        // 诊断：纹理数据填充格式（前 16 次 + 每 1024 次），定位字体纹理上传
+        // 诊断：纹理数据填充格式（前 64 次 + 每 128 次），定位字体纹理上传
         static unsigned int sub_n = 0;
         sub_n++;
-        if(sub_n <= 16 || (sub_n & 0x3FF) == 1) {
+        if(sub_n <= 64 || (sub_n & 0x7F) == 1) {
             GLint tex = 0;
             es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
             printf("[LTW DIAG] glTexSubImage2D #%u tex=%d %dx%d+%d+%d fmt=0x%x type=0x%x data=%s\n",

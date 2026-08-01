@@ -349,7 +349,7 @@ static void fp_flush_immediate(void) {
     {
         static unsigned int im_n = 0;
         im_n++;
-        if(im_n <= 2 || (im_n & 0xFF) == 1) {
+        if(im_n <= 16 || (im_n & 0x3F) == 1) {
             printf("[LTW DUMP] imm n=%u count=%d mode=0x%x tex=%u blend=%d atest=%d single=%d\n",
                    im_n, fp_immediate_count, (unsigned)fp_immediate_mode, fp_bound_texture,
                    fp_blend_enabled ? 1 : 0, fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0);
