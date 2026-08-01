@@ -726,6 +726,20 @@ static void fp_upload_client_arrays(GLsizei count) {
                    fp_bound_texture, fp_bound_texture ? 1 : 0);
             fflush(stdout);
         }
+        // 一次性 dump：前 2 个顶点的原始数据（位置3f + 纹理2f + 颜色4ub）
+        if(up_n <= 2 && fp_client_vertex_ptr && count >= 2) {
+            const uint8_t* p = (const uint8_t*)fp_client_vertex_ptr;
+            size_t st = fp_client_vertex_stride ? (size_t)fp_client_vertex_stride : (size_t)fp_client_vertex_size * 4;
+            for(int vi = 0; vi < 2; vi++) {
+                const uint8_t* v = p + vi * st;
+                float pos[3]; memcpy(pos, v, 12);
+                float uv[2]; memcpy(uv, v + 12, 8);
+                uint8_t col[4]; memcpy(col, v + 20, 4);
+                printf("[LTW DUMP] v%d pos=(%f,%f,%f) uv=(%f,%f) col=(%u,%u,%u,%u)\n",
+                       vi, pos[0], pos[1], pos[2], uv[0], uv[1], col[0], col[1], col[2], col[3]);
+                fflush(stdout);
+            }
+        }
     }
 
     es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
