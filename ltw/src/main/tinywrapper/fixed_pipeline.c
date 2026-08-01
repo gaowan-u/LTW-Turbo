@@ -681,7 +681,7 @@ static void fp_set_default_uniforms(void) {
 
 // 低频屏幕像素探针：确认渲染结果（每 4096 次 fp 绘制读取一次屏幕
 // 几个固定点的像素颜色，直接验证画面内容）。
-static void fp_pixel_probe(void) {
+void fp_pixel_probe(void) {
     static unsigned int probe_n = 0;
     if((++probe_n & 0xFFF) != 1) return;
     GLint vp[4] = {0};
