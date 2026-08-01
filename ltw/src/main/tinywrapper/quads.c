@@ -104,6 +104,14 @@ static void quads_expand(const uint32_t* src, GLsizei count, uint32_t* dst) {
     }
 }
 
+// 诊断：统计 QUADS 转换调用次数，每 1024 次打印一次，确认路径被触发
+static void quads_stat(const char* src) {
+    static unsigned int n = 0;
+    if((++n & 0x3FF) == 0) {
+        printf("[LTW ERROR] QUADS converted via %s (total ~%u)\n", src, n);
+    }
+}
+
 bool ltw_quads_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(mode != GL_QUADS || count < 4 || (count & 3) != 0) return false;
 
@@ -117,6 +125,7 @@ bool ltw_quads_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     }
     for(GLsizei i = 0; i < count; i++) src[i] = (uint32_t)(first + i);
 
+    quads_stat("glDrawArrays");
     quads_expand(src, count, dst);
     quads_draw_triangles(quads, dst);
 
@@ -137,6 +146,7 @@ bool ltw_quads_draw_elements(GLenum mode, GLsizei count, GLenum type, const void
         return false;
     }
 
+    quads_stat("glDrawElements");
     quads_expand(src, count, dst);
     quads_draw_triangles(quads, dst);
 
