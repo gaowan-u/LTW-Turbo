@@ -21,6 +21,7 @@
 #include "env.h"
 #include "mempool.h"
 #include "debug.h"
+#include "quads.h"
 
 //GL清空深度缓存使用glClearDepth这个GL的api
 void glClearDepth(GLdouble depth) {
@@ -812,6 +813,7 @@ void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     LTW_ENTER("glDrawArrays");
     if(!current_context) { LTW_EXIT(); return; }
+    if(ltw_quads_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
     GLTRACE_CALL(glDrawArrays, current_context->fast_gl.glDrawArrays(mode, first, count));
     LTW_EXIT();
 }
@@ -819,6 +821,7 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
     LTW_ENTER("glDrawElements");
     if(!current_context) { LTW_EXIT(); return; }
+    if(ltw_quads_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
     GLTRACE_CALL(glDrawElements, current_context->fast_gl.glDrawElements(mode, count, type, indices));
     LTW_EXIT();
 }

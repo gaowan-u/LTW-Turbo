@@ -306,6 +306,7 @@ static void init_incontext(context_t* tw_context) {
     basevertex_init(tw_context);
     buffer_copier_init(tw_context);
     es3_functions.glGenBuffers(1, &tw_context->multidraw_element_buffer);
+    es3_functions.glGenBuffers(1, &tw_context->quads_scratch_buffer);
 
     // 初始化格式缓存
     memset(tw_context->format_cache, 0, sizeof(tw_context->format_cache));

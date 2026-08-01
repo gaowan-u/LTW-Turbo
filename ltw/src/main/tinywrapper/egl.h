@@ -92,6 +92,7 @@ typedef struct {
     GLint shader_version;   //着色器版本
     basevertex_renderer_t basevertex;   //基顶点渲染器
     GLuint multidraw_element_buffer;    //多重绘制元素缓冲区对象
+    GLuint quads_scratch_buffer;        //QUADS转换用的临时索引缓冲区
     framebuffer_copier_t framebuffer_copier;    //帧缓冲复制器
     unordered_map* shader_map;  //着色器映射表
     unordered_map* program_map; //程序映射表

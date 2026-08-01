@@ -400,6 +400,7 @@ LOCAL_SRC_FILES := \
     of_buffer_copier.c \
     stubs.c \
     multidraw.c \
+    quads.c \
     vertexattrib.c \
     swizzle.c \
     license_notice.c \
