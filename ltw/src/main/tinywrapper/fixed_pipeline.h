@@ -108,6 +108,11 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
 bool fp_bind_default_program(void);
 void fp_unbind_default_program(void);
 
+// 上传客户端数组到内部 VBO 并设置 attribute（在绘制前调用，count 为顶点数）。
+// GLES 3.x 禁止客户端数组指针，MC 1.12 的 glVertexPointer 传 CPU 指针，
+// 必须在绘制时把数据拷贝到 VBO。返回 true 表示已设置。
+bool fp_prepare_client_arrays(GLsizei count);
+
 // 查询默认 shader 当前是否可用
 bool fp_default_program_ready(void);
 
