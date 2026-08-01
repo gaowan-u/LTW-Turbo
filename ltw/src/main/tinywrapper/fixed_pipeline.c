@@ -879,12 +879,21 @@ bool fp_prepare_client_arrays(GLsizei count) {
     if(fp_client_vertex_abo == 0) {
         fp_upload_client_arrays(count);
     } else {
-        // VBO 路径：pointer 是偏移，直通
+        // VBO 路径：pointer 是偏移，直通（必须先绑定对应的 VBO，偏移才有效）。
+        // 应用在 glVertexPointer 时绑定了 VBO（fp_client_*_abo），绘制时当前
+        // ARRAY_BUFFER 可能已换成别的 buffer，这里按各自 abo 重新绑定。
+        GLint old_abo = 0;
+        es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_abo);
+        GLint vbo = fp_client_vertex_abo ? fp_client_vertex_abo : old_abo;
+        if(vbo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)vbo);
         if(fp_client_vertex_enabled && fp_client_vertex_size > 0) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
             es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
                                                 GL_FALSE, fp_client_vertex_stride, fp_client_vertex_ptr);
         }
+        if(vbo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
+        GLint cbo = fp_client_color_abo ? fp_client_color_abo : old_abo;
+        if(cbo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)cbo);
         if(fp_client_color_enabled && fp_client_color_size > 0) {
             fp_client_color_active = true;
             es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
@@ -893,10 +902,27 @@ bool fp_prepare_client_arrays(GLsizei count) {
         } else {
             fp_client_color_active = false;
         }
+        if(cbo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
+        GLint ubo = fp_client_texcoord_abo ? fp_client_texcoord_abo : old_abo;
+        if(ubo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)ubo);
         if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
             es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
                                                 GL_FALSE, fp_client_texcoord_stride, fp_client_texcoord_ptr);
+        }
+        if(ubo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
+        {
+            // 诊断：VBO 路径（字形等 1.12 Tessellator 元素）参数
+            static unsigned int vb_n = 0;
+            if((++vb_n & 0x3F) == 1) {
+                printf("[LTW DUMP] vbo n=%u count=%d pos:abo=%d ptr=%p stride=%d size=%d col:en=%d abo=%d tex:en=%d abo=%d tex=%u blend=%d atest=%d single=%d\n",
+                       vb_n, count, fp_client_vertex_abo, fp_client_vertex_ptr, fp_client_vertex_stride, fp_client_vertex_size,
+                       fp_client_color_enabled && fp_client_color_size > 0, fp_client_color_abo,
+                       fp_client_texcoord_enabled && fp_client_texcoord_size > 0, fp_client_texcoord_abo,
+                       fp_bound_texture, fp_blend_enabled ? 1 : 0,
+                       fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0);
+                fflush(stdout);
+            }
         }
     }
     // attribute 启用情况影响 uUseColor，这里重设 uniforms（bind 先于 prepare）
