@@ -207,6 +207,22 @@ void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *p
 }
 
 void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *data) {
+    {
+        // 诊断放最前（context 为 NULL 时调用也会被丢弃，需能看到）
+        // 低频诊断：纹理上传格式（前 64 次 + 每 128 次）
+        static unsigned int ti_n = 0;
+        ti_n++;
+        if(ti_n <= 64 || (ti_n & 0x7F) == 1) {
+            GLint tex = 0;
+            if(current_context) {
+                es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+            }
+            printf("[LTW DIAG] glTexImage2D #%u tex=%d %dx%d level=%d intfmt=0x%x fmt=0x%x type=0x%x data=%s ctx=%p\n",
+                   ti_n, tex, width, height, level, internalformat, format, type,
+                   data ? "yes" : "null", (void*)current_context);
+            fflush(stdout);
+        }
+    }
     if(!current_context) return;
     if (isProxyTexture(target)) {
         current_context->proxy_width = ((width<<level)>current_context->maxTextureSize)?0:width;
@@ -215,19 +231,6 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
     } else {
         if(data != NULL) swizzle_process_upload(target, &format, &type);
         pick_internalformat(&internalformat, &type, &format, &data);
-        {
-            // 低频诊断：纹理上传格式（前 32 次 + 每 256 次）
-            static unsigned int ti_n = 0;
-            ti_n++;
-            if(ti_n <= 32 || (ti_n & 0xFF) == 1) {
-                GLint tex = 0;
-                es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
-                printf("[LTW DIAG] glTexImage2D #%u tex=%d %dx%d level=%d intfmt=0x%x fmt=0x%x type=0x%x data=%s\n",
-                       ti_n, tex, width, height, level, internalformat, format, type,
-                       data ? "yes" : "null");
-                fflush(stdout);
-            }
-        }
         GLTRACE_CALL(glTexImage2D, es3_functions.glTexImage2D(target, level, internalformat, width, height, border, format, type, data));
     }
 }
