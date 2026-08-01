@@ -212,13 +212,13 @@ void stub_glReadPixels() {
     printf("Stub: glReadPixels\n");
 }
 static bool trigger_glGetBooleanv = false;
-void stub_glGetBooleanv() {
+__attribute__((used)) void stub_glGetBooleanv() {
     if(trigger_glGetBooleanv) return;
     trigger_glGetBooleanv = true;
     printf("Stub: glGetBooleanv\n");
 }
 static bool trigger_glGetDoublev = false;
-void stub_glGetDoublev() {
+__attribute__((used)) void stub_glGetDoublev() {
     if(trigger_glGetDoublev) return;
     trigger_glGetDoublev = true;
     printf("Stub: glGetDoublev\n");
@@ -230,7 +230,7 @@ void stub_glGetError() {
     printf("Stub: glGetError\n");
 }
 static bool trigger_glGetFloatv = false;
-void stub_glGetFloatv() {
+__attribute__((used)) void stub_glGetFloatv() {
     if(trigger_glGetFloatv) return;
     trigger_glGetFloatv = true;
     printf("Stub: glGetFloatv\n");
@@ -7683,3 +7683,634 @@ void stub_glNamedFramebufferTextureMultiviewOVR() {
 }
 
 //BUILD SUCCESSFUL (total time: 0 seconds)
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glBegin() {
+    static bool trigger_glBegin = false;
+    if(trigger_glBegin) return;
+    trigger_glBegin = true;
+    printf("[LTW STUB] glBegin\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glEnd() {
+    static bool trigger_glEnd = false;
+    if(trigger_glEnd) return;
+    trigger_glEnd = true;
+    printf("[LTW STUB] glEnd\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertexPointer() {
+    static bool trigger_glVertexPointer = false;
+    if(trigger_glVertexPointer) return;
+    trigger_glVertexPointer = true;
+    printf("[LTW STUB] glVertexPointer\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColorPointer() {
+    static bool trigger_glColorPointer = false;
+    if(trigger_glColorPointer) return;
+    trigger_glColorPointer = true;
+    printf("[LTW STUB] glColorPointer\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexCoordPointer() {
+    static bool trigger_glTexCoordPointer = false;
+    if(trigger_glTexCoordPointer) return;
+    trigger_glTexCoordPointer = true;
+    printf("[LTW STUB] glTexCoordPointer\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glNormalPointer() {
+    static bool trigger_glNormalPointer = false;
+    if(trigger_glNormalPointer) return;
+    trigger_glNormalPointer = true;
+    printf("[LTW STUB] glNormalPointer\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glEnableClientState() {
+    static bool trigger_glEnableClientState = false;
+    if(trigger_glEnableClientState) return;
+    trigger_glEnableClientState = true;
+    printf("[LTW STUB] glEnableClientState\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glDisableClientState() {
+    static bool trigger_glDisableClientState = false;
+    if(trigger_glDisableClientState) return;
+    trigger_glDisableClientState = true;
+    printf("[LTW STUB] glDisableClientState\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glArrayElement() {
+    static bool trigger_glArrayElement = false;
+    if(trigger_glArrayElement) return;
+    trigger_glArrayElement = true;
+    printf("[LTW STUB] glArrayElement\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glMatrixMode() {
+    static bool trigger_glMatrixMode = false;
+    if(trigger_glMatrixMode) return;
+    trigger_glMatrixMode = true;
+    printf("[LTW STUB] glMatrixMode\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glLoadIdentity() {
+    static bool trigger_glLoadIdentity = false;
+    if(trigger_glLoadIdentity) return;
+    trigger_glLoadIdentity = true;
+    printf("[LTW STUB] glLoadIdentity\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glLoadMatrixf() {
+    static bool trigger_glLoadMatrixf = false;
+    if(trigger_glLoadMatrixf) return;
+    trigger_glLoadMatrixf = true;
+    printf("[LTW STUB] glLoadMatrixf\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glLoadMatrixd() {
+    static bool trigger_glLoadMatrixd = false;
+    if(trigger_glLoadMatrixd) return;
+    trigger_glLoadMatrixd = true;
+    printf("[LTW STUB] glLoadMatrixd\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glMultMatrixf() {
+    static bool trigger_glMultMatrixf = false;
+    if(trigger_glMultMatrixf) return;
+    trigger_glMultMatrixf = true;
+    printf("[LTW STUB] glMultMatrixf\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glMultMatrixd() {
+    static bool trigger_glMultMatrixd = false;
+    if(trigger_glMultMatrixd) return;
+    trigger_glMultMatrixd = true;
+    printf("[LTW STUB] glMultMatrixd\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glPushMatrix() {
+    static bool trigger_glPushMatrix = false;
+    if(trigger_glPushMatrix) return;
+    trigger_glPushMatrix = true;
+    printf("[LTW STUB] glPushMatrix\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glPopMatrix() {
+    static bool trigger_glPopMatrix = false;
+    if(trigger_glPopMatrix) return;
+    trigger_glPopMatrix = true;
+    printf("[LTW STUB] glPopMatrix\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glOrtho() {
+    static bool trigger_glOrtho = false;
+    if(trigger_glOrtho) return;
+    trigger_glOrtho = true;
+    printf("[LTW STUB] glOrtho\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glFrustum() {
+    static bool trigger_glFrustum = false;
+    if(trigger_glFrustum) return;
+    trigger_glFrustum = true;
+    printf("[LTW STUB] glFrustum\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTranslatef() {
+    static bool trigger_glTranslatef = false;
+    if(trigger_glTranslatef) return;
+    trigger_glTranslatef = true;
+    printf("[LTW STUB] glTranslatef\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTranslated() {
+    static bool trigger_glTranslated = false;
+    if(trigger_glTranslated) return;
+    trigger_glTranslated = true;
+    printf("[LTW STUB] glTranslated\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glRotatef() {
+    static bool trigger_glRotatef = false;
+    if(trigger_glRotatef) return;
+    trigger_glRotatef = true;
+    printf("[LTW STUB] glRotatef\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glScalef() {
+    static bool trigger_glScalef = false;
+    if(trigger_glScalef) return;
+    trigger_glScalef = true;
+    printf("[LTW STUB] glScalef\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glShadeModel() {
+    static bool trigger_glShadeModel = false;
+    if(trigger_glShadeModel) return;
+    trigger_glShadeModel = true;
+    printf("[LTW STUB] glShadeModel\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glPushAttrib() {
+    static bool trigger_glPushAttrib = false;
+    if(trigger_glPushAttrib) return;
+    trigger_glPushAttrib = true;
+    printf("[LTW STUB] glPushAttrib\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glPopAttrib() {
+    static bool trigger_glPopAttrib = false;
+    if(trigger_glPopAttrib) return;
+    trigger_glPopAttrib = true;
+    printf("[LTW STUB] glPopAttrib\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColor3f() {
+    static bool trigger_glColor3f = false;
+    if(trigger_glColor3f) return;
+    trigger_glColor3f = true;
+    printf("[LTW STUB] glColor3f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColor4f() {
+    static bool trigger_glColor4f = false;
+    if(trigger_glColor4f) return;
+    trigger_glColor4f = true;
+    printf("[LTW STUB] glColor4f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColor4ub() {
+    static bool trigger_glColor4ub = false;
+    if(trigger_glColor4ub) return;
+    trigger_glColor4ub = true;
+    printf("[LTW STUB] glColor4ub\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColor3ub() {
+    static bool trigger_glColor3ub = false;
+    if(trigger_glColor3ub) return;
+    trigger_glColor3ub = true;
+    printf("[LTW STUB] glColor3ub\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColor4fv() {
+    static bool trigger_glColor4fv = false;
+    if(trigger_glColor4fv) return;
+    trigger_glColor4fv = true;
+    printf("[LTW STUB] glColor4fv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColor3fv() {
+    static bool trigger_glColor3fv = false;
+    if(trigger_glColor3fv) return;
+    trigger_glColor3fv = true;
+    printf("[LTW STUB] glColor3fv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexCoord2f() {
+    static bool trigger_glTexCoord2f = false;
+    if(trigger_glTexCoord2f) return;
+    trigger_glTexCoord2f = true;
+    printf("[LTW STUB] glTexCoord2f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexCoord2d() {
+    static bool trigger_glTexCoord2d = false;
+    if(trigger_glTexCoord2d) return;
+    trigger_glTexCoord2d = true;
+    printf("[LTW STUB] glTexCoord2d\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexCoord1f() {
+    static bool trigger_glTexCoord1f = false;
+    if(trigger_glTexCoord1f) return;
+    trigger_glTexCoord1f = true;
+    printf("[LTW STUB] glTexCoord1f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexCoord3f() {
+    static bool trigger_glTexCoord3f = false;
+    if(trigger_glTexCoord3f) return;
+    trigger_glTexCoord3f = true;
+    printf("[LTW STUB] glTexCoord3f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexCoord4f() {
+    static bool trigger_glTexCoord4f = false;
+    if(trigger_glTexCoord4f) return;
+    trigger_glTexCoord4f = true;
+    printf("[LTW STUB] glTexCoord4f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexCoord2fv() {
+    static bool trigger_glTexCoord2fv = false;
+    if(trigger_glTexCoord2fv) return;
+    trigger_glTexCoord2fv = true;
+    printf("[LTW STUB] glTexCoord2fv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexCoord4fv() {
+    static bool trigger_glTexCoord4fv = false;
+    if(trigger_glTexCoord4fv) return;
+    trigger_glTexCoord4fv = true;
+    printf("[LTW STUB] glTexCoord4fv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex2f() {
+    static bool trigger_glVertex2f = false;
+    if(trigger_glVertex2f) return;
+    trigger_glVertex2f = true;
+    printf("[LTW STUB] glVertex2f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex3f() {
+    static bool trigger_glVertex3f = false;
+    if(trigger_glVertex3f) return;
+    trigger_glVertex3f = true;
+    printf("[LTW STUB] glVertex3f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex4f() {
+    static bool trigger_glVertex4f = false;
+    if(trigger_glVertex4f) return;
+    trigger_glVertex4f = true;
+    printf("[LTW STUB] glVertex4f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex2d() {
+    static bool trigger_glVertex2d = false;
+    if(trigger_glVertex2d) return;
+    trigger_glVertex2d = true;
+    printf("[LTW STUB] glVertex2d\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex3d() {
+    static bool trigger_glVertex3d = false;
+    if(trigger_glVertex3d) return;
+    trigger_glVertex3d = true;
+    printf("[LTW STUB] glVertex3d\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex2i() {
+    static bool trigger_glVertex2i = false;
+    if(trigger_glVertex2i) return;
+    trigger_glVertex2i = true;
+    printf("[LTW STUB] glVertex2i\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex3i() {
+    static bool trigger_glVertex3i = false;
+    if(trigger_glVertex3i) return;
+    trigger_glVertex3i = true;
+    printf("[LTW STUB] glVertex3i\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex3iv() {
+    static bool trigger_glVertex3iv = false;
+    if(trigger_glVertex3iv) return;
+    trigger_glVertex3iv = true;
+    printf("[LTW STUB] glVertex3iv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex3fv() {
+    static bool trigger_glVertex3fv = false;
+    if(trigger_glVertex3fv) return;
+    trigger_glVertex3fv = true;
+    printf("[LTW STUB] glVertex3fv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex4fv() {
+    static bool trigger_glVertex4fv = false;
+    if(trigger_glVertex4fv) return;
+    trigger_glVertex4fv = true;
+    printf("[LTW STUB] glVertex4fv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glVertex2fv() {
+    static bool trigger_glVertex2fv = false;
+    if(trigger_glVertex2fv) return;
+    trigger_glVertex2fv = true;
+    printf("[LTW STUB] glVertex2fv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glLineStipple() {
+    static bool trigger_glLineStipple = false;
+    if(trigger_glLineStipple) return;
+    trigger_glLineStipple = true;
+    printf("[LTW STUB] glLineStipple\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glLightfv() {
+    static bool trigger_glLightfv = false;
+    if(trigger_glLightfv) return;
+    trigger_glLightfv = true;
+    printf("[LTW STUB] glLightfv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glLightModelfv() {
+    static bool trigger_glLightModelfv = false;
+    if(trigger_glLightModelfv) return;
+    trigger_glLightModelfv = true;
+    printf("[LTW STUB] glLightModelfv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glMaterialfv() {
+    static bool trigger_glMaterialfv = false;
+    if(trigger_glMaterialfv) return;
+    trigger_glMaterialfv = true;
+    printf("[LTW STUB] glMaterialfv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColorMaterial() {
+    static bool trigger_glColorMaterial = false;
+    if(trigger_glColorMaterial) return;
+    trigger_glColorMaterial = true;
+    printf("[LTW STUB] glColorMaterial\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glFogf() {
+    static bool trigger_glFogf = false;
+    if(trigger_glFogf) return;
+    trigger_glFogf = true;
+    printf("[LTW STUB] glFogf\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glFogfv() {
+    static bool trigger_glFogfv = false;
+    if(trigger_glFogfv) return;
+    trigger_glFogfv = true;
+    printf("[LTW STUB] glFogfv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glFogi() {
+    static bool trigger_glFogi = false;
+    if(trigger_glFogi) return;
+    trigger_glFogi = true;
+    printf("[LTW STUB] glFogi\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glNormal3f() {
+    static bool trigger_glNormal3f = false;
+    if(trigger_glNormal3f) return;
+    trigger_glNormal3f = true;
+    printf("[LTW STUB] glNormal3f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glPointSizef() {
+    static bool trigger_glPointSizef = false;
+    if(trigger_glPointSizef) return;
+    trigger_glPointSizef = true;
+    printf("[LTW STUB] glPointSizef\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glRasterPos2f() {
+    static bool trigger_glRasterPos2f = false;
+    if(trigger_glRasterPos2f) return;
+    trigger_glRasterPos2f = true;
+    printf("[LTW STUB] glRasterPos2f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glRasterPos3f() {
+    static bool trigger_glRasterPos3f = false;
+    if(trigger_glRasterPos3f) return;
+    trigger_glRasterPos3f = true;
+    printf("[LTW STUB] glRasterPos3f\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glRectf() {
+    static bool trigger_glRectf = false;
+    if(trigger_glRectf) return;
+    trigger_glRectf = true;
+    printf("[LTW STUB] glRectf\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glDrawPixels() {
+    static bool trigger_glDrawPixels = false;
+    if(trigger_glDrawPixels) return;
+    trigger_glDrawPixels = true;
+    printf("[LTW STUB] glDrawPixels\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glAccum() {
+    static bool trigger_glAccum = false;
+    if(trigger_glAccum) return;
+    trigger_glAccum = true;
+    printf("[LTW STUB] glAccum\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glClearAccum() {
+    static bool trigger_glClearAccum = false;
+    if(trigger_glClearAccum) return;
+    trigger_glClearAccum = true;
+    printf("[LTW STUB] glClearAccum\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glGetLightfv() {
+    static bool trigger_glGetLightfv = false;
+    if(trigger_glGetLightfv) return;
+    trigger_glGetLightfv = true;
+    printf("[LTW STUB] glGetLightfv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glGetMaterialfv() {
+    static bool trigger_glGetMaterialfv = false;
+    if(trigger_glGetMaterialfv) return;
+    trigger_glGetMaterialfv = true;
+    printf("[LTW STUB] glGetMaterialfv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColor4d() {
+    static bool trigger_glColor4d = false;
+    if(trigger_glColor4d) return;
+    trigger_glColor4d = true;
+    printf("[LTW STUB] glColor4d\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glColor4s() {
+    static bool trigger_glColor4s = false;
+    if(trigger_glColor4s) return;
+    trigger_glColor4s = true;
+    printf("[LTW STUB] glColor4s\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexEnvi() {
+    static bool trigger_glTexEnvi = false;
+    if(trigger_glTexEnvi) return;
+    trigger_glTexEnvi = true;
+    printf("[LTW STUB] glTexEnvi\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexEnvf() {
+    static bool trigger_glTexEnvf = false;
+    if(trigger_glTexEnvf) return;
+    trigger_glTexEnvf = true;
+    printf("[LTW STUB] glTexEnvf\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexEnvfv() {
+    static bool trigger_glTexEnvfv = false;
+    if(trigger_glTexEnvfv) return;
+    trigger_glTexEnvfv = true;
+    printf("[LTW STUB] glTexEnvfv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexGend() {
+    static bool trigger_glTexGend = false;
+    if(trigger_glTexGend) return;
+    trigger_glTexGend = true;
+    printf("[LTW STUB] glTexGend\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexGenf() {
+    static bool trigger_glTexGenf = false;
+    if(trigger_glTexGenf) return;
+    trigger_glTexGenf = true;
+    printf("[LTW STUB] glTexGenf\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glTexGeni() {
+    static bool trigger_glTexGeni = false;
+    if(trigger_glTexGeni) return;
+    trigger_glTexGeni = true;
+    printf("[LTW STUB] glTexGeni\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glGetTexEnviv() {
+    static bool trigger_glGetTexEnviv = false;
+    if(trigger_glGetTexEnviv) return;
+    trigger_glGetTexEnviv = true;
+    printf("[LTW STUB] glGetTexEnviv\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glClipPlane() {
+    static bool trigger_glClipPlane = false;
+    if(trigger_glClipPlane) return;
+    trigger_glClipPlane = true;
+    printf("[LTW STUB] glClipPlane\n");
+}
+
+// 固定管线探测 stub：实机跑一次，收集 MC 实际调用的固定管线函数清单
+__attribute__((used)) void stub_glGetClipPlane() {
+    static bool trigger_glGetClipPlane = false;
+    if(trigger_glGetClipPlane) return;
+    trigger_glGetClipPlane = true;
+    printf("[LTW STUB] glGetClipPlane\n");
+}
