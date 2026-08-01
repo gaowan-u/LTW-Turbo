@@ -113,6 +113,19 @@ void glTexSubImage2D(GLenum target,
     // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查
     bool is_depth = (format == GL_DEPTH_COMPONENT);
     swizzle_process_upload(target, &format, &type);
+    {
+        // 诊断：纹理数据填充格式（前 16 次 + 每 1024 次），定位字体纹理上传
+        static unsigned int sub_n = 0;
+        sub_n++;
+        if(sub_n <= 16 || (sub_n & 0x3FF) == 1) {
+            GLint tex = 0;
+            es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+            printf("[LTW DIAG] glTexSubImage2D #%u tex=%d %dx%d+%d+%d fmt=0x%x type=0x%x data=%s\n",
+                   sub_n, tex, width, height, xoffset, yoffset, format, type,
+                   data ? "yes" : "null");
+            fflush(stdout);
+        }
+    }
     if(is_depth) {
         framebuffer_copier_t* copier = &current_context->framebuffer_copier;
         if(width == copier->depthWidth && height == copier->depthHeight && copier->depthData == data) {
