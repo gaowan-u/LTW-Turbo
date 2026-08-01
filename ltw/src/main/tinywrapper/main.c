@@ -574,6 +574,13 @@ void glFinish(void) {
     GLTRACE_CALL(glFinish, es3_functions.glFinish());
 }
 
+void glGetTexParameteriv(GLenum target, GLenum pname, GLint* params) {
+    LTW_ENTER("glGetTexParameteriv");
+    if(!current_context) { LTW_EXIT(); return; }
+    GLTRACE_CALL(glGetTexParameteriv, es3_functions.glGetTexParameteriv(target, pname, params));
+    LTW_EXIT();
+}
+
 INTERNAL int get_buffer_index(GLenum buffer) {
     switch (buffer) {
         case GL_ARRAY_BUFFER: return 0;
@@ -661,7 +668,8 @@ void glUseProgram(GLuint program) {
 }
 
 void glGetIntegerv(GLenum pname, GLint* data) {
-    if(!current_context) return;
+    LTW_ENTER("glGetIntegerv");
+    if(!current_context) { LTW_EXIT(); return; }
     switch (pname) {
         case GL_NUM_EXTENSIONS:
             es3_functions.glGetIntegerv(pname, data);
@@ -799,13 +807,17 @@ void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
 }
 
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
-    if(!current_context) return;
+    LTW_ENTER("glDrawArrays");
+    if(!current_context) { LTW_EXIT(); return; }
     GLTRACE_CALL(glDrawArrays, current_context->fast_gl.glDrawArrays(mode, first, count));
+    LTW_EXIT();
 }
 
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
-    if(!current_context) return;
+    LTW_ENTER("glDrawElements");
+    if(!current_context) { LTW_EXIT(); return; }
     GLTRACE_CALL(glDrawElements, current_context->fast_gl.glDrawElements(mode, count, type, indices));
+    LTW_EXIT();
 }
 
 // 批量更新相关函数 - 用于优化纹理状态切换

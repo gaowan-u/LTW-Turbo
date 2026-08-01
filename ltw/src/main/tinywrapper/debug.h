@@ -13,6 +13,11 @@ extern bool debug;
 // GL error queue tracing. Default ON while debugging; flip to false once
 // the 1280 INVALID_ENUM hunt is done (no launcher-side env vars available).
 extern bool glerr_trace;
+// Name of the LTW wrapper function currently executing on this thread
+// (set by LTW_ENTER), printed by the GL debug callback to attribute errors.
+extern _Thread_local const char* ltw_last_glfn;
+#define LTW_ENTER(fn) (ltw_last_glfn = (fn))
+#define LTW_EXIT() (ltw_last_glfn = NULL)
 
 #define LTW_DEBUG_PRINTF(fmt, ...) do { if(debug) printf("[LTW DEBUG] " fmt "\n", ##__VA_ARGS__); } while(0)
 

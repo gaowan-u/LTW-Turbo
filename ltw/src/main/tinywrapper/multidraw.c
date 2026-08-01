@@ -10,6 +10,7 @@
 #include "debug.h"
 void glMultiDrawArrays( GLenum mode, GLint *first, GLsizei *count, GLsizei primcount )
 {
+    LTW_ENTER("glMultiDrawArrays");
     // 优化：跳过空绘制调用
     if(!current_context || primcount <= 0) return;
 
@@ -42,6 +43,7 @@ void glMultiDrawArrays( GLenum mode, GLint *first, GLsizei *count, GLsizei primc
 
 void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void * const *indices, GLsizei primcount )
 {
+    LTW_ENTER("glMultiDrawElements");
     if(!current_context) return;
     if(primcount <= 0) return;
 
