@@ -687,22 +687,27 @@ void fp_pixel_probe(void) {
     GLint vp[4] = {0};
     es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
     if(vp[2] <= 0 || vp[3] <= 0) return;
-    struct { int x, y; } pts[5] = {
-        {vp[2] / 2,         vp[3] / 2},                    // 中心
-        {vp[2] * 1 / 4,     vp[3] * 1 / 4},                // 左上
-        {vp[2] * 3 / 4,     vp[3] * 1 / 4},                // 右上
-        {vp[2] * 1 / 4,     vp[3] * 3 / 4},                // 左下
-        {vp[2] * 3 / 4,     vp[3] * 3 / 4},                // 右下
+    // 中心 + 四角 + 中心偏下（按钮/文字区域）
+    struct { int x, y; } pts[9] = {
+        {vp[2] / 2,         vp[3] / 2},                    // 0 中心
+        {vp[2] * 1 / 4,     vp[3] * 1 / 4},                // 1 左上
+        {vp[2] * 3 / 4,     vp[3] * 1 / 4},                // 2 右上
+        {vp[2] * 1 / 4,     vp[3] * 3 / 4},                // 3 左下
+        {vp[2] * 3 / 4,     vp[3] * 3 / 4},                // 4 右下
+        {vp[2] / 2,         vp[3] * 3 / 5},                // 5 中心偏下（按钮）
+        {vp[2] / 2,         vp[3] * 7 / 10},               // 6 更下（按钮）
+        {vp[2] / 2,         vp[3] * 1 / 5},                // 7 中心偏上（标题）
+        {vp[2] / 2,         vp[3] * 2 / 10},               // 8 上（logo）
     };
     GLint old_rb = 0;
     es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_rb);
-    printf("[LTW PIX] vp=%d,%d %dx%d", vp[0], vp[1], vp[2], vp[3]);
-    for(int i = 0; i < 5; i++) {
+    printf("[LTW PIX] vp=%d,%d %dx%d fb=%d", vp[0], vp[1], vp[2], vp[3], old_rb);
+    for(int i = 0; i < 9; i++) {
         uint8_t px[4] = {0};
         es3_functions.glReadPixels(pts[i].x, pts[i].y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
         printf(" p%d=(%u,%u,%u,%u)", i, px[0], px[1], px[2], px[3]);
     }
-    printf(" fb=%d\n", old_rb);
+    printf("\n");
     fflush(stdout);
 }
 
