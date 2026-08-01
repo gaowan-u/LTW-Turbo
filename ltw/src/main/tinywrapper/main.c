@@ -750,6 +750,7 @@ void glTexBufferRangeARB(GLenum target, GLenum internalFormat, GLuint buffer, GL
 static bool noerror;
 // Flip to false once the GL error hunt is done.
 bool glerr_trace = true;
+_Thread_local const char* ltw_last_glfn = NULL;
 
 __attribute((constructor)) void init_noerror() {
     noerror = env_istrue("LIBGL_NOERROR");
