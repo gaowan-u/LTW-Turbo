@@ -678,6 +678,7 @@ void glGetIntegerv(GLenum pname, GLint* data) {
             break;
         case GL_MAX_COLOR_ATTACHMENTS:
             *data = MAX_FBTARGETS;
+            LTW_EXIT();
             return;
         case GL_MAX_DRAW_BUFFERS:
             *data = current_context->max_drawbuffers;
@@ -685,6 +686,7 @@ void glGetIntegerv(GLenum pname, GLint* data) {
         default:
             es3_functions.glGetIntegerv(pname, data);
     }
+    LTW_EXIT();
 }
 
 void glGetQueryObjectiv( 	GLuint id,
