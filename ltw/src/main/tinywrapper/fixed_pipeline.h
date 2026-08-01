@@ -102,6 +102,9 @@ void fp_set_active_texture(GLuint unit);
 void fp_set_alpha_test(bool enabled);
 void fp_alpha_func(GLenum func, GLfloat ref);
 
+// blend 状态（仅跟踪，供调试）
+void fp_set_blend(bool enabled);
+
 // 无 program 时的绘制挂钩：返回 true 表示已用固定管线绘制
 // 这些函数假定当前绑定的 VAO 已设置好 attribute 数组（应用自己的
 // glVertexAttribPointer/glVertexPointer 已被 LTW 转换），只切换 program。

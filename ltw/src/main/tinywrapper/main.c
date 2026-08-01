@@ -463,6 +463,7 @@ void glEnable(GLenum cap) {
         return;
     }
     if(cap == GL_BLEND) {
+        fp_set_blend(true);
         static bool blend_diag = false;
         if(!blend_diag) {
             blend_diag = true;

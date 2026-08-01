@@ -53,6 +53,7 @@ static const char* fp_fragment_shader_src =
     "uniform sampler2D uTex;\n"
     "uniform bool uUseTex;\n"
     "uniform bool uUseColor;\n"
+    "uniform vec4 uColor;\n"
     "uniform bool uSingle;\n"
     "uniform int uAlphaFunc;\n"
     "uniform float uAlphaRef;\n"
@@ -64,7 +65,8 @@ static const char* fp_fragment_shader_src =
     "        if(uSingle) c = vec4(t.r, t.r, t.r, t.r);\n"
     "        else c = t;\n"
     "    }\n"
-    "    vec4 fc = uUseColor ? c * vColor : c;\n"
+    "    vec4 vc = uUseColor ? vColor : uColor;\n"
+    "    vec4 fc = c * vc;\n"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
     "    else if(uAlphaFunc == 1) atpass = fc.a < uAlphaRef;\n"
@@ -83,6 +85,7 @@ static GLint fp_mvp_loc = -1;
 static GLint fp_tex_loc = -1;
 static GLint fp_usetex_loc = -1;
 static GLint fp_usecolor_loc = -1;
+static GLint fp_color_loc = -1;
 static GLint fp_alphafunc_loc = -1;
 static GLint fp_alpharef_loc = -1;
 static GLint fp_single_loc = -1;
@@ -98,6 +101,10 @@ static bool fp_init_done = false;
 static bool fp_alpha_test = false;
 static GLenum fp_alpha_test_func = 0x0207;   // GL_ALWAYS
 static GLfloat fp_alpha_ref = 0.0f;
+// blend 状态
+static bool fp_blend_enabled = false;
+// 客户端颜色数组是否真实启用（决定 shader 用顶点色还是当前色）
+static bool fp_client_color_active = false;
 
 // 矩阵栈
 static GLfloat fp_matrix_stack[FP_MATRIX_COUNT][FP_MAX_STACK_DEPTH][FP_MATRIX_SIZE];
@@ -306,6 +313,7 @@ static void fp_ensure_program(void) {
     fp_alphafunc_loc = es3_functions.glGetUniformLocation(prog, "uAlphaFunc");
     fp_alpharef_loc = es3_functions.glGetUniformLocation(prog, "uAlphaRef");
     fp_single_loc = es3_functions.glGetUniformLocation(prog, "uSingle");
+    fp_color_loc = es3_functions.glGetUniformLocation(prog, "uColor");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
     es3_functions.glGenBuffers(1, &fp_vbo_pos);
@@ -662,6 +670,7 @@ void fp_set_active_texture(GLuint unit) {
 // ---- alpha test ----
 void fp_set_alpha_test(bool enabled) { fp_alpha_test = enabled; }
 void fp_alpha_func(GLenum func, GLfloat ref) { fp_alpha_test_func = func; fp_alpha_ref = ref; }
+void fp_set_blend(bool enabled) { fp_blend_enabled = enabled; }
 
 // ---- 绘制挂钩 ----
 // 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 由绑定纹理决定：
@@ -673,7 +682,9 @@ static void fp_set_default_uniforms(void) {
     if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
     if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
     if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, fp_bound_texture ? 1 : 0);
-    if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, 1);
+    // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
+    if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
+    if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
     if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
     if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, fp_alpha_test ? (GLint)fp_alpha_test_func : 7);
     if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
@@ -805,12 +816,15 @@ static void fp_upload_client_arrays(GLsizei count) {
         }
     }
     // 颜色 attribute：偏移 = color 指针 - 顶点指针
-    if(fp_client_color_enabled && fp_client_color_size > 0 && fp_client_color_ptr) {
+    fp_client_color_active = (fp_client_color_enabled && fp_client_color_size > 0 && fp_client_color_ptr);
+    if(fp_client_color_active) {
         ptrdiff_t off = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
         if(off >= 0 && (size_t)off < vsize) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
             es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
                                                 GL_TRUE, fp_client_vertex_stride, (const void*)off);
+        } else {
+            fp_client_color_active = false;
         }
     }
 
@@ -829,17 +843,23 @@ static void fp_upload_client_arrays(GLsizei count) {
             fflush(stdout);
         }
         // 每 64 次上传 dump 一个 quad：覆盖按钮/文字等元素
-        if((up_n & 0x3F) == 1 && fp_client_vertex_ptr && count >= 2) {
+        if((up_n & 0x3F) == 1 && fp_client_vertex_ptr && count >= 4) {
             const uint8_t* p = (const uint8_t*)fp_client_vertex_ptr;
             size_t st = fp_client_vertex_stride ? (size_t)fp_client_vertex_stride : (size_t)fp_client_vertex_size * 4;
-            for(int vi = 0; vi < 2; vi++) {
+            ptrdiff_t uvo = fp_client_texcoord_ptr ? (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr : -1;
+            ptrdiff_t co = fp_client_color_ptr ? (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr : -1;
+            printf("[LTW DUMP] n=%u stride=%zu uv_off=%td col_off=%td tex=%u blend=%d atest=%d single=%d\n",
+                   up_n, st, uvo, co, fp_bound_texture, fp_blend_enabled ? 1 : 0,
+                   fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0);
+            for(int vi = 0; vi < 4; vi++) {
                 const uint8_t* v = p + vi * st;
                 float pos[3]; memcpy(pos, v, 12);
-                float uv[2]; memcpy(uv, v + 12, 8);
-                uint8_t col[4]; memcpy(col, v + 20, 4);
-                printf("[LTW DUMP] n=%u v%d pos=(%f,%f,%f) uv=(%f,%f) col=(%u,%u,%u,%u) tex=%u atest=%d single=%d\n",
-                       up_n, vi, pos[0], pos[1], pos[2], uv[0], uv[1], col[0], col[1], col[2], col[3],
-                       fp_bound_texture, fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0);
+                float uv[2] = {0, 0};
+                if(uvo >= 0) memcpy(uv, v + uvo, 8);
+                uint8_t col[4] = {255, 255, 255, 255};
+                if(co >= 0) memcpy(col, v + co, 4);
+                printf("[LTW DUMP]   v%d pos=(%f,%f,%f) uv=(%f,%f) col=(%u,%u,%u,%u)\n",
+                       vi, pos[0], pos[1], pos[2], uv[0], uv[1], col[0], col[1], col[2], col[3]);
                 fflush(stdout);
             }
         }
@@ -866,9 +886,12 @@ bool fp_prepare_client_arrays(GLsizei count) {
                                                 GL_FALSE, fp_client_vertex_stride, fp_client_vertex_ptr);
         }
         if(fp_client_color_enabled && fp_client_color_size > 0) {
+            fp_client_color_active = true;
             es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
             es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
                                                 GL_TRUE, fp_client_color_stride, fp_client_color_ptr);
+        } else {
+            fp_client_color_active = false;
         }
         if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
@@ -876,6 +899,8 @@ bool fp_prepare_client_arrays(GLsizei count) {
                                                 GL_FALSE, fp_client_texcoord_stride, fp_client_texcoord_ptr);
         }
     }
+    // attribute 启用情况影响 uUseColor，这里重设 uniforms（bind 先于 prepare）
+    fp_set_default_uniforms();
     return true;
 }
 
