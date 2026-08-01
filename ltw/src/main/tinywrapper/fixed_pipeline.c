@@ -645,6 +645,29 @@ bool fp_bind_default_program(void) {
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, (GLint*)&fp_saved_vao);
     if(fp_vao) es3_functions.glBindVertexArray(fp_vao);
 
+    {
+        // 一次性诊断：纹理状态（unit/绑定/格式）
+        static bool diag = false;
+        if(!diag) {
+            diag = true;
+            GLint act = 0, tex0 = 0, tex1 = 0, w = 0, h = 0, fmt = 0;
+            es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &act);
+            es3_functions.glActiveTexture(GL_TEXTURE0);
+            es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
+            es3_functions.glActiveTexture(GL_TEXTURE1);
+            es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex1);
+            if(tex0) {
+                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
+            }
+            printf("[LTW DIAG] texstate: active=0x%x tex0=%d(%dx%d fmt=0x%x) tex1=%d fp_bound=%u\n",
+                   act, tex0, w, h, fmt, tex1, fp_bound_texture);
+            fflush(stdout);
+            es3_functions.glActiveTexture((GLenum)act);
+        }
+    }
+
     if(fp_bound_texture != 0) {
         GLint old_active_tex = 0;
         GLint old_bound_tex = 0;
