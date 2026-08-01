@@ -216,10 +216,10 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
         if(data != NULL) swizzle_process_upload(target, &format, &type);
         pick_internalformat(&internalformat, &type, &format, &data);
         {
-            // 低频诊断：纹理上传格式（前 8 次 + 每 256 次）
+            // 低频诊断：纹理上传格式（前 32 次 + 每 256 次）
             static unsigned int ti_n = 0;
             ti_n++;
-            if(ti_n <= 8 || (ti_n & 0xFF) == 1) {
+            if(ti_n <= 32 || (ti_n & 0xFF) == 1) {
                 GLint tex = 0;
                 es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
                 printf("[LTW DIAG] glTexImage2D #%u tex=%d %dx%d level=%d intfmt=0x%x fmt=0x%x type=0x%x data=%s\n",

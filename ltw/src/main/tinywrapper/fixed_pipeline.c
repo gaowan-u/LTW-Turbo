@@ -353,6 +353,13 @@ static void fp_flush_immediate(void) {
             printf("[LTW DUMP] imm n=%u count=%d mode=0x%x tex=%u blend=%d atest=%d single=%d\n",
                    im_n, fp_immediate_count, (unsigned)fp_immediate_mode, fp_bound_texture,
                    fp_blend_enabled ? 1 : 0, fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0);
+            if(fp_bound_texture != 0) {
+                GLint tw = 0, th = 0, tf = 0;
+                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &tf);
+                printf("[LTW DUMP]   tex %ux%u fmt=0x%x\n", tw, th, tf);
+            }
             int vn = fp_immediate_count < 4 ? fp_immediate_count : 4;
             for(int vi = 0; vi < vn; vi++) {
                 const GLfloat* v = fp_immediate_vertices + (size_t)vi * FP_STRIDE;
