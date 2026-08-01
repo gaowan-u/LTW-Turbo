@@ -1008,6 +1008,14 @@ void glTestIntercept(void) {
 // 增强关键函数的日志输出
 void glClear(GLbitfield mask) {
     if(!current_context) return;
+    {
+        // 无条件低频计数：确认渲染循环是否在跑
+        static unsigned int clear_n = 0;
+        if((++clear_n & 0xFF) == 1) {
+            printf("[LTW CNT] glClear %u mask=0x%x\n", clear_n, mask);
+            fflush(stdout);
+        }
+    }
     if(debug) {
         LTW_DEBUG_PRINTF("LTW INTERCEPT: glClear called with mask=0x%x", mask);
         LTW_DEBUG_PRINTF("LTW MAPPING: Mapping to es3_functions.glClear");
@@ -1026,6 +1034,14 @@ void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     LTW_ENTER("glDrawArrays");
     if(!current_context) { LTW_EXIT(); return; }
+    {
+        // 无条件低频计数：确认绘制调用是否到达 LTW
+        static unsigned int draw_n = 0;
+        if((++draw_n & 0xFF) == 1) {
+            printf("[LTW CNT] glDrawArrays %u mode=0x%x first=%d count=%d\n", draw_n, mode, first, count);
+            fflush(stdout);
+        }
+    }
     if(ltw_quads_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
     if(fp_try_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
     GLTRACE_CALL(glDrawArrays, current_context->fast_gl.glDrawArrays(mode, first, count));
@@ -1035,6 +1051,14 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
     LTW_ENTER("glDrawElements");
     if(!current_context) { LTW_EXIT(); return; }
+    {
+        // 无条件低频计数：确认绘制调用是否到达 LTW
+        static unsigned int drawe_n = 0;
+        if((++drawe_n & 0xFF) == 1) {
+            printf("[LTW CNT] glDrawElements %u mode=0x%x count=%d\n", drawe_n, mode, count);
+            fflush(stdout);
+        }
+    }
     if(ltw_quads_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
     if(fp_try_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
     GLTRACE_CALL(glDrawElements, current_context->fast_gl.glDrawElements(mode, count, type, indices));
