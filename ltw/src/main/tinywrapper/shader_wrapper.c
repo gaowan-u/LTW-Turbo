@@ -509,3 +509,62 @@ void glShaderSource(GLuint shader, GLsizei count, const GLchar *const*string, co
     GLTRACE_CALL(glShaderSource, es3_functions.glShaderSource(shader, 1, &shader_info->source, 0));
     free(target_string);
 }
+
+// ---------------------------------------------------------------------------
+// GL_ARB_shader_objects / GL_ARB_vertex_shader / GL_ARB_fragment_shader entry
+// points. LWJGL2-era games (Minecraft <=1.16) probe for these extensions and,
+// when found, route all shader work through the ObjectARB/ARB-named APIs. The
+// GLES driver does not export them, so mirror gl4es' approach: register them
+// here and translate to the already-wrapped GL20 entry points. GLhandleARB is
+// just a GLuint, and the ARB pnames (GL_OBJECT_*_ARB) share values with the
+// core GL ones, so no extra value translation is needed.
+// ---------------------------------------------------------------------------
+static bool ltws_is_shader(GLuint obj) {
+    return current_context && unordered_map_get(current_context->shader_map, (void*)obj) != NULL;
+}
+static bool ltws_is_program(GLuint obj) {
+    return current_context && unordered_map_get(current_context->program_map, (void*)obj) != NULL;
+}
+
+GLhandleARB glCreateShaderObjectARB(GLenum shaderType) { return glCreateShader(shaderType); }
+GLhandleARB glCreateProgramObjectARB(void) { return glCreateProgram(); }
+void glShaderSourceARB(GLhandleARB shaderObj, GLsizei count, const GLcharARB **string, const GLint *length) {
+    glShaderSource((GLuint)shaderObj, count, (const GLchar *const*)string, length);
+}
+void glCompileShaderARB(GLhandleARB shaderObj) { glCompileShader((GLuint)shaderObj); }
+void glAttachObjectARB(GLhandleARB containerObj, GLhandleARB obj) { glAttachShader((GLuint)containerObj, (GLuint)obj); }
+void glDetachObjectARB(GLhandleARB containerObj, GLhandleARB obj) { glDetachShader((GLuint)containerObj, (GLuint)obj); }
+void glLinkProgramARB(GLhandleARB programObj) { glLinkProgram((GLuint)programObj); }
+void glUseProgramObjectARB(GLhandleARB programObj) { glUseProgram((GLuint)programObj); }
+void glValidateProgramARB(GLhandleARB programObj) { glValidateProgram((GLuint)programObj); }
+GLint glGetUniformLocationARB(GLhandleARB programObj, const GLcharARB *name) { return glGetUniformLocation((GLuint)programObj, (const GLchar*)name); }
+GLint glGetAttribLocationARB(GLhandleARB programObj, const GLcharARB *name) { return glGetAttribLocation((GLuint)programObj, (const GLchar*)name); }
+void glBindAttribLocationARB(GLhandleARB programObj, GLuint index, const GLcharARB *name) { glBindAttribLocation((GLuint)programObj, index, (const GLchar*)name); }
+
+void glDeleteObjectARB(GLhandleARB obj) {
+    if(ltws_is_program((GLuint)obj)) glDeleteProgram((GLuint)obj);
+    else if(ltws_is_shader((GLuint)obj)) glDeleteShader((GLuint)obj);
+}
+
+void glGetObjectParameterivARB(GLhandleARB obj, GLenum pname, GLint *params) {
+    if(ltws_is_program((GLuint)obj)) {
+        es3_functions.glGetProgramiv((GLuint)obj, pname, params);
+    } else if(ltws_is_shader((GLuint)obj)) {
+        glGetShaderiv((GLuint)obj, pname, params);
+    }
+}
+
+void glGetObjectParameterfvARB(GLhandleARB obj, GLenum pname, GLfloat *params) {
+    GLint p = 0;
+    glGetObjectParameterivARB(obj, pname, &p);
+    params[0] = (GLfloat)p;
+}
+
+void glGetInfoLogARB(GLhandleARB obj, GLsizei maxLength, GLsizei *length, GLcharARB *infoLog) {
+    if(ltws_is_program(obj)) es3_functions.glGetProgramInfoLog((GLuint)obj, maxLength, length, (GLchar*)infoLog);
+    else if(ltws_is_shader(obj)) es3_functions.glGetShaderInfoLog((GLuint)obj, maxLength, length, (GLchar*)infoLog);
+}
+
+void glGetAttachedObjectsARB(GLhandleARB containerObj, GLsizei maxCount, GLsizei *count, GLhandleARB *obj) {
+    es3_functions.glGetAttachedShaders((GLuint)containerObj, maxCount, count, (GLuint*)obj);
+}

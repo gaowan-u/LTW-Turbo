@@ -34,6 +34,12 @@ void glGetQueryObjectiv( 	GLuint id,
 void glDepthRange(GLdouble nearVal,
                   GLdouble farVal);
 
+// GL_ARB_shader_objects / GL_ARB_vertex_shader / GL_ARB_fragment_shader
+// entry points are declared in GL/glext.h (included via proc.c). LWJGL2-era
+// games (Minecraft <=1.16) probe for these extensions and then route GLSL
+// through the ARB-named APIs, which the GLES driver does not export.
+// Implemented in shader_wrapper.c on top of the GL20 wraps (mirrors gl4es).
+
 GLESOVERRIDE(glClearDepth)
 GLESOVERRIDE(glMapBuffer)
 GLESOVERRIDE(glGetTexLevelParameteriv)
@@ -185,3 +191,23 @@ GLESOVERRIDE(glTexBuffer)
 GLESOVERRIDE(glTexBufferRange)
 GLESOVERRIDE(glMapBufferRange)
 GLESOVERRIDE(glFlushMappedBufferRange)
+// GL_ARB_shader_objects / vertex_shader / fragment_shader entry points.
+// LWJGL2-era games route GLSL through these when the ARB shader extensions
+// are advertised; implemented in shader_wrapper.c on top of the GL20 wraps.
+GLESOVERRIDE(glCreateShaderObjectARB)
+GLESOVERRIDE(glCreateProgramObjectARB)
+GLESOVERRIDE(glShaderSourceARB)
+GLESOVERRIDE(glCompileShaderARB)
+GLESOVERRIDE(glAttachObjectARB)
+GLESOVERRIDE(glDetachObjectARB)
+GLESOVERRIDE(glLinkProgramARB)
+GLESOVERRIDE(glUseProgramObjectARB)
+GLESOVERRIDE(glValidateProgramARB)
+GLESOVERRIDE(glDeleteObjectARB)
+GLESOVERRIDE(glGetObjectParameterivARB)
+GLESOVERRIDE(glGetObjectParameterfvARB)
+GLESOVERRIDE(glGetInfoLogARB)
+GLESOVERRIDE(glGetAttachedObjectsARB)
+GLESOVERRIDE(glGetUniformLocationARB)
+GLESOVERRIDE(glGetAttribLocationARB)
+GLESOVERRIDE(glBindAttribLocationARB)

@@ -216,11 +216,11 @@ void build_extension_string(context_t* context) {
     // to the fixed-function pipeline, which GLES does not have -> black screen.
     // Report the core feature set that GLES 3.x actually covers (desktop GL 3.1+).
     //
-    // NOTE: deliberately NOT advertising GL_ARB_shader_objects /
-    // GL_ARB_vertex_shader / GL_ARB_fragment_shader: LWJGL2 games then route
-    // shaders through glUseProgramObjectARB & friends, which GLES drivers do
-    // not export (NULL pointers -> crash). The GL_VERSION_2_0 token alone
-    // makes them pick the GL20 path that LTW wraps.
+    // The ARB shader extensions are what LWJGL2 games (Minecraft's
+    // OpenGlHelper) actually probe for before initializing GLSL: they check
+    // GL_ARB_vertex_shader && GL_ARB_fragment_shader and, if present, route
+    // shaders through glUseProgramObjectARB & friends. gl4es does exactly
+    // this. We mirror it and provide those entry points in shader_wrapper.c.
     static const char* const legacy_exts[] = {
         "GL_VERSION_1_1",
         "GL_VERSION_1_2",
@@ -242,12 +242,16 @@ void build_extension_string(context_t* context) {
         "GL_ARB_map_buffer_range",
         "GL_ARB_uniform_buffer_object",
         "GL_ARB_texture_rectangle",
+        "GL_ARB_vertex_shader",
+        "GL_ARB_fragment_shader",
+        "GL_ARB_shader_objects",
+        "GL_ARB_shading_language_100",
     };
     for(size_t i = 0; i < sizeof(legacy_exts)/sizeof(legacy_exts[0]); i++) {
         add_extra_extension(context, &length, legacy_exts[i]);
     }
 
-    LTW_ERROR_PRINTF("LTW: injected %d extra extensions (total %d)", context->nextras, context->nextensions_es + context->nextras);
+    LTW_ERROR_PRINTF("LTW: injected %zu extra extensions (total %d)", context->nextras, context->nextensions_es + (int)context->nextras);
 
     // More extensions are possible, but will need way more wraps and tracking.
     fin_extra_extensions(context, length);
