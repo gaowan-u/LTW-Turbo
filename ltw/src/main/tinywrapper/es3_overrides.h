@@ -3,6 +3,7 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+//用于设置深度缓冲区的清除值
 void glClearDepth(double depth);
 void* glMapBuffer(GLenum target, GLenum access);
 void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *params);
@@ -12,6 +13,7 @@ void glDebugMessageControl( 	GLenum source,
                                GLsizei count,
                                const GLuint *ids,
                                GLboolean enabled);
+//用于一次性绘制多个元素的图形，允许指定每个绘制调用的基顶点                             
 void glMultiDrawElementsBaseVertex( 	GLenum mode,
                                        const GLsizei *count,
                                        GLenum type,
@@ -21,6 +23,7 @@ void glMultiDrawElementsBaseVertex( 	GLenum mode,
 void glBindFragDataLocation(GLuint program,
                             GLuint colorNumber,
                             const char * name);
+//从当前纹理对象中获取像素数据                           
 void glGetTexImage( 	GLenum target,
                        GLint level,
                        GLenum format,
@@ -30,7 +33,7 @@ void glGetTexImage( 	GLenum target,
 void glGetQueryObjectiv( 	GLuint id,
                             GLenum pname,
                             GLint * params);
-
+//设置当前视口的深度范围
 void glDepthRange(GLdouble nearVal,
                   GLdouble farVal);
 
