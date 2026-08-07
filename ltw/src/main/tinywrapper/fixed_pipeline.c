@@ -453,6 +453,44 @@ static void fp_flush_immediate(void) {
 
     es3_functions.glDrawArrays(mode, 0, count);
 
+    // 诊断：第一次画字形后直接读回 quad 实际渲染像素（区分全白/全黑/透明）
+    {
+        static unsigned int fp_read_n = 0;
+        if(fp_bound_texture >= 24 && fp_read_n < 2 && fp_immediate_count >= 4) {
+            fp_read_n++;
+            GLfloat mvp[FP_MATRIX_SIZE];
+            fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
+                       fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
+            GLint vp[4] = {0};
+            es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
+            // quad 中心 + 四角（取前 4 个顶点）
+            float pts[5][3] = {{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
+            for(int vi = 0; vi < 4; vi++) {
+                const GLfloat* v = fp_immediate_vertices + (size_t)vi * FP_STRIDE;
+                pts[vi][0] = v[0]; pts[vi][1] = v[1]; pts[vi][2] = v[2];
+                pts[4][0] += v[0] / 4.0f; pts[4][1] += v[1] / 4.0f; pts[4][2] += v[2] / 4.0f;
+            }
+            printf("[LTW DIAG] fp_read tex=%u:", fp_bound_texture);
+            for(int pi = 0; pi < 5; pi++) {
+                float in[4] = {pts[pi][0], pts[pi][1], pts[pi][2], 1.0f};
+                float out[4] = {0,0,0,0};
+                for(int c = 0; c < 4; c++) {
+                    out[c] = mvp[c*4+0]*in[0] + mvp[c*4+1]*in[1] +
+                             mvp[c*4+2]*in[2] + mvp[c*4+3]*in[3];
+                }
+                if(out[3] == 0.0f) continue;
+                float ndcx = out[0]/out[3], ndcy = out[1]/out[3];
+                int sx = vp[0] + (int)((ndcx * 0.5f + 0.5f) * vp[2]);
+                int sy = vp[1] + (int)((ndcy * 0.5f + 0.5f) * vp[3]);
+                unsigned char px[4] = {0};
+                es3_functions.glReadPixels(sx, sy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+                printf(" p%d=(%u,%u,%u,%u)", pi, px[0], px[1], px[2], px[3]);
+            }
+            printf("\n");
+            fflush(stdout);
+        }
+    }
+
     // 恢复状态
     if(fp_bound_texture != 0) {
         es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)old_bound_tex);
