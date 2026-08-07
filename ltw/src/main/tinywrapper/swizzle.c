@@ -80,6 +80,21 @@ static void apply_swizzles(GLenum target, texture_swizzle_track_t* track) {
         return;  // 已经是这个状态，跳过
     }
 
+    {
+        // 诊断：确认实际写入驱动的 swizzle 值（字形纹理 tex>=24）
+        GLenum getter = get_textarget_query_param(target);
+        if(getter != 0) {
+            GLint tex = 0;
+            current_context->fast_gl.glGetIntegerv(getter, &tex);
+            if(tex >= 24 && tex <= 64) {
+                printf("[LTW DIAG] apply swizzle tex=%d -> 0x%x,0x%x,0x%x,0x%x\n",
+                       tex, (unsigned)new_swizzle[0], (unsigned)new_swizzle[1],
+                       (unsigned)new_swizzle[2], (unsigned)new_swizzle[3]);
+                fflush(stdout);
+            }
+        }
+    }
+
     // 批量更新模式：只标记为待更新，不立即应用
     if(current_context->swizzle_batch_mode) {
         memcpy(track->pending_swizzle, new_swizzle, 4 * sizeof(GLenum));

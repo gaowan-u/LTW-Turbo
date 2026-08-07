@@ -158,9 +158,15 @@ void glTexSubImage2D(GLenum target,
         }
         if(tex == 26) {
             GLint sw[4] = {0};
-            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8E46 /* GL_TEXTURE_SWIZZLE_RGBA */, sw);
-            printf("[LTW DIAG] tex26 swizzle=0x%x,0x%x,0x%x,0x%x\n",
-                   (unsigned)sw[0], (unsigned)sw[1], (unsigned)sw[2], (unsigned)sw[3]);
+            GLint sw_rgba[4] = {0};
+            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8B42 /* R */, &sw[0]);
+            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8B43 /* G */, &sw[1]);
+            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8B44 /* B */, &sw[2]);
+            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8B45 /* A */, &sw[3]);
+            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8E46 /* RGBA */, sw_rgba);
+            printf("[LTW DIAG] tex26 swizzle_rgba=0x%x,0x%x,0x%x,0x%x rgba_query=0x%x,0x%x,0x%x,0x%x\n",
+                   (unsigned)sw[0], (unsigned)sw[1], (unsigned)sw[2], (unsigned)sw[3],
+                   (unsigned)sw_rgba[0], (unsigned)sw_rgba[1], (unsigned)sw_rgba[2], (unsigned)sw_rgba[3]);
             // 读回字形纹理的原始像素，确认 alpha 是否真的进了纹理
             GLint old_rb = 0;
             es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_rb);
