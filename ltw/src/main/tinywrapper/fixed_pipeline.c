@@ -773,7 +773,23 @@ static void fp_set_default_uniforms(void) {
     if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
     if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
     if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
-    if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, fp_alpha_test ? (GLint)fp_alpha_test_func : 7);
+    // shader 里用 0..7 表示 GL_NEVER..GL_ALWAYS，不能直接传原始 GLenum
+    // （例如 GL_GREATER=516），否则所有分支都匹配不上、alpha test 失效。
+    GLint alpha_mode = 7;
+    if(fp_alpha_test) {
+        switch(fp_alpha_test_func) {
+            case GL_NEVER:    alpha_mode = 0; break;
+            case GL_LESS:     alpha_mode = 1; break;
+            case GL_EQUAL:    alpha_mode = 2; break;
+            case GL_LEQUAL:   alpha_mode = 3; break;
+            case GL_GREATER:  alpha_mode = 4; break;
+            case GL_NOTEQUAL: alpha_mode = 5; break;
+            case GL_GEQUAL:   alpha_mode = 6; break;
+            case GL_ALWAYS:   alpha_mode = 7; break;
+            default:          alpha_mode = 7; break;
+        }
+    }
+    if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, alpha_mode);
     if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
 }
 
