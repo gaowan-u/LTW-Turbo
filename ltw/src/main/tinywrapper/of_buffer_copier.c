@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "egl.h"
 #include <stdbool.h>
+#include <stdlib.h>
 #include "swizzle.h"
 #include "debug.h"
 void buffer_copier_init(context_t* context) {
@@ -154,6 +155,30 @@ void glTexSubImage2D(GLenum target,
             GLenum e = es3_functions.glGetError();
             printf("[LTW DIAG] glTexSubImage2D tex=%d err=0x%x\n", tex, (unsigned)e);
             fflush(stdout);
+        }
+        if(tex == 26) {
+            GLint sw[4] = {0};
+            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8E46 /* GL_TEXTURE_SWIZZLE_RGBA */, sw);
+            printf("[LTW DIAG] tex26 swizzle=0x%x,0x%x,0x%x,0x%x\n",
+                   (unsigned)sw[0], (unsigned)sw[1], (unsigned)sw[2], (unsigned)sw[3]);
+            // 读回字形纹理的原始像素，确认 alpha 是否真的进了纹理
+            GLint old_rb = 0;
+            es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_rb);
+            unsigned char* buf = (unsigned char*)malloc((size_t)width * height * 4);
+            if(buf) {
+                glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+                const int pts[][2] = {{0,0},{1,0},{64,64},{128,128},{200,200},{255,255}};
+                printf("[LTW DIAG] tex26 pixels:");
+                for(unsigned int i = 0; i < sizeof(pts)/sizeof(pts[0]); i++) {
+                    int px = pts[i][0], py = pts[i][1];
+                    unsigned char* p = buf + ((size_t)py * width + px) * 4;
+                    printf(" (%d,%d)=%u,%u,%u,%u", px, py, p[0], p[1], p[2], p[3]);
+                }
+                printf("\n");
+                fflush(stdout);
+                free(buf);
+            }
+            es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)old_rb);
         }
     }
 }
