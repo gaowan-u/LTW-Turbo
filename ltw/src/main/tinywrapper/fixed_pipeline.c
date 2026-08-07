@@ -466,6 +466,8 @@ static void fp_flush_immediate(void) {
             GLint draw_fb = 0, read_fb = 0;
             es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fb);
             es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
+            GLint samples = 0;
+            es3_functions.glGetIntegerv(GL_SAMPLES, &samples);
             if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
             // quad 中心 + 四角（取前 4 个顶点）
             float pts[5][3] = {{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
@@ -474,8 +476,8 @@ static void fp_flush_immediate(void) {
                 pts[vi][0] = v[0]; pts[vi][1] = v[1]; pts[vi][2] = v[2];
                 pts[4][0] += v[0] / 4.0f; pts[4][1] += v[1] / 4.0f; pts[4][2] += v[2] / 4.0f;
             }
-            printf("[LTW DIAG] fp_read tex=%u vp=%d,%d,%dx%d drawfb=%d readfb=%d:",
-                   fp_bound_texture, vp[0], vp[1], vp[2], vp[3], draw_fb, read_fb);
+            printf("[LTW DIAG] fp_read tex=%u vp=%d,%d,%dx%d drawfb=%d readfb=%d samples=%d:",
+                   fp_bound_texture, vp[0], vp[1], vp[2], vp[3], draw_fb, read_fb, samples);
             for(int pi = 0; pi < 5; pi++) {
                 float in[4] = {pts[pi][0], pts[pi][1], pts[pi][2], 1.0f};
                 float out[4] = {0,0,0,0};
@@ -489,7 +491,7 @@ static void fp_flush_immediate(void) {
                 int sy = vp[1] + (int)((ndcy * 0.5f + 0.5f) * vp[3]);
                 unsigned char px[4] = {0};
                 es3_functions.glReadPixels(sx, sy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-                printf(" p%d=(%u,%u,%u,%u)", pi, px[0], px[1], px[2], px[3]);
+                printf(" p%d=(%u,%u,%u,%u)@(%d,%d)", pi, px[0], px[1], px[2], px[3], sx, sy);
             }
             printf("\n");
             fflush(stdout);
