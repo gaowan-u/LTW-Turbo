@@ -102,9 +102,6 @@ void fp_set_active_texture(GLuint unit);
 void fp_set_alpha_test(bool enabled);
 void fp_alpha_func(GLenum func, GLfloat ref);
 
-// blend 状态（仅跟踪，供调试）
-void fp_set_blend(bool enabled);
-
 // 无 program 时的绘制挂钩：返回 true 表示已用固定管线绘制
 // 这些函数假定当前绑定的 VAO 已设置好 attribute 数组（应用自己的
 // glVertexAttribPointer/glVertexPointer 已被 LTW 转换），只切换 program。
@@ -119,12 +116,6 @@ void fp_unbind_default_program(void);
 // GLES 3.x 禁止客户端数组指针，MC 1.12 的 glVertexPointer 传 CPU 指针，
 // 必须在绘制时把数据拷贝到 VBO。返回 true 表示已设置。
 bool fp_prepare_client_arrays(GLsizei count);
-
-// 低频屏幕像素探针（调试用）
-void fp_pixel_probe(void);
-
-// 调试：检测固定坐标（左下/右下角白块）何时变成白色，用于定位绘制路径
-void fp_check_white_pixel(void);
 
 // 查询默认 shader 当前是否可用
 bool fp_default_program_ready(void);

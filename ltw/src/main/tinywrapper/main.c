@@ -207,22 +207,6 @@ void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *p
 }
 
 void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *data) {
-    {
-        // 诊断放最前（context 为 NULL 时调用也会被丢弃，需能看到）
-        // 低频诊断：纹理上传格式（前 64 次 + 每 128 次）
-        static unsigned int ti_n = 0;
-        ti_n++;
-        if(ti_n <= 64 || (ti_n & 0x7F) == 1) {
-            GLint tex = 0;
-            if(current_context) {
-                es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
-            }
-            printf("[LTW DIAG] glTexImage2D #%u tex=%d %dx%d level=%d intfmt=0x%x fmt=0x%x type=0x%x data=%s ctx=%p\n",
-                   ti_n, tex, width, height, level, internalformat, format, type,
-                   data ? "yes" : "null", (void*)current_context);
-            fflush(stdout);
-        }
-    }
     if(!current_context) return;
     if (isProxyTexture(target)) {
         current_context->proxy_width = ((width<<level)>current_context->maxTextureSize)?0:width;
@@ -380,17 +364,6 @@ void glFlushMappedBufferRange( 	GLenum target,
 
 const GLubyte* glGetStringi(GLenum name, GLuint index) {
     if(!current_context || name != GL_EXTENSIONS) return NULL;
-    static int dbg_count = 0;
-    if(dbg_count < 8) {
-        const GLubyte* s;
-        if(index < current_context->nextras && current_context->extra_extensions_array != NULL)
-            s = (const GLubyte*)current_context->extra_extensions_array[index];
-        else
-            s = es3_functions.glGetStringi(name, index - current_context->nextras);
-        printf("[LTW DBG] glGetStringi[%u] = %s\n", index, s ? (const char*)s : "(null)");
-        dbg_count++;
-        return s;
-    }
     if(index < current_context->nextras && current_context->extra_extensions_array != NULL) {
         return (const GLubyte*)current_context->extra_extensions_array[index];
     } else {
@@ -462,67 +435,30 @@ void glEnable(GLenum cap) {
     if(cap == GL_DEBUG_OUTPUT && !debug) return;
     if(is_fixed_function_cap(cap)) {
         if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(true);
-        if(cap == GL_ALPHA_TEST) {
-            static unsigned int at_n = 0;
-            if(++at_n <= 4) {
-                printf("[LTW DIAG] glEnable(GL_ALPHA_TEST) #%u\n", at_n);
-                fflush(stdout);
-            }
-            fp_set_alpha_test(true);
-        }
+        if(cap == GL_ALPHA_TEST) fp_set_alpha_test(true);
         return;
     }
     if(cap == GL_BLEND) {
-        fp_set_blend(true);
-        static bool blend_diag = false;
-        if(!blend_diag) {
-            blend_diag = true;
-            printf("[LTW DIAG] glEnable(GL_BLEND)\n");
-            fflush(stdout);
-        }
+        es3_functions.glEnable(cap);
     }
-    es3_functions.glEnable(cap);
 }
 
 void glDisable(GLenum cap) {
     if(!current_context) return;
     if(is_fixed_function_cap(cap)) {
         if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(false);
-        if(cap == GL_ALPHA_TEST) {
-            static unsigned int at_n = 0;
-            if(++at_n <= 4) {
-                printf("[LTW DIAG] glDisable(GL_ALPHA_TEST) #%u\n", at_n);
-                fflush(stdout);
-            }
-            fp_set_alpha_test(false);
-        }
+        if(cap == GL_ALPHA_TEST) fp_set_alpha_test(false);
         return;
     }
     if(cap == GL_BLEND) {
-        static bool blend_diag = false;
-        if(!blend_diag) {
-            blend_diag = true;
-            printf("[LTW DIAG] glDisable(GL_BLEND)\n");
-            fflush(stdout);
-        }
+        es3_functions.glDisable(cap);
     }
-    es3_functions.glDisable(cap);
 }
 
 // Pass-through wrappers with double-drain error tracing (LTW_DEBUG trace
 // hunt for the recurring 0x500 INVALID_ENUM).
 void glBindTexture(GLenum target, GLuint texture) {
     if(!current_context) return;
-    {
-        // 低频诊断：确认纹理绑定（每 512 次打印一次）
-        static unsigned int bt_n = 0;
-        if((++bt_n & 0x1FF) == 1) {
-            GLint act = 0;
-            es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &act);
-            printf("[LTW DIAG] glBindTexture #%u target=0x%x tex=%u unit=0x%x\n", bt_n, target, texture, act);
-            fflush(stdout);
-        }
-    }
     GLTRACE_CALL(glBindTexture, es3_functions.glBindTexture(target, texture));
     if(target == GL_TEXTURE_2D) fp_set_active_texture(0);
 }
@@ -677,11 +613,6 @@ void glUniform3fv(GLint location, GLsizei count, const GLfloat* value) {
 GLint glGetUniformLocation(GLuint program, const GLchar* name) {
     GLint ret = -1;
     if(!current_context) return -1;
-    static int dbg_n = 0;
-    if(dbg_n < 10) {
-        printf("[LTW DBG] glGetUniformLocation(prog=%u, name=%s)\n", program, name ? name : "(null)");
-        dbg_n++;
-    }
     GLTRACE_CALL(glGetUniformLocation, ret = es3_functions.glGetUniformLocation(program, name));
     return ret;
 }
@@ -879,15 +810,6 @@ INTERNAL GLenum get_base_buffer_enum(int buffer_index) {
 
 void glBindBuffer(GLenum buffer, GLuint name) {
     if(!current_context) return;
-    {
-        // 一次性诊断：确认 MC 的 buffer 使用模式
-        static bool diag = false;
-        if(!diag) {
-            diag = true;
-            printf("[LTW DIAG] glBindBuffer target=0x%x name=%u\n", buffer, name);
-            fflush(stdout);
-        }
-    }
     es3_functions.glBindBuffer(buffer, name);
     int buffer_index = get_buffer_index(buffer);
     if(buffer_index == -1) return;
@@ -935,13 +857,6 @@ void glUseProgram(GLuint program) {
     if(!current_context) return;
     GLTRACE_CALL(glUseProgram, es3_functions.glUseProgram(program));
     current_context->program = program;
-    {
-        static unsigned int un = 0;
-        if((++un & 0xFF) == 0)
-            printf("[LTW ERROR] useProgram: %u\n", program);
-        if(un <= 10)
-            printf("[LTW DBG] useProgram(prog=%u)\n", program);
-    }
 }
 
 void glGetIntegerv(GLenum pname, GLint* data) {
@@ -1036,7 +951,6 @@ bool glerr_trace = false;
 _Thread_local const char* ltw_last_glfn = NULL;
 
 __attribute((constructor)) void init_noerror() {
-    printf("[LTW VER] font-gl-yflip-20260807\n");
     noerror = env_istrue("LIBGL_NOERROR");
     debug = env_istrue("LTW_DEBUG");
     glerr_trace = env_istrue("LTW_GLERR_TRACE");
@@ -1077,22 +991,7 @@ void glTestIntercept(void) {
 // 增强关键函数的日志输出
 void glClear(GLbitfield mask) {
     if(!current_context) return;
-    {
-        // 无条件低频计数：确认渲染循环是否在跑
-        static unsigned int clear_n = 0;
-        if((++clear_n & 0xFF) == 1) {
-            printf("[LTW CNT] glClear %u mask=0x%x\n", clear_n, mask);
-            fflush(stdout);
-        }
-    }
-    if(debug) {
-        LTW_DEBUG_PRINTF("LTW INTERCEPT: glClear called with mask=0x%x", mask);
-        LTW_DEBUG_PRINTF("LTW MAPPING: Mapping to es3_functions.glClear");
-    }
     GLTRACE_CALL(glClear, es3_functions.glClear(mask));
-    if(debug) {
-        LTW_DEBUG_PRINTF("LTW SUCCESS: glClear completed successfully");
-    }
 }
 
 void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
@@ -1103,58 +1002,18 @@ void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     LTW_ENTER("glDrawArrays");
     if(!current_context) { LTW_EXIT(); return; }
-    {
-        // 无条件低频计数：确认绘制调用是否到达 LTW
-        static unsigned int draw_n = 0;
-        if((++draw_n & 0xFF) == 1) {
-            printf("[LTW CNT] glDrawArrays %u mode=0x%x first=%d count=%d\n", draw_n, mode, first, count);
-            fflush(stdout);
-        }
-    }
     if(ltw_quads_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
     if(fp_try_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
-    {
-        // 透传诊断：prog != 0 的绘制（字形/文字候选路径）
-        static bool pt_diag = false;
-        if(!pt_diag) {
-            GLint prog = 0;
-            es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
-            printf("[LTW DIAG] passthrough glDrawArrays mode=0x%x first=%d count=%d prog=%d\n",
-                   (unsigned)mode, first, count, prog);
-            fflush(stdout);
-        }
-    }
     GLTRACE_CALL(glDrawArrays, current_context->fast_gl.glDrawArrays(mode, first, count));
-    fp_check_white_pixel();
     LTW_EXIT();
 }
 
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
     LTW_ENTER("glDrawElements");
     if(!current_context) { LTW_EXIT(); return; }
-    {
-        // 无条件低频计数：确认绘制调用是否到达 LTW
-        static unsigned int drawe_n = 0;
-        if((++drawe_n & 0xFF) == 1) {
-            printf("[LTW CNT] glDrawElements %u mode=0x%x count=%d\n", drawe_n, mode, count);
-            fflush(stdout);
-        }
-    }
     if(ltw_quads_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
     if(fp_try_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
-    {
-        // 透传诊断：prog != 0 的绘制（字形/文字候选路径）
-        static bool pte_diag = false;
-        if(!pte_diag) {
-            GLint prog = 0;
-            es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
-            printf("[LTW DIAG] passthrough glDrawElements mode=0x%x count=%d type=0x%x prog=%d\n",
-                   (unsigned)mode, count, type, prog);
-            fflush(stdout);
-        }
-    }
     GLTRACE_CALL(glDrawElements, current_context->fast_gl.glDrawElements(mode, count, type, indices));
-    fp_check_white_pixel();
     LTW_EXIT();
 }
 

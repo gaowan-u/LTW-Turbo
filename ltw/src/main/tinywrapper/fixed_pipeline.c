@@ -103,8 +103,6 @@ static bool fp_init_done = false;
 static bool fp_alpha_test = false;
 static GLenum fp_alpha_test_func = 0x0207;   // GL_ALWAYS
 static GLfloat fp_alpha_ref = 0.0f;
-// blend 状态
-static bool fp_blend_enabled = false;
 // 客户端颜色数组是否真实启用（决定 shader 用顶点色还是当前色）
 static bool fp_client_color_active = false;
 // 绑定的纹理是否为单通道（GL_ALPHA 映射 GL_R8），shader 走 uSingle 分支
@@ -328,55 +326,16 @@ static void fp_ensure_program(void) {
 
     es3_functions.glDeleteShader(vs);
     es3_functions.glDeleteShader(fs);
-
-    static bool fp_ready_printed = false;
-    if(!fp_ready_printed) {
-        fp_ready_printed = true;
-        printf("[LTW FP] default program ready (prog=%u)\n", fp_program);
-        fflush(stdout);
-    }
 }
 
 // 提交即时模式顶点
 static void fp_flush_immediate(void) {
-    static bool fp_flush_printed = false;
-    if(!fp_flush_printed) {
-        fp_flush_printed = true;
-        printf("[LTW FP] glEnd flush count=%d mode=0x%x\n", fp_immediate_count, (unsigned)fp_immediate_mode);
-        fflush(stdout);
-    }
     if(!fp_immediate_active || fp_immediate_count == 0) return;
     fp_ensure_program();
     if(!fp_program) { fp_immediate_count = 0; return; }
 
-    // 用画这一刻的真实绑定刷新状态，诊断/绘制都不吃旧记忆值。
+    // 用画这一刻的真实绑定刷新状态，不吃旧记忆值。
     fp_refresh_bound_texture();
-
-    // 诊断：即时模式顶点数据（字形候选路径）——前 2 次 + 每 256 次
-    {
-        static unsigned int im_n = 0;
-        im_n++;
-        if(im_n <= 16 || (im_n & 0x3F) == 1) {
-            printf("[LTW DUMP] imm n=%u count=%d mode=0x%x tex=%u blend=%d atest=%d single=%d afunc=0x%x aref=%f\n",
-                   im_n, fp_immediate_count, (unsigned)fp_immediate_mode, fp_bound_texture,
-                   fp_blend_enabled ? 1 : 0, fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0,
-                   fp_alpha_test ? (unsigned)fp_alpha_test_func : 0, fp_alpha_test ? fp_alpha_ref : 0.0f);
-            if(fp_bound_texture != 0) {
-                GLint tw = 0, th = 0, tf = 0;
-                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
-                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
-                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &tf);
-                printf("[LTW DUMP]   tex %ux%u fmt=0x%x\n", tw, th, tf);
-            }
-            int vn = fp_immediate_count < 4 ? fp_immediate_count : 4;
-            for(int vi = 0; vi < vn; vi++) {
-                const GLfloat* v = fp_immediate_vertices + (size_t)vi * FP_STRIDE;
-                printf("[LTW DUMP]   v%d pos=(%f,%f,%f) col=(%f,%f,%f,%f) uv=(%f,%f)\n",
-                       vi, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
-            }
-            fflush(stdout);
-        }
-    }
 
     GLenum mode = fp_immediate_mode;
     GLsizei count = fp_immediate_count;
@@ -453,41 +412,6 @@ static void fp_flush_immediate(void) {
 
     es3_functions.glDrawArrays(mode, 0, count);
 
-    // 诊断：直接读用户截图确认的白块固定坐标（左下/右下角 y=1040..1071）
-    {
-        static unsigned int fp_read_n = 0;
-        if(fp_bound_texture >= 24 && fp_read_n < 8 && fp_immediate_count >= 4) {
-            fp_read_n++;
-            GLint draw_fb = 0, read_fb = 0;
-            es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fb);
-            es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
-            if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
-            // 截图坐标是上到下，glReadPixels 是下到上：图片 y=1040..1071 -> GL y=9..40
-            const int pts[][2] = {{13,25},{60,25},{120,25},{200,25},
-                                  {1830,25},{2000,25},{2300,25},{1200,25}};
-            printf("[LTW DIAG] fp_fixed tex=%u drawfb=%d readfb=%d:",
-                   fp_bound_texture, draw_fb, read_fb);
-            for(unsigned int pi = 0; pi < sizeof(pts)/sizeof(pts[0]); pi++) {
-                unsigned char px[4] = {0};
-                es3_functions.glReadPixels(pts[pi][0], pts[pi][1], 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-                printf(" (%d,%d)=%u,%u,%u,%u", pts[pi][0], pts[pi][1], px[0], px[1], px[2], px[3]);
-            }
-            // 左下角第一个白块周围 5x5（GL 坐标）
-            printf(" bl5x5:");
-            for(int dy = -2; dy <= 2; dy++) {
-                for(int dx = -2; dx <= 2; dx++) {
-                    unsigned char px[4] = {0};
-                    es3_functions.glReadPixels(13 + dx, 25 + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-                    printf(" %u,%u,%u,%u", px[0], px[1], px[2], px[3]);
-                }
-            }
-            printf("\n");
-            fflush(stdout);
-            if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read_fb);
-        }
-    }
-    fp_check_white_pixel();
-
     // 恢复状态
     if(fp_bound_texture != 0) {
         es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)old_bound_tex);
@@ -521,14 +445,6 @@ void fp_init(void) {
 }
 
 void fp_matrix_mode(GLenum mode) {
-    {
-        static bool diag = false;
-        if(!diag) {
-            diag = true;
-            printf("[LTW DIAG] glMatrixMode 0x%x\n", (unsigned)mode);
-            fflush(stdout);
-        }
-    }
     switch(mode) {
         case GL_MODELVIEW:  fp_current_matrix = FP_MATRIX_MODELVIEW;  break;
         case GL_PROJECTION: fp_current_matrix = FP_MATRIX_PROJECTION; break;
@@ -580,14 +496,6 @@ void fp_pop_matrix(void) {
 }
 
 void fp_ortho(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f) {
-    {
-        static bool diag = false;
-        if(!diag) {
-            diag = true;
-            printf("[LTW DIAG] glOrtho l=%f r=%f b=%f t=%f n=%f f=%f\n", l, r, b, t, n, f);
-            fflush(stdout);
-        }
-    }
     fp_mat_ortho(fp_current_matrix_ptr(), l, r, b, t, n, f);
 }
 
@@ -604,12 +512,6 @@ void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) { fp_apply_r
 
 // ---- 即时模式 ----
 void fp_begin(GLenum mode) {
-    static bool fp_begin_printed = false;
-    if(!fp_begin_printed) {
-        fp_begin_printed = true;
-        printf("[LTW FP] glBegin mode=0x%x\n", (unsigned)mode);
-        fflush(stdout);
-    }
     fp_immediate_mode = mode;
     fp_immediate_active = true;
     fp_immediate_count = 0;
@@ -738,7 +640,6 @@ void fp_set_active_texture(GLuint unit) {
 // ---- alpha test ----
 void fp_set_alpha_test(bool enabled) { fp_alpha_test = enabled; }
 void fp_alpha_func(GLenum func, GLfloat ref) { fp_alpha_test_func = func; fp_alpha_ref = ref; }
-void fp_set_blend(bool enabled) { fp_blend_enabled = enabled; }
 
 // ---- 绘制挂钩 ----
 // 画之前直接查“当前绑定在活动纹理单元上的 2D 纹理”，而不是依赖
@@ -793,70 +694,6 @@ static void fp_set_default_uniforms(void) {
     if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
 }
 
-// 低频屏幕像素探针：确认渲染结果（每 4096 次 fp 绘制读取一次屏幕
-// 几个固定点的像素颜色，直接验证画面内容）。
-void fp_pixel_probe(void) {
-    static unsigned int probe_n = 0;
-    if((++probe_n & 0xFFF) != 1) return;
-    GLint vp[4] = {0};
-    es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
-    if(vp[2] <= 0 || vp[3] <= 0) return;
-    // 中心 + 四角 + 中心偏下（按钮/文字区域）
-    struct { int x, y; } pts[9] = {
-        {vp[2] / 2,         vp[3] / 2},                    // 0 中心
-        {vp[2] * 1 / 4,     vp[3] * 1 / 4},                // 1 左上
-        {vp[2] * 3 / 4,     vp[3] * 1 / 4},                // 2 右上
-        {vp[2] * 1 / 4,     vp[3] * 3 / 4},                // 3 左下
-        {vp[2] * 3 / 4,     vp[3] * 3 / 4},                // 4 右下
-        {vp[2] / 2,         vp[3] * 3 / 5},                // 5 中心偏下（按钮）
-        {vp[2] / 2,         vp[3] * 7 / 10},               // 6 更下（按钮）
-        {vp[2] / 2,         vp[3] * 1 / 5},                // 7 中心偏上（标题）
-        {vp[2] / 2,         vp[3] * 2 / 10},               // 8 上（logo）
-    };
-    GLint old_rb = 0;
-    es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_rb);
-    printf("[LTW PIX] vp=%d,%d %dx%d fb=%d", vp[0], vp[1], vp[2], vp[3], old_rb);
-    for(int i = 0; i < 9; i++) {
-        uint8_t px[4] = {0};
-        es3_functions.glReadPixels(pts[i].x, pts[i].y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-        printf(" p%d=(%u,%u,%u,%u)", i, px[0], px[1], px[2], px[3]);
-    }
-    printf("\n");
-    fflush(stdout);
-}
-
-// 调试：轮询左下/右下角白块坐标，一旦出现接近白色的像素就打印当前绘制路径。
-// 只在发现前采样（每 16 次调用检查一次），找到后自动停止，避免刷屏。
-void fp_check_white_pixel(void) {
-    static bool found = false;
-    if(found) return;
-    static unsigned int n = 0;
-    if((++n & 0xF) != 0) return;
-    if(!current_context) return;
-
-    GLint draw_fb = 0, read_fb = 0;
-    es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fb);
-    es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
-    if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
-
-    // 截图 y=1040..1071 -> GL y=9..40，用中心 y=25
-    const int pts[][2] = {{13,25},{60,25},{200,25},{1830,25},{2300,25}};
-    bool hit = false;
-    for(unsigned int i = 0; i < sizeof(pts)/sizeof(pts[0]); i++) {
-        unsigned char px[4] = {0};
-        es3_functions.glReadPixels(pts[i][0], pts[i][1], 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-        if(px[0] > 200 && px[1] > 200 && px[2] > 200) {
-            printf("[LTW WHITE] (%d,%d)=%u,%u,%u,%u fn=%s drawfb=%d\n",
-                   pts[i][0], pts[i][1], px[0], px[1], px[2], px[3],
-                   ltw_last_glfn ? ltw_last_glfn : "?", draw_fb);
-            fflush(stdout);
-            hit = true;
-        }
-    }
-    if(hit) found = true;
-    if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read_fb);
-}
-
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
 // 若应用通过固定管线 API（glVertexPointer 等）提供了客户端数组/VBO 偏移，
 // 这里把它们设置成 attribute；否则用即时模式缓冲/默认值。
@@ -870,29 +707,6 @@ bool fp_bind_default_program(void) {
     // 使用私有 VAO，避免污染应用绑定的 VAO 的 attribute 状态
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, (GLint*)&fp_saved_vao);
     if(fp_vao) es3_functions.glBindVertexArray(fp_vao);
-
-    {
-        // 一次性诊断：纹理状态（unit/绑定/格式）
-        static bool diag = false;
-        if(!diag) {
-            diag = true;
-            GLint act = 0, tex0 = 0, tex1 = 0, w = 0, h = 0, fmt = 0;
-            es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &act);
-            es3_functions.glActiveTexture(GL_TEXTURE0);
-            es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
-            es3_functions.glActiveTexture(GL_TEXTURE1);
-            es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex1);
-            if(tex0) {
-                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
-                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
-                es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
-            }
-            printf("[LTW DIAG] texstate: active=0x%x tex0=%d(%dx%d fmt=0x%x) tex1=%d fp_bound=%u\n",
-                   act, tex0, w, h, fmt, tex1, fp_bound_texture);
-            fflush(stdout);
-            es3_functions.glActiveTexture((GLenum)act);
-        }
-    }
 
     fp_saved_texture_valid = false;
     if(fp_bound_texture != 0) {
@@ -964,43 +778,6 @@ static void fp_upload_client_arrays(GLsizei count) {
         }
     }
 
-    {
-        // 低频诊断：确认上传时的关键参数（每 256 次打印一次）
-        static unsigned int up_n = 0;
-        if((++up_n & 0xFF) == 1) {
-            ptrdiff_t uv_off = 0, col_off = 0;
-            if(fp_client_texcoord_enabled && fp_client_texcoord_ptr)
-                uv_off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
-            if(fp_client_color_enabled && fp_client_color_ptr)
-                col_off = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
-            printf("[LTW DIAG] upload n=%u count=%d stride=%d vsize=%zu uv_off=%td col_off=%td tex=%u usetex=%d\n",
-                   up_n, count, fp_client_vertex_stride, vsize, uv_off, col_off,
-                   fp_bound_texture, fp_bound_texture ? 1 : 0);
-            fflush(stdout);
-        }
-        // 每 64 次上传 dump 一个 quad：覆盖按钮/文字等元素
-        if((up_n & 0x3F) == 1 && fp_client_vertex_ptr && count >= 4) {
-            const uint8_t* p = (const uint8_t*)fp_client_vertex_ptr;
-            size_t st = fp_client_vertex_stride ? (size_t)fp_client_vertex_stride : (size_t)fp_client_vertex_size * 4;
-            ptrdiff_t uvo = fp_client_texcoord_ptr ? (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr : -1;
-            ptrdiff_t co = fp_client_color_ptr ? (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr : -1;
-            printf("[LTW DUMP] n=%u stride=%zu uv_off=%td col_off=%td tex=%u blend=%d atest=%d single=%d\n",
-                   up_n, st, uvo, co, fp_bound_texture, fp_blend_enabled ? 1 : 0,
-                   fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0);
-            for(int vi = 0; vi < 4; vi++) {
-                const uint8_t* v = p + vi * st;
-                float pos[3]; memcpy(pos, v, 12);
-                float uv[2] = {0, 0};
-                if(uvo >= 0) memcpy(uv, v + uvo, 8);
-                uint8_t col[4] = {255, 255, 255, 255};
-                if(co >= 0) memcpy(col, v + co, 4);
-                printf("[LTW DUMP]   v%d pos=(%f,%f,%f) uv=(%f,%f) col=(%u,%u,%u,%u)\n",
-                       vi, pos[0], pos[1], pos[2], uv[0], uv[1], col[0], col[1], col[2], col[3]);
-                fflush(stdout);
-            }
-        }
-    }
-
     es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
 }
 
@@ -1047,19 +824,6 @@ bool fp_prepare_client_arrays(GLsizei count) {
                                                 GL_FALSE, fp_client_texcoord_stride, fp_client_texcoord_ptr);
         }
         if(ubo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
-        {
-            // 诊断：VBO 路径（字形等 1.12 Tessellator 元素）参数
-            static unsigned int vb_n = 0;
-            if((++vb_n & 0x3F) == 1) {
-                printf("[LTW DUMP] vbo n=%u count=%d pos:abo=%d ptr=%p stride=%d size=%d col:en=%d abo=%d tex:en=%d abo=%d tex=%u blend=%d atest=%d single=%d\n",
-                       vb_n, count, fp_client_vertex_abo, fp_client_vertex_ptr, fp_client_vertex_stride, fp_client_vertex_size,
-                       fp_client_color_enabled && fp_client_color_size > 0, fp_client_color_abo,
-                       fp_client_texcoord_enabled && fp_client_texcoord_size > 0, fp_client_texcoord_abo,
-                       fp_bound_texture, fp_blend_enabled ? 1 : 0,
-                       fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0);
-                fflush(stdout);
-            }
-        }
     }
     // attribute 启用情况影响 uUseColor，这里重设 uniforms（bind 先于 prepare）
     fp_set_default_uniforms();
@@ -1084,16 +848,9 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     GLint prog = 0;
     es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
     if(prog != 0) return false;
-    static bool fp_draw_printed = false;
-    if(!fp_draw_printed) {
-        fp_draw_printed = true;
-        printf("[LTW FP] draw arrays prog=0 mode=0x%x first=%d count=%d\n", (unsigned)mode, first, count);
-        fflush(stdout);
-    }
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
     es3_functions.glDrawArrays(mode, first, count);
-    fp_check_white_pixel();
     fp_unbind_default_program();
     return true;
 }
@@ -1103,16 +860,9 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     GLint prog = 0;
     es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
     if(prog != 0) return false;
-    static bool fp_drawe_printed = false;
-    if(!fp_drawe_printed) {
-        fp_drawe_printed = true;
-        printf("[LTW FP] draw elements prog=0 mode=0x%x count=%d\n", (unsigned)mode, count);
-        fflush(stdout);
-    }
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
     es3_functions.glDrawElements(mode, count, type, indices);
-    fp_check_white_pixel();
     fp_unbind_default_program();
     return true;
 }

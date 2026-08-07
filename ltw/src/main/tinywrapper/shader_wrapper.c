@@ -276,8 +276,6 @@ static GLchar* rewrite_frag_outputs(const GLchar* src) {
 
 GLuint glCreateProgram(void) {
     if(!current_context) return 0;
-    static int dbg_n = 0;
-    if(dbg_n < 10) { printf("[LTW DBG] glCreateProgram called\n"); dbg_n++; }
     GLuint phys_program = es3_functions.glCreateProgram();
     if(phys_program == 0) return phys_program;
     program_info_t *prog_info = mempool_alloc(current_context->program_info_pool);
@@ -305,8 +303,6 @@ void glDeleteProgram(GLuint program) {
 void glAttachShader( 	GLuint program,
                         GLuint shader) {
     if(!current_context) return;
-    static int dbg_n = 0;
-    if(dbg_n < 12) { printf("[LTW DBG] glAttachShader(prog=%u, shader=%u)\n", program, shader); dbg_n++; }
     GLTRACE_CALL(glAttachShader, es3_functions.glAttachShader(program, shader));
     program_info_t* program_info = unordered_map_get(current_context->program_map, (void*)program);
     shader_info_t* shader_info = unordered_map_get(current_context->shader_map, (void*)shader);
@@ -356,8 +352,6 @@ static void insert_fragout_pos(char* source, int* size, const char* name, GLuint
 
 void glLinkProgram(GLuint program) {
     if(!current_context) return;
-    static int dbg_n = 0;
-    if(dbg_n < 10) { printf("[LTW DBG] glLinkProgram(prog=%u)\n", program); dbg_n++; }
     program_info_t* program_info = unordered_map_get(current_context->program_map, (void*)program);
     if(program_info == NULL || program_info->frag_shader == 0) {
         // Don't have any fragment shader to patch the locations in, fall through.
@@ -421,12 +415,6 @@ void glLinkProgram(GLuint program) {
 
 GLuint glCreateShader(GLenum shaderType) {
     if(!current_context) return 0;
-    static int dbg_n = 0;
-    if(dbg_n < 12) {
-        const char* t = (shaderType==0x8B31)?"vertex":(shaderType==0x8B30)?"fragment":"unknown";
-        printf("[LTW DBG] glCreateShader(type=%s 0x%x)\n", t, shaderType);
-        dbg_n++;
-    }
     GLuint phys_shader;
     GLTRACE_CALL(glCreateShader, phys_shader = es3_functions.glCreateShader(shaderType));
     if(phys_shader == 0) return 0;

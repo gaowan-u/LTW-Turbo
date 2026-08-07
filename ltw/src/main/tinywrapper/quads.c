@@ -92,26 +92,9 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices) {
     if(fp_bound) {
         fp_prepare_client_arrays(quads * 4);
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
-        fp_check_white_pixel();
         fp_unbind_default_program();
-        fp_pixel_probe();
     } else {
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
-    }
-    {
-        // 诊断（仅 LTW_DEBUG）：绘制后检查错误与关键状态
-        static unsigned int dn = 0;
-        if(debug && ((++dn & 0x3FF) == 0)) {
-            GLenum de = es3_functions.glGetError();
-            GLint dbuf[4] = {0};
-            es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, dbuf);
-            GLint vp[4] = {0};
-            es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
-            GLint program = 0;
-            es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &program);
-            LTW_DEBUG_PRINTF("QUADS draw: err=0x%x fb=%d vp=%d,%d,%dx%d prog=%d",
-                             de, dbuf[0], vp[0], vp[1], vp[2], vp[3], program);
-        }
     }
 
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
@@ -131,14 +114,6 @@ static void quads_expand(const uint32_t* src, GLsizei count, uint32_t* dst) {
     }
 }
 
-// 诊断（仅 LTW_DEBUG）：统计 QUADS 转换调用次数，确认路径被触发
-static void quads_stat(const char* src) {
-    static unsigned int n = 0;
-    if(debug && ((++n & 0x3FF) == 0)) {
-        LTW_DEBUG_PRINTF("QUADS converted via %s (total ~%u)", src, n);
-    }
-}
-
 bool ltw_quads_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(mode != GL_QUADS || count < 4 || (count & 3) != 0) return false;
 
@@ -152,7 +127,6 @@ bool ltw_quads_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     }
     for(GLsizei i = 0; i < count; i++) src[i] = (uint32_t)(first + i);
 
-    quads_stat("glDrawArrays");
     quads_expand(src, count, dst);
     quads_draw_triangles(quads, dst);
 
@@ -173,7 +147,6 @@ bool ltw_quads_draw_elements(GLenum mode, GLsizei count, GLenum type, const void
         return false;
     }
 
-    quads_stat("glDrawElements");
     quads_expand(src, count, dst);
     quads_draw_triangles(quads, dst);
 

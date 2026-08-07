@@ -318,9 +318,7 @@ typedef void (GL_APIENTRYP LTWDEBUG_CONTROLPROC)(GLenum source, GLenum type, GLe
 static void ltw_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
                                GLsizei length, const GLchar* message, const void* userParam) {
     (void)source; (void)severity; (void)userParam; (void)length; (void)id;
-    if(type == LTW_DEBUG_TYPE_ERROR || type == LTW_DEBUG_TYPE_UNDEF_BEHAV) {
-        printf("[LTW GLDEBUG] via %s: %s\n", ltw_last_glfn ? ltw_last_glfn : "(driver/unknown)", message ? message : "(null)");
-    }
+    (void)type; (void)message;
 }
 
 static void init_debug_callback() {

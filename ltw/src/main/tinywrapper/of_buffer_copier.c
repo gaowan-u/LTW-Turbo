@@ -111,22 +111,6 @@ void glTexSubImage2D(GLenum target,
                      GLenum format,
                      GLenum type,
                      const void * data) {
-    // 诊断放最前：即使 current_context 为 NULL（Pre startup 等）也能看到调用
-    {
-        // 诊断：纹理数据填充格式（前 64 次 + 每 128 次），定位字体纹理上传
-        static unsigned int sub_n = 0;
-        sub_n++;
-        if(sub_n <= 64 || (sub_n & 0x7F) == 1) {
-            GLint tex = 0;
-            if(current_context) {
-                es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
-            }
-            printf("[LTW DIAG] glTexSubImage2D #%u tex=%d %dx%d+%d+%d fmt=0x%x type=0x%x data=%s ctx=%p\n",
-                   sub_n, tex, width, height, xoffset, yoffset, format, type,
-                   data ? "yes" : "null", (void*)current_context);
-            fflush(stdout);
-        }
-    }
     if(!current_context) return;
     // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查
     bool is_depth = (format == GL_DEPTH_COMPONENT);
@@ -165,58 +149,9 @@ void glTexSubImage2D(GLenum target,
             return;
         }
     }
-    {
-        // 字形/unicode 页纹理上传的精确诊断：tex>=24 时无论计数采样都打印
-        GLint tex = 0;
-        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
-        if(tex >= 24 && tex <= 64) {
-            printf("[LTW DIAG] glTexSubImage2D tex=%d %dx%d+%d+%d fmt=0x%x type=0x%x (converted)\n",
-                   tex, width, height, xoffset, yoffset, (unsigned)format, (unsigned)type);
-            fflush(stdout);
-        }
-    }
     GLTRACE_CALL(glTexSubImage2D, es3_functions.glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type,
                                                                 converted_data ? converted_data : data));
     free(converted_data);
-    {
-        GLint tex = 0;
-        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
-        if(tex >= 24 && tex <= 64) {
-            GLenum e = es3_functions.glGetError();
-            printf("[LTW DIAG] glTexSubImage2D tex=%d err=0x%x\n", tex, (unsigned)e);
-            fflush(stdout);
-        }
-        if(tex == 26) {
-            GLint sw[4] = {0};
-            GLint sw_rgba[4] = {0};
-            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8B42 /* R */, &sw[0]);
-            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8B43 /* G */, &sw[1]);
-            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8B44 /* B */, &sw[2]);
-            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8B45 /* A */, &sw[3]);
-            es3_functions.glGetTexParameteriv(GL_TEXTURE_2D, 0x8E46 /* RGBA */, sw_rgba);
-            printf("[LTW DIAG] tex26 swizzle_rgba=0x%x,0x%x,0x%x,0x%x rgba_query=0x%x,0x%x,0x%x,0x%x\n",
-                   (unsigned)sw[0], (unsigned)sw[1], (unsigned)sw[2], (unsigned)sw[3],
-                   (unsigned)sw_rgba[0], (unsigned)sw_rgba[1], (unsigned)sw_rgba[2], (unsigned)sw_rgba[3]);
-            // 读回字形纹理的原始像素，确认 alpha 是否真的进了纹理
-            GLint old_rb = 0;
-            es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_rb);
-            unsigned char* buf = (unsigned char*)malloc((size_t)width * height * 4);
-            if(buf) {
-                glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-                const int pts[][2] = {{0,0},{1,0},{64,64},{128,128},{200,200},{255,255}};
-                printf("[LTW DIAG] tex26 pixels:");
-                for(unsigned int i = 0; i < sizeof(pts)/sizeof(pts[0]); i++) {
-                    int px = pts[i][0], py = pts[i][1];
-                    unsigned char* p = buf + ((size_t)py * width + px) * 4;
-                    printf(" (%d,%d)=%u,%u,%u,%u", px, py, p[0], p[1], p[2], p[3]);
-                }
-                printf("\n");
-                fflush(stdout);
-                free(buf);
-            }
-            es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)old_rb);
-        }
-    }
 }
 
 void texture_blit_framebuffer(GLenum target,
