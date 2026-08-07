@@ -47,6 +47,16 @@ static texture_swizzle_track_t* get_swizzle_track(GLenum target) {
         current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_G, (GLint*)&track->original_swizzle[1]);
         current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_B, (GLint*)&track->original_swizzle[2]);
         current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_A, (GLint*)&track->original_swizzle[3]);
+        // 部分驱动（Turnip/Zink 等）在纹理尚未上传数据时对 swizzle 查询
+        // 返回全 0，而不是默认的 R/G/B/A。全 0 会让后续 BGRA 补偿把
+        // 字形纹理的采样 swizzle 设成 ZERO，文字变成全透明/黑块。
+        if(track->original_swizzle[0] == 0 && track->original_swizzle[1] == 0 &&
+           track->original_swizzle[2] == 0 && track->original_swizzle[3] == 0) {
+            track->original_swizzle[0] = GL_RED;
+            track->original_swizzle[1] = GL_GREEN;
+            track->original_swizzle[2] = GL_BLUE;
+            track->original_swizzle[3] = GL_ALPHA;
+        }
         // 初始化applied_swizzle和pending_swizzle为原始swizzle值
         memcpy(track->applied_swizzle, track->original_swizzle, sizeof(track->applied_swizzle));
         memcpy(track->pending_swizzle, track->original_swizzle, sizeof(track->pending_swizzle));
