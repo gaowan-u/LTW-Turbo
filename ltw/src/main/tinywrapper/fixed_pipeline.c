@@ -453,60 +453,67 @@ static void fp_flush_immediate(void) {
 
     es3_functions.glDrawArrays(mode, 0, count);
 
-    // 诊断：第一次画字形后直接读回 quad 实际渲染像素（区分全白/全黑/透明）
+    // 诊断：只抓主菜单左下角字形（版本/版权文字），读回 quad 实际渲染像素
     {
         static unsigned int fp_read_n = 0;
-        if(fp_bound_texture >= 24 && fp_read_n < 2 && fp_immediate_count >= 4) {
-            fp_read_n++;
-            GLfloat mvp[FP_MATRIX_SIZE];
-            fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
-                       fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
-            GLint vp[4] = {0};
-            es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
-            GLint draw_fb = 0, read_fb = 0;
-            es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fb);
-            es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
-            GLint samples = 0;
-            es3_functions.glGetIntegerv(GL_SAMPLES, &samples);
-            if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
-            // quad 中心 + 四角（取前 4 个顶点）
-            float pts[5][3] = {{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
+        if(fp_bound_texture >= 24 && fp_read_n < 4 && fp_immediate_count >= 4) {
+            // MC GUI 坐标里左下角文字 x 小、y 靠底；加载屏中央文字会被过滤掉
+            float ox = 0.0f, oy = 0.0f;
             for(int vi = 0; vi < 4; vi++) {
                 const GLfloat* v = fp_immediate_vertices + (size_t)vi * FP_STRIDE;
-                pts[vi][0] = v[0]; pts[vi][1] = v[1]; pts[vi][2] = v[2];
-                pts[4][0] += v[0] / 4.0f; pts[4][1] += v[1] / 4.0f; pts[4][2] += v[2] / 4.0f;
+                ox += v[0] / 4.0f;
+                oy += v[1] / 4.0f;
             }
-            printf("[LTW DIAG] fp_read tex=%u vp=%d,%d,%dx%d drawfb=%d readfb=%d samples=%d:",
-                   fp_bound_texture, vp[0], vp[1], vp[2], vp[3], draw_fb, read_fb, samples);
-            int last_sx = 0, last_sy = 0;
-            for(int pi = 0; pi < 5; pi++) {
-                float in[4] = {pts[pi][0], pts[pi][1], pts[pi][2], 1.0f};
-                float out[4] = {0,0,0,0};
-                for(int c = 0; c < 4; c++) {
-                    out[c] = mvp[c*4+0]*in[0] + mvp[c*4+1]*in[1] +
-                             mvp[c*4+2]*in[2] + mvp[c*4+3]*in[3];
+            if(ox >= 0.0f && ox <= 250.0f && oy >= 100.0f) {
+                fp_read_n++;
+                GLfloat mvp[FP_MATRIX_SIZE];
+                fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
+                           fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
+                GLint vp[4] = {0};
+                es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
+                GLint draw_fb = 0, read_fb = 0;
+                es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fb);
+                es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
+                GLint samples = 0;
+                es3_functions.glGetIntegerv(GL_SAMPLES, &samples);
+                if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
+                float pts[5][3] = {{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
+                for(int vi = 0; vi < 4; vi++) {
+                    const GLfloat* v = fp_immediate_vertices + (size_t)vi * FP_STRIDE;
+                    pts[vi][0] = v[0]; pts[vi][1] = v[1]; pts[vi][2] = v[2];
+                    pts[4][0] += v[0] / 4.0f; pts[4][1] += v[1] / 4.0f; pts[4][2] += v[2] / 4.0f;
                 }
-                if(out[3] == 0.0f) continue;
-                float ndcx = out[0]/out[3], ndcy = out[1]/out[3];
-                int sx = vp[0] + (int)((ndcx * 0.5f + 0.5f) * vp[2]);
-                int sy = vp[1] + (int)((ndcy * 0.5f + 0.5f) * vp[3]);
-                unsigned char px[4] = {0};
-                es3_functions.glReadPixels(sx, sy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-                printf(" p%d=(%u,%u,%u,%u)@(%d,%d)", pi, px[0], px[1], px[2], px[3], sx, sy);
-                last_sx = sx; last_sy = sy;
-            }
-            // 中心周围 5x5：确认这个微小 quad 附近是否有字形像素
-            printf(" grid5x5:");
-            for(int dy = -2; dy <= 2; dy++) {
-                for(int dx = -2; dx <= 2; dx++) {
+                printf("[LTW DIAG] fp_read tex=%u obj=(%.1f,%.1f) vp=%d,%d,%dx%d drawfb=%d readfb=%d samples=%d:",
+                       fp_bound_texture, ox, oy, vp[0], vp[1], vp[2], vp[3], draw_fb, read_fb, samples);
+                int last_sx = 0, last_sy = 0;
+                for(int pi = 0; pi < 5; pi++) {
+                    float in[4] = {pts[pi][0], pts[pi][1], pts[pi][2], 1.0f};
+                    float out[4] = {0,0,0,0};
+                    for(int c = 0; c < 4; c++) {
+                        out[c] = mvp[c*4+0]*in[0] + mvp[c*4+1]*in[1] +
+                                 mvp[c*4+2]*in[2] + mvp[c*4+3]*in[3];
+                    }
+                    if(out[3] == 0.0f) continue;
+                    float ndcx = out[0]/out[3], ndcy = out[1]/out[3];
+                    int sx = vp[0] + (int)((ndcx * 0.5f + 0.5f) * vp[2]);
+                    int sy = vp[1] + (int)((ndcy * 0.5f + 0.5f) * vp[3]);
                     unsigned char px[4] = {0};
-                    es3_functions.glReadPixels(last_sx + dx, last_sy + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-                    printf(" %u,%u,%u,%u", px[0], px[1], px[2], px[3]);
+                    es3_functions.glReadPixels(sx, sy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+                    printf(" p%d=(%u,%u,%u,%u)@(%d,%d)", pi, px[0], px[1], px[2], px[3], sx, sy);
+                    last_sx = sx; last_sy = sy;
                 }
+                printf(" grid5x5:");
+                for(int dy = -2; dy <= 2; dy++) {
+                    for(int dx = -2; dx <= 2; dx++) {
+                        unsigned char px[4] = {0};
+                        es3_functions.glReadPixels(last_sx + dx, last_sy + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+                        printf(" %u,%u,%u,%u", px[0], px[1], px[2], px[3]);
+                    }
+                }
+                printf("\n");
+                fflush(stdout);
+                if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read_fb);
             }
-            printf("\n");
-            fflush(stdout);
-            if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read_fb);
         }
     }
 
