@@ -478,6 +478,7 @@ static void fp_flush_immediate(void) {
             }
             printf("[LTW DIAG] fp_read tex=%u vp=%d,%d,%dx%d drawfb=%d readfb=%d samples=%d:",
                    fp_bound_texture, vp[0], vp[1], vp[2], vp[3], draw_fb, read_fb, samples);
+            int last_sx = 0, last_sy = 0;
             for(int pi = 0; pi < 5; pi++) {
                 float in[4] = {pts[pi][0], pts[pi][1], pts[pi][2], 1.0f};
                 float out[4] = {0,0,0,0};
@@ -492,6 +493,16 @@ static void fp_flush_immediate(void) {
                 unsigned char px[4] = {0};
                 es3_functions.glReadPixels(sx, sy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
                 printf(" p%d=(%u,%u,%u,%u)@(%d,%d)", pi, px[0], px[1], px[2], px[3], sx, sy);
+                last_sx = sx; last_sy = sy;
+            }
+            // 中心周围 5x5：确认这个微小 quad 附近是否有字形像素
+            printf(" grid5x5:");
+            for(int dy = -2; dy <= 2; dy++) {
+                for(int dx = -2; dx <= 2; dx++) {
+                    unsigned char px[4] = {0};
+                    es3_functions.glReadPixels(last_sx + dx, last_sy + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+                    printf(" %u,%u,%u,%u", px[0], px[1], px[2], px[3]);
+                }
             }
             printf("\n");
             fflush(stdout);
