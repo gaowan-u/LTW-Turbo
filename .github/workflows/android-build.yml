@@ -2,7 +2,7 @@ name: Android Build - Build APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, ui/optimize-app-interface ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
