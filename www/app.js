@@ -115,7 +115,7 @@ const INFO=[
   {label:'开源许可证',value:'LGPL-3.0'}
  ]},
  {title:'第三方开源项目',rows:[
-  {label:'Capacitor',value:'8.x 系列（npm 声明 ^8.0.0）· Apache-2.0（core、android、cli、app、preferences、browser）'},
+  {label:'Capacitor',value:'8.x 系列（npm 声明 ^8.0.0）· Apache-2.0（core、android、cli、app、preferences、browser、filesystem、share）'},
   {label:'AndroidX 组件',value:'AppCompat 1.7.1、Core 1.17.0、Activity 1.11.0、Fragment 1.8.9、WebKit 1.14.0、SplashScreen 1.2.0、CoordinatorLayout 1.3.0（Apache-2.0）'},
   {label:'Mesa / glsl-optimizer',value:'MIT · 本地集成的 GLSL 编译器'},
   {label:'OpenGL / GLES 头文件',value:'Khronos、Mesa · 宽松许可（MIT 类）'},
@@ -247,12 +247,12 @@ function drawQR(text,canvas){
   if(typeof qrcode!=='function') return;
   const qr=qrcode(0,'M');
   qr.addData(text); qr.make();
-  const cell=4,n=qr.getModuleCount(),size=n*cell;
+  const cell=5,quiet=4*cell,n=qr.getModuleCount(),size=n*cell+quiet*2;
   canvas.width=size; canvas.height=size;
   const ctx=canvas.getContext('2d');
   ctx.fillStyle='#fff'; ctx.fillRect(0,0,size,size);
   ctx.fillStyle='#000';
-  for(let r=0;r<n;r++)for(let c=0;c<n;c++) if(qr.isDark(r,c)) ctx.fillRect(c*cell,r*cell,cell,cell);
+  for(let r=0;r<n;r++)for(let c=0;c<n;c++) if(qr.isDark(r,c)) ctx.fillRect(quiet+c*cell,quiet+r*cell,cell,cell);
 }
 let toastTimer=null;
 function toast(msg){
@@ -320,7 +320,7 @@ function openScan(){
         canvas.width=video.videoWidth||640; canvas.height=video.videoHeight||480;
         ctx.drawImage(video,0,0,canvas.width,canvas.height);
         const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-        const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'dontInvert'});
+        const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
         if(code&&code.data){ scanResult(code.data); return; }
       }
       requestAnimationFrame(tick);
@@ -400,7 +400,32 @@ if(window.Capacitor?.Plugins?.App) Capacitor.Plugins.App.addListener('backButton
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchView(t.dataset.view));
 
 $('#export-copy').onclick=()=>copyText($('#export-json').value);
-$('#export-download').onclick=()=>downloadText('ltw-turbo-config.json',$('#export-json').value);
+$('#export-download').onclick=async ()=>{
+  const text=$('#export-json').value;
+  const FS=window.Capacitor?.Plugins?.Filesystem;
+  if(FS){
+    try{
+      await FS.writeFile({path:'ltw-turbo-config.json',data:text,directory:'DOCUMENTS',encoding:'utf8'});
+      toast('已保存到手机“文档”目录');
+      return;
+    }catch(e){ toast('保存失败：'+e.message); }
+  }
+  downloadText('ltw-turbo-config.json',text);
+};
+$('#export-qr-save').onclick=async ()=>{
+  const canvas=$('#export-qr');
+  const dataUrl=canvas.toDataURL('image/png');
+  const FS=window.Capacitor?.Plugins?.Filesystem;
+  if(FS){
+    try{
+      await FS.writeFile({path:'ltw-turbo-config-qr.png',data:dataUrl.split(',')[1],directory:'DOCUMENTS'});
+      toast('二维码已保存到手机“文档”目录');
+      return;
+    }catch(e){ toast('保存失败：'+e.message); }
+  }
+  const a=document.createElement('a'); a.href=dataUrl; a.download='ltw-turbo-config-qr.png'; a.click();
+  toast('已开始下载二维码');
+};
 $('#export-share').onclick=()=>{
   if(navigator.share) navigator.share({title:'LTW-Turbo 配置',text:$('#export-json').value}).catch(()=>{});
   else toast('当前环境不支持系统分享，可用复制或下载');
@@ -433,17 +458,27 @@ $('#scan-file-input').onchange=e=>{
   const url=URL.createObjectURL(file);
   const img=new Image();
   img.onload=()=>{
-    const max=1280; let w=img.width,h=img.height;
-    const scale=Math.min(1,max/Math.max(w,h)); w=Math.max(1,Math.round(w*scale)); h=Math.max(1,Math.round(h*scale));
-    const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
-    const ctx=canvas.getContext('2d',{willReadFrequently:true});
-    ctx.drawImage(img,0,0,w,h);
-    const code=jsQR(ctx.getImageData(0,0,w,h).data,w,h,{inversionAttempts:'attemptBoth'});
+    const maxSide=Math.max(img.width,img.height);
+    const sizes=[maxSide];
+    if(maxSide>1280) sizes.push(1280);
+    if(maxSide>640) sizes.push(640);
+    let code=null;
+    for(const max of sizes){
+      const scale=Math.min(1,max/Math.max(img.width,img.height));
+      const w=Math.max(1,Math.round(img.width*scale)), h=Math.max(1,Math.round(img.height*scale));
+      const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+      const ctx=canvas.getContext('2d',{willReadFrequently:true});
+      ctx.drawImage(img,0,0,w,h);
+      try{
+        code=jsQR(ctx.getImageData(0,0,w,h).data,w,h,{inversionAttempts:'attemptBoth'});
+      }catch(err){}
+      if(code) break;
+    }
     URL.revokeObjectURL(url);
     if(code&&code.data) scanResult(code.data);
-    else showScanError('图片里没识别到二维码');
+    else showScanError('图片里没识别到二维码：请确认图片清晰、二维码完整，最好只截取二维码区域');
   };
-  img.onerror=()=>{ URL.revokeObjectURL(url); showScanError('图片读取失败'); };
+  img.onerror=()=>{ URL.revokeObjectURL(url); showScanError('图片读取失败：可能是格式不支持（如 HEIC），请换成 PNG/JPG'); };
   img.src=url;
 };
 $('#scan-close').onclick=()=>{ stopScan(); $('#scan-modal').hidden=true; $('#import-modal').hidden=false; };
