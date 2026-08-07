@@ -10,6 +10,7 @@
 #include "egl.h"
 
 void swizzle_process_upload(GLenum target, GLenum *format, GLenum *type);
+void swizzle_reset_texture(GLenum target);
 void swizzle_process_swizzle_param(GLenum target, GLenum swizzle_param, const GLenum* swizzle);
 void swizzle_begin_batch_update(void);
 void swizzle_end_batch_update(void);

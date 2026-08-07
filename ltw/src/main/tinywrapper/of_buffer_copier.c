@@ -7,6 +7,7 @@
 #include "egl.h"
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include "swizzle.h"
 #include "debug.h"
 void buffer_copier_init(context_t* context) {
@@ -129,11 +130,38 @@ void glTexSubImage2D(GLenum target,
     if(!current_context) return;
     // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查
     bool is_depth = (format == GL_DEPTH_COMPONENT);
-    swizzle_process_upload(target, &format, &type);
+    // MC 1.12 的字形/unicode 纹理用 GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV
+    // 上传。驱动侧 swizzle 补偿在这台设备上不可靠（查询/写入表现异常），
+    // 这里直接在 CPU 上把每个像素的 B/R 字节交换成 RGBA，并把纹理 swizzle
+    // 复位为默认值，彻底绕开驱动 swizzle。
+    bool cpu_bgra_rev = (data != NULL && format == GL_BGRA_EXT && type == 0x8367);
+    void* converted_data = NULL;
+    if(cpu_bgra_rev) {
+        size_t bytes = (size_t)width * (size_t)height * 4;
+        converted_data = malloc(bytes);
+        if(converted_data) {
+            memcpy(converted_data, data, bytes);
+            unsigned char* p = (unsigned char*)converted_data;
+            for(size_t i = 0; i < bytes; i += 4) {
+                unsigned char t = p[i];
+                p[i] = p[i + 2];
+                p[i + 2] = t;
+            }
+            format = GL_RGBA;
+            type = GL_UNSIGNED_BYTE;
+            swizzle_reset_texture(target);
+        } else {
+            cpu_bgra_rev = false;
+        }
+    }
+    if(!cpu_bgra_rev) {
+        swizzle_process_upload(target, &format, &type);
+    }
     if(is_depth) {
         framebuffer_copier_t* copier = &current_context->framebuffer_copier;
         if(width == copier->depthWidth && height == copier->depthHeight && copier->depthData == data) {
             buffer_copier_release(target, level, xoffset, yoffset, width, height);
+            free(converted_data);
             return;
         }
     }
@@ -147,7 +175,9 @@ void glTexSubImage2D(GLenum target,
             fflush(stdout);
         }
     }
-    GLTRACE_CALL(glTexSubImage2D, es3_functions.glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, data));
+    GLTRACE_CALL(glTexSubImage2D, es3_functions.glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type,
+                                                                converted_data ? converted_data : data));
+    free(converted_data);
     {
         GLint tex = 0;
         es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);

@@ -69,6 +69,29 @@ static texture_swizzle_track_t* get_swizzle_track(GLenum target) {
     return track;
 }
 
+// 把纹理的 swizzle 强制复位成默认 R/G/B/A，并清掉 BGRA/字节序补偿标记。
+// 当 LTW 选择在 CPU 侧完成 BGRA->RGBA 转换时调用，避免驱动侧 swizzle
+// 状态（部分驱动查询/设置行为异常）二次影响字形纹理采样。
+INTERNAL void swizzle_reset_texture(GLenum target) {
+    if(!current_context) return;
+    texture_swizzle_track_t* track = get_swizzle_track(target);
+    if(!track) return;
+
+    track->original_swizzle[0] = GL_RED;
+    track->original_swizzle[1] = GL_GREEN;
+    track->original_swizzle[2] = GL_BLUE;
+    track->original_swizzle[3] = GL_ALPHA;
+    track->goofy_byte_order = GL_FALSE;
+    track->upload_bgra = GL_FALSE;
+    memcpy(track->applied_swizzle, track->original_swizzle, sizeof(track->applied_swizzle));
+    memcpy(track->pending_swizzle, track->original_swizzle, sizeof(track->pending_swizzle));
+
+    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, GL_RED);
+    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_G, GL_GREEN);
+    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, GL_BLUE);
+    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_A, GL_ALPHA);
+}
+
 static void apply_swizzles(GLenum target, texture_swizzle_track_t* track) {
     GLenum new_swizzle[4];
     memcpy(new_swizzle, track->original_swizzle, 4 * sizeof(GLenum));
