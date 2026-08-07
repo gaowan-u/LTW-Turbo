@@ -76,6 +76,8 @@ const ARROW='<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg
 const CHECK='<svg class="mark" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
 
 const SETTINGS=[
+ {title:'通用',items:[
+  {type:'switch',key:'backDirect',label:'返回键直接退出',def:true}]},
  {title:'外观',items:[
   {type:'select',key:'theme',label:'主题模式',options:['跟随系统','浅色','深色'],def:0},
   {type:'accent',key:'accent',label:'强调色'}]},
@@ -241,6 +243,10 @@ function switchView(name,push=true){
 function back(){
   if(!$('#modal').hidden){ $('#modal').hidden=true; return; }
   if(!$('#overlay').hidden){ closeMenu(); return; }
+  if(Store.get('backDirect',true)){
+    if(window.Capacitor?.Plugins?.App) Capacitor.Plugins.App.exitApp();
+    return;
+  }
   if(stack.length) switchView(stack.pop(),false);
   else if(window.Capacitor?.Plugins?.App) Capacitor.Plugins.App.exitApp();
 }
