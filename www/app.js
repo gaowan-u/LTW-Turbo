@@ -174,7 +174,10 @@ function groupCard(title,items,lab){
     const row=el(`<div class="row${it.status==='off'?' off':''}" data-label="${it.label}"><span class="label">${it.label}${tag}</span>${ctrl}</div>`);
     if(it.type==='switch'&&!dis) row.querySelector('input').onchange=e=>Store.set(it.key,e.target.checked);
     if(it.type==='slider'&&!dis) row.querySelector('input').oninput=e=>{ Store.set(it.key,+e.target.value); row.querySelector('.value').textContent=e.target.value+(it.unit||''); };
-    if(it.type==='select'&&!dis) row.onclick=()=>openMenu(row,it.options,selIdx,i=>{ Store.set(it.key,i); row.querySelector('.sel').innerHTML=it.options[i]+ARROW; if(it.key==='theme') applyTheme(i); },it.disable||[]);
+    if(it.type==='select'&&!dis) row.onclick=()=>{
+      const idx=Store.get(it.key,it.def)<it.options.length?Store.get(it.key,it.def):it.def;
+      openMenu(row,it.options,idx,i=>{ Store.set(it.key,i); row.querySelector('.sel').innerHTML=it.options[i]+ARROW; if(it.key==='theme') applyTheme(i); },it.disable||[]);
+    };
     if(it.type==='accent'&&!dis) row.querySelectorAll('.swatch').forEach(b=>b.onclick=()=>{ applyAccent(b.dataset.c); Store.set('accent',b.dataset.c); row.querySelectorAll('.swatch').forEach(x=>x.classList.toggle('on',x===b)); });
     card.appendChild(row);
   });
