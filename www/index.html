@@ -31,6 +31,56 @@
     </div>
   </div>
 </div>
+
+<div id="export-modal" hidden>
+  <div class="sheet">
+    <h3>导出配置</h3>
+    <canvas id="export-qr" width="200" height="200"></canvas>
+    <textarea id="export-json" readonly spellcheck="false"></textarea>
+    <div class="sheet-actions">
+      <button id="export-copy">复制</button>
+      <button id="export-download">下载</button>
+      <button id="export-share">分享</button>
+      <button id="export-close">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div id="import-modal" hidden>
+  <div class="sheet">
+    <h3>导入配置</h3>
+    <div class="import-methods">
+      <button id="import-scan">摄像头扫码</button>
+      <button id="import-paste">粘贴 JSON</button>
+      <button id="import-file">选择文件</button>
+    </div>
+    <textarea id="import-json" placeholder="在此粘贴 JSON 配置…" spellcheck="false" hidden></textarea>
+    <input type="file" id="import-file-input" accept=".json,application/json,text/plain" hidden>
+    <p id="import-result" class="result" hidden></p>
+    <div class="sheet-actions">
+      <button id="import-do" hidden>导入</button>
+      <button id="import-close">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div id="scan-modal" hidden>
+  <div class="sheet">
+    <h3>扫描二维码</h3>
+    <video id="scan-video" autoplay playsinline muted></video>
+    <canvas id="scan-canvas" hidden></canvas>
+    <input type="file" id="scan-file-input" accept="image/*" hidden>
+    <p id="scan-error" class="result error" hidden></p>
+    <div class="sheet-actions">
+      <button id="scan-file">选择图片识别</button>
+      <button id="scan-close">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

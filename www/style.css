@@ -72,3 +72,22 @@ nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);b
 .hero p{margin:0;color:var(--sub);font-size:13px}
 .actions{display:flex;gap:10px;padding:0 16px 6px}
 .actions button{flex:1;border:0;border-radius:12px;padding:12px 0;font-size:14px;background:var(--accent-soft);color:var(--accent)}
+
+#export-modal,#import-modal,#scan-modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10}
+#export-modal[hidden],#import-modal[hidden],#scan-modal[hidden]{display:none}
+.sheet{background:var(--card);border-radius:18px;width:calc(100vw - 44px);max-width:430px;max-height:82vh;overflow:auto;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.sheet h3{margin:0 0 14px;font-size:17px;font-weight:700}
+.sheet textarea{width:100%;min-height:130px;box-sizing:border-box;border:1px solid var(--divider);border-radius:12px;background:var(--bg);color:var(--text);padding:10px 12px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace;outline:none;resize:vertical}
+#export-qr{width:200px;height:200px;margin:0 auto 14px;display:block;background:#fff;border-radius:8px}
+.sheet-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.sheet-actions button{flex:1;min-width:80px;border:0;border-radius:12px;padding:12px 8px;font-size:14px;background:var(--accent-soft);color:var(--accent)}
+.sheet-actions button:active{opacity:.7}
+.import-methods{display:flex;gap:8px}
+.import-methods button{flex:1;border:1px solid var(--divider);border-radius:12px;padding:12px 4px;font-size:13px;background:none;color:var(--text)}
+.import-methods button:active{background:var(--accent-soft);color:var(--accent)}
+.result{margin:12px 0 0;padding:10px 12px;border-radius:10px;font-size:13px;background:var(--accent-soft);color:var(--accent)}
+.result.error{background:rgba(229,72,77,.12);color:var(--danger)}
+#scan-video{width:100%;aspect-ratio:4/3;border-radius:12px;background:#000;display:block;object-fit:cover}
+.value.chevron-right{font-size:18px;line-height:1}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.78);color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;z-index:20;white-space:nowrap}
+#toast[hidden]{display:none}
