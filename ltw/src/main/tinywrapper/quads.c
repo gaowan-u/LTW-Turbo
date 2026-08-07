@@ -92,6 +92,7 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices) {
     if(fp_bound) {
         fp_prepare_client_arrays(quads * 4);
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+        fp_check_white_pixel();
         fp_unbind_default_program();
         fp_pixel_probe();
     } else {

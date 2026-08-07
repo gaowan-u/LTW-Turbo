@@ -1125,6 +1125,7 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
         }
     }
     GLTRACE_CALL(glDrawArrays, current_context->fast_gl.glDrawArrays(mode, first, count));
+    fp_check_white_pixel();
     LTW_EXIT();
 }
 
@@ -1153,6 +1154,7 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices
         }
     }
     GLTRACE_CALL(glDrawElements, current_context->fast_gl.glDrawElements(mode, count, type, indices));
+    fp_check_white_pixel();
     LTW_EXIT();
 }
 

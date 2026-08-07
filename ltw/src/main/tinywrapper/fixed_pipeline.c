@@ -485,6 +485,7 @@ static void fp_flush_immediate(void) {
             if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read_fb);
         }
     }
+    fp_check_white_pixel();
 
     // 恢复状态
     if(fp_bound_texture != 0) {
@@ -807,6 +808,37 @@ void fp_pixel_probe(void) {
     fflush(stdout);
 }
 
+// 调试：轮询左下/右下角白块坐标，一旦出现接近白色的像素就打印当前绘制路径。
+// 只在发现前采样（每 16 次调用检查一次），找到后自动停止，避免刷屏。
+void fp_check_white_pixel(void) {
+    static bool found = false;
+    if(found) return;
+    static unsigned int n = 0;
+    if((++n & 0xF) != 0) return;
+    if(!current_context) return;
+
+    GLint draw_fb = 0, read_fb = 0;
+    es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fb);
+    es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
+    if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
+
+    const int pts[][2] = {{13,1055},{60,1055},{200,1055},{1830,1055},{2300,1055}};
+    bool hit = false;
+    for(unsigned int i = 0; i < sizeof(pts)/sizeof(pts[0]); i++) {
+        unsigned char px[4] = {0};
+        es3_functions.glReadPixels(pts[i][0], pts[i][1], 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        if(px[0] > 200 && px[1] > 200 && px[2] > 200) {
+            printf("[LTW WHITE] (%d,%d)=%u,%u,%u,%u fn=%s drawfb=%d\n",
+                   pts[i][0], pts[i][1], px[0], px[1], px[2], px[3],
+                   ltw_last_glfn ? ltw_last_glfn : "?", draw_fb);
+            fflush(stdout);
+            hit = true;
+        }
+    }
+    if(hit) found = true;
+    if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read_fb);
+}
+
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
 // 若应用通过固定管线 API（glVertexPointer 等）提供了客户端数组/VBO 偏移，
 // 这里把它们设置成 attribute；否则用即时模式缓冲/默认值。
@@ -1043,6 +1075,7 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
     es3_functions.glDrawArrays(mode, first, count);
+    fp_check_white_pixel();
     fp_unbind_default_program();
     return true;
 }
@@ -1061,6 +1094,7 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
     es3_functions.glDrawElements(mode, count, type, indices);
+    fp_check_white_pixel();
     fp_unbind_default_program();
     return true;
 }

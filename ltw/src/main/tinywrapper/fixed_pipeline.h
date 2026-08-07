@@ -123,6 +123,9 @@ bool fp_prepare_client_arrays(GLsizei count);
 // 低频屏幕像素探针（调试用）
 void fp_pixel_probe(void);
 
+// 调试：检测固定坐标（左下/右下角白块）何时变成白色，用于定位绘制路径
+void fp_check_white_pixel(void);
+
 // 查询默认 shader 当前是否可用
 bool fp_default_program_ready(void);
 
