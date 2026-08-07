@@ -94,6 +94,9 @@ static GLuint fp_vbo_pos = 0;
 static GLuint fp_vbo_color = 0;
 static GLuint fp_vbo_uv = 0;static GLuint fp_vao = 0;
 static GLuint fp_saved_vao = 0;
+static GLint fp_saved_active_tex = GL_TEXTURE0;
+static GLint fp_saved_bound_tex = 0;
+static bool fp_saved_texture_valid = false;
 static bool fp_init_done = false;
 
 // alpha test 状态（MC 1.12 文字渲染依赖 GL_ALPHA_TEST）
@@ -149,6 +152,7 @@ static GLuint fp_bound_texture = 0;
 
 // 前向声明
 static void fp_set_default_uniforms(void);
+static void fp_refresh_bound_texture(void);
 
 // ---- 内部工具 ----
 static void fp_mat_mul(GLfloat* out, const GLfloat* a, const GLfloat* b) {
@@ -344,6 +348,9 @@ static void fp_flush_immediate(void) {
     if(!fp_immediate_active || fp_immediate_count == 0) return;
     fp_ensure_program();
     if(!fp_program) { fp_immediate_count = 0; return; }
+
+    // 用画这一刻的真实绑定刷新状态，诊断/绘制都不吃旧记忆值。
+    fp_refresh_bound_texture();
 
     // 诊断：即时模式顶点数据（字形候选路径）——前 2 次 + 每 256 次
     {
@@ -698,6 +705,25 @@ void fp_alpha_func(GLenum func, GLfloat ref) { fp_alpha_test_func = func; fp_alp
 void fp_set_blend(bool enabled) { fp_blend_enabled = enabled; }
 
 // ---- 绘制挂钩 ----
+// 画之前直接查“当前绑定在活动纹理单元上的 2D 纹理”，而不是依赖
+// glBindTexture 包装器里的记忆值。MC 的 GlStateManager 会缓存纹理绑定，
+// 连续绘制同一字形时可能根本不调用 glBindTexture，记忆值一旦被其他
+// 单元/路径覆盖，字就会以“无纹理”的纯色方块画出来。
+static void fp_refresh_bound_texture(void) {
+    if(!current_context) return;
+    GLint tex = 0;
+    es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+    fp_bound_texture = (GLuint)tex;
+    fp_bound_single_channel = false;
+    if(tex != 0) {
+        GLint fmt = 0;
+        es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
+        if(fmt == GL_R8 || fmt == GL_RED || fmt == GL_R16F || fmt == GL_R32F) {
+            fp_bound_single_channel = true;
+        }
+    }
+}
+
 // 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 由绑定纹理决定：
 // GLES 纹理始终启用，绑定过纹理就采样，否则用顶点色。
 static void fp_set_default_uniforms(void) {
@@ -753,6 +779,7 @@ void fp_pixel_probe(void) {
 bool fp_bind_default_program(void) {
     fp_ensure_program();
     if(!fp_program) return false;
+    fp_refresh_bound_texture();
     es3_functions.glUseProgram(fp_program);
     fp_set_default_uniforms();
 
@@ -783,11 +810,11 @@ bool fp_bind_default_program(void) {
         }
     }
 
+    fp_saved_texture_valid = false;
     if(fp_bound_texture != 0) {
-        GLint old_active_tex = 0;
-        GLint old_bound_tex = 0;
-        es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_tex);
-        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_bound_tex);
+        fp_saved_texture_valid = true;
+        es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &fp_saved_active_tex);
+        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &fp_saved_bound_tex);
         es3_functions.glActiveTexture(GL_TEXTURE0);
         es3_functions.glBindTexture(GL_TEXTURE_2D, fp_bound_texture);
     }
@@ -957,6 +984,11 @@ bool fp_prepare_client_arrays(GLsizei count) {
 
 void fp_unbind_default_program(void) {
     if(!fp_program) return;
+    if(fp_saved_texture_valid) {
+        es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)fp_saved_bound_tex);
+        es3_functions.glActiveTexture((GLenum)fp_saved_active_tex);
+        fp_saved_texture_valid = false;
+    }
     if(fp_saved_vao != 0) es3_functions.glBindVertexArray(fp_saved_vao);
     es3_functions.glUseProgram(0);
 }

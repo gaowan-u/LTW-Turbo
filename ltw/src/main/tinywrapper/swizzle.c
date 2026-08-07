@@ -107,12 +107,21 @@ static void apply_swizzles(GLenum target, texture_swizzle_track_t* track) {
 
 INTERNAL void swizzle_process_upload(GLenum target, GLenum* format, GLenum* type) {
     texture_swizzle_track_t* track = get_swizzle_track(target);
-    if(track == NULL) return;
     bool apply_upload_bgra = false;
     bool apply_goofy_order = false;
     if((*format) == GL_BGRA_EXT) {
         apply_upload_bgra = true;
         *format = GL_RGBA;
+    }
+    // 桌面遗留的单通道/双通道格式：GLES 3 只接受对应的 RED/RG 上传格式。
+    // GL_ALPHA 是 MC 1.12 及更早版本字形纹理的另一种常见路径（glformats.c
+    // 已把 internalformat 映射为 GL_R8），这里必须同步转换 SubImage。
+    if((*format) == GL_ALPHA) {
+        *format = GL_RED;
+    } else if((*format) == GL_LUMINANCE) {
+        *format = GL_RED;
+    } else if((*format) == GL_LUMINANCE_ALPHA) {
+        *format = GL_RG;
     }
     if((*type) == 0x8035) {
         apply_goofy_order = true;
@@ -121,6 +130,9 @@ INTERNAL void swizzle_process_upload(GLenum target, GLenum* format, GLenum* type
     if((*type) == 0x8367) {
         *type = GL_UNSIGNED_BYTE;
     }
+    // 拿不到跟踪记录时也必须完成上面的格式/类型转换，否则 GLES 驱动会收到
+    // GL_BGRA/GL_ALPHA 等桌面格式导致上传失败，纹理保持白色/未初始化。
+    if(track == NULL) return;
     if(apply_goofy_order != track->goofy_byte_order || apply_upload_bgra != track->upload_bgra) {
         track->goofy_byte_order = apply_goofy_order;
         track->upload_bgra = apply_upload_bgra;
