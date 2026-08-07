@@ -462,8 +462,9 @@ static void fp_flush_immediate(void) {
             es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fb);
             es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
             if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
-            const int pts[][2] = {{13,1055},{60,1055},{120,1055},{200,1055},
-                                  {1830,1055},{2000,1055},{2300,1055},{1200,1055}};
+            // 截图坐标是上到下，glReadPixels 是下到上：图片 y=1040..1071 -> GL y=9..40
+            const int pts[][2] = {{13,25},{60,25},{120,25},{200,25},
+                                  {1830,25},{2000,25},{2300,25},{1200,25}};
             printf("[LTW DIAG] fp_fixed tex=%u drawfb=%d readfb=%d:",
                    fp_bound_texture, draw_fb, read_fb);
             for(unsigned int pi = 0; pi < sizeof(pts)/sizeof(pts[0]); pi++) {
@@ -471,12 +472,12 @@ static void fp_flush_immediate(void) {
                 es3_functions.glReadPixels(pts[pi][0], pts[pi][1], 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
                 printf(" (%d,%d)=%u,%u,%u,%u", pts[pi][0], pts[pi][1], px[0], px[1], px[2], px[3]);
             }
-            // 左下角第一个白块周围 5x5
+            // 左下角第一个白块周围 5x5（GL 坐标）
             printf(" bl5x5:");
             for(int dy = -2; dy <= 2; dy++) {
                 for(int dx = -2; dx <= 2; dx++) {
                     unsigned char px[4] = {0};
-                    es3_functions.glReadPixels(13 + dx, 1055 + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+                    es3_functions.glReadPixels(13 + dx, 25 + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
                     printf(" %u,%u,%u,%u", px[0], px[1], px[2], px[3]);
                 }
             }
@@ -822,7 +823,8 @@ void fp_check_white_pixel(void) {
     es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
     if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
 
-    const int pts[][2] = {{13,1055},{60,1055},{200,1055},{1830,1055},{2300,1055}};
+    // 截图 y=1040..1071 -> GL y=9..40，用中心 y=25
+    const int pts[][2] = {{13,25},{60,25},{200,25},{1830,25},{2300,25}};
     bool hit = false;
     for(unsigned int i = 0; i < sizeof(pts)/sizeof(pts[0]); i++) {
         unsigned char px[4] = {0};

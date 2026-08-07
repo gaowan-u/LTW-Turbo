@@ -1036,7 +1036,7 @@ bool glerr_trace = false;
 _Thread_local const char* ltw_last_glfn = NULL;
 
 __attribute((constructor)) void init_noerror() {
-    printf("[LTW VER] font-cpu-bgra-20260807\n");
+    printf("[LTW VER] font-gl-yflip-20260807\n");
     noerror = env_istrue("LIBGL_NOERROR");
     debug = env_istrue("LTW_DEBUG");
     glerr_trace = env_istrue("LTW_GLERR_TRACE");
