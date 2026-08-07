@@ -453,67 +453,36 @@ static void fp_flush_immediate(void) {
 
     es3_functions.glDrawArrays(mode, 0, count);
 
-    // 诊断：只抓主菜单左下角字形（版本/版权文字），读回 quad 实际渲染像素
+    // 诊断：直接读用户截图确认的白块固定坐标（左下/右下角 y=1040..1071）
     {
         static unsigned int fp_read_n = 0;
-        if(fp_bound_texture >= 24 && fp_read_n < 4 && fp_immediate_count >= 4) {
-            // MC GUI 坐标里左下角文字 x 小、y 靠底；加载屏中央文字会被过滤掉
-            float ox = 0.0f, oy = 0.0f;
-            for(int vi = 0; vi < 4; vi++) {
-                const GLfloat* v = fp_immediate_vertices + (size_t)vi * FP_STRIDE;
-                ox += v[0] / 4.0f;
-                oy += v[1] / 4.0f;
+        if(fp_bound_texture >= 24 && fp_read_n < 8 && fp_immediate_count >= 4) {
+            fp_read_n++;
+            GLint draw_fb = 0, read_fb = 0;
+            es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fb);
+            es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
+            if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
+            const int pts[][2] = {{13,1055},{60,1055},{120,1055},{200,1055},
+                                  {1830,1055},{2000,1055},{2300,1055},{1200,1055}};
+            printf("[LTW DIAG] fp_fixed tex=%u drawfb=%d readfb=%d:",
+                   fp_bound_texture, draw_fb, read_fb);
+            for(unsigned int pi = 0; pi < sizeof(pts)/sizeof(pts[0]); pi++) {
+                unsigned char px[4] = {0};
+                es3_functions.glReadPixels(pts[pi][0], pts[pi][1], 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+                printf(" (%d,%d)=%u,%u,%u,%u", pts[pi][0], pts[pi][1], px[0], px[1], px[2], px[3]);
             }
-            if(ox >= 0.0f && ox <= 250.0f && oy >= 100.0f) {
-                fp_read_n++;
-                GLfloat mvp[FP_MATRIX_SIZE];
-                fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
-                           fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
-                GLint vp[4] = {0};
-                es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
-                GLint draw_fb = 0, read_fb = 0;
-                es3_functions.glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fb);
-                es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
-                GLint samples = 0;
-                es3_functions.glGetIntegerv(GL_SAMPLES, &samples);
-                if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)draw_fb);
-                float pts[5][3] = {{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
-                for(int vi = 0; vi < 4; vi++) {
-                    const GLfloat* v = fp_immediate_vertices + (size_t)vi * FP_STRIDE;
-                    pts[vi][0] = v[0]; pts[vi][1] = v[1]; pts[vi][2] = v[2];
-                    pts[4][0] += v[0] / 4.0f; pts[4][1] += v[1] / 4.0f; pts[4][2] += v[2] / 4.0f;
-                }
-                printf("[LTW DIAG] fp_read tex=%u obj=(%.1f,%.1f) vp=%d,%d,%dx%d drawfb=%d readfb=%d samples=%d:",
-                       fp_bound_texture, ox, oy, vp[0], vp[1], vp[2], vp[3], draw_fb, read_fb, samples);
-                int last_sx = 0, last_sy = 0;
-                for(int pi = 0; pi < 5; pi++) {
-                    float in[4] = {pts[pi][0], pts[pi][1], pts[pi][2], 1.0f};
-                    float out[4] = {0,0,0,0};
-                    for(int c = 0; c < 4; c++) {
-                        out[c] = mvp[c*4+0]*in[0] + mvp[c*4+1]*in[1] +
-                                 mvp[c*4+2]*in[2] + mvp[c*4+3]*in[3];
-                    }
-                    if(out[3] == 0.0f) continue;
-                    float ndcx = out[0]/out[3], ndcy = out[1]/out[3];
-                    int sx = vp[0] + (int)((ndcx * 0.5f + 0.5f) * vp[2]);
-                    int sy = vp[1] + (int)((ndcy * 0.5f + 0.5f) * vp[3]);
+            // 左下角第一个白块周围 5x5
+            printf(" bl5x5:");
+            for(int dy = -2; dy <= 2; dy++) {
+                for(int dx = -2; dx <= 2; dx++) {
                     unsigned char px[4] = {0};
-                    es3_functions.glReadPixels(sx, sy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-                    printf(" p%d=(%u,%u,%u,%u)@(%d,%d)", pi, px[0], px[1], px[2], px[3], sx, sy);
-                    last_sx = sx; last_sy = sy;
+                    es3_functions.glReadPixels(13 + dx, 1055 + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+                    printf(" %u,%u,%u,%u", px[0], px[1], px[2], px[3]);
                 }
-                printf(" grid5x5:");
-                for(int dy = -2; dy <= 2; dy++) {
-                    for(int dx = -2; dx <= 2; dx++) {
-                        unsigned char px[4] = {0};
-                        es3_functions.glReadPixels(last_sx + dx, last_sy + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-                        printf(" %u,%u,%u,%u", px[0], px[1], px[2], px[3]);
-                    }
-                }
-                printf("\n");
-                fflush(stdout);
-                if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read_fb);
             }
+            printf("\n");
+            fflush(stdout);
+            if(read_fb != draw_fb) es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)read_fb);
         }
     }
 
