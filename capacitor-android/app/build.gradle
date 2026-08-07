@@ -1,7 +1,7 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.ltw.plugin.renderer.ltw"
+    namespace = "ltw.turbo"
     compileSdk = rootProject.ext.compileSdkVersion
     
     packagingOptions {
@@ -9,7 +9,7 @@ android {
     }
     
     defaultConfig {
-        applicationId "com.ltw.plugin.renderer.ltw"
+        applicationId "ltw.turbo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
