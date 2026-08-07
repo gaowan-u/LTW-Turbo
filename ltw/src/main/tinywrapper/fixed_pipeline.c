@@ -357,9 +357,10 @@ static void fp_flush_immediate(void) {
         static unsigned int im_n = 0;
         im_n++;
         if(im_n <= 16 || (im_n & 0x3F) == 1) {
-            printf("[LTW DUMP] imm n=%u count=%d mode=0x%x tex=%u blend=%d atest=%d single=%d\n",
+            printf("[LTW DUMP] imm n=%u count=%d mode=0x%x tex=%u blend=%d atest=%d single=%d afunc=0x%x aref=%f\n",
                    im_n, fp_immediate_count, (unsigned)fp_immediate_mode, fp_bound_texture,
-                   fp_blend_enabled ? 1 : 0, fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0);
+                   fp_blend_enabled ? 1 : 0, fp_alpha_test ? 1 : 0, fp_bound_single_channel ? 1 : 0,
+                   fp_alpha_test ? (unsigned)fp_alpha_test_func : 0, fp_alpha_test ? fp_alpha_ref : 0.0f);
             if(fp_bound_texture != 0) {
                 GLint tw = 0, th = 0, tf = 0;
                 es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);

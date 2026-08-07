@@ -136,7 +136,26 @@ void glTexSubImage2D(GLenum target,
             return;
         }
     }
+    {
+        // 字形/unicode 页纹理上传的精确诊断：tex>=24 时无论计数采样都打印
+        GLint tex = 0;
+        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+        if(tex >= 24 && tex <= 64) {
+            printf("[LTW DIAG] glTexSubImage2D tex=%d %dx%d+%d+%d fmt=0x%x type=0x%x (converted)\n",
+                   tex, width, height, xoffset, yoffset, (unsigned)format, (unsigned)type);
+            fflush(stdout);
+        }
+    }
     GLTRACE_CALL(glTexSubImage2D, es3_functions.glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, data));
+    {
+        GLint tex = 0;
+        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+        if(tex >= 24 && tex <= 64) {
+            GLenum e = es3_functions.glGetError();
+            printf("[LTW DIAG] glTexSubImage2D tex=%d err=0x%x\n", tex, (unsigned)e);
+            fflush(stdout);
+        }
+    }
 }
 
 void texture_blit_framebuffer(GLenum target,

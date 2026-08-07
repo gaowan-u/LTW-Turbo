@@ -270,6 +270,14 @@ void glPopAttrib(void) {
 // alpha test（MC 1.12 文字渲染依赖；GLES 无此功能，由默认 shader discard 模拟）
 void glAlphaFunc(GLenum func, GLfloat ref) {
     if(!current_context) return;
+    {
+        // 诊断：确认 MC 的 GL_GREATER/0.1 是否真的到达 LTW
+        static unsigned int af_n = 0;
+        if(++af_n <= 4) {
+            printf("[LTW DIAG] glAlphaFunc #%u func=0x%x ref=%f\n", af_n, (unsigned)func, ref);
+            fflush(stdout);
+        }
+    }
     fp_alpha_func(func, ref);
 }
 
