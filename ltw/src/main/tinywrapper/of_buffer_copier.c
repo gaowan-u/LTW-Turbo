@@ -118,8 +118,18 @@ void glGetTexImage( 	GLenum target,
     es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
     es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, target, texture, level);
     GLint w, h;
-    es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &w);
-    es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_HEIGHT, &h);
+    if(texture != 0) {
+        es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &w);
+        es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_HEIGHT, &h);
+    } else {
+        // MathCode: 当前没绑纹理时 glGetTexLevelParameteriv 可能产生
+        // GL_INVALID_OPERATION（MC 帧末 “Post render” 的 1282）。
+        // 用视口尺寸兜底，避免在纹理查询上留 GL 错误。
+        GLint vp[4] = {0, 0, 0, 0};
+        es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
+        w = vp[2];
+        h = vp[3];
+    }
     if(es3_functions.glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         LTW_ERROR_PRINTF("LTW: glGetTexImage temp FBO incomplete (w=%d h=%d target=%x tex=%u)",
                          w, h, target, texture);
@@ -128,8 +138,10 @@ void glGetTexImage( 	GLenum target,
         es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
         if(old_read_fb != 0 && pixels && bgra_rev) {
             es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
-            bgra_rev_readback(0, 0, w, h, pixels);
-            return;
+            if(es3_functions.glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+                bgra_rev_readback(0, 0, w, h, pixels);
+                return;
+            }
         }
         es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
         return;
