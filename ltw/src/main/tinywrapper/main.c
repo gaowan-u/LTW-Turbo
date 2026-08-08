@@ -454,7 +454,10 @@ void glEnable(GLenum cap) {
     if(!current_context) return;
     if(cap == GL_DEBUG_OUTPUT && !debug) return;
     if(is_fixed_function_cap(cap)) {
-        if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(true);
+        if(cap == GL_TEXTURE_2D) {
+            fp_set_texture_enabled(true);
+            fp_dl_capture_texture_enable(true);
+        }
         if(cap == GL_ALPHA_TEST) fp_set_alpha_test(true);
         return;
     }
@@ -468,7 +471,10 @@ void glEnable(GLenum cap) {
 void glDisable(GLenum cap) {
     if(!current_context) return;
     if(is_fixed_function_cap(cap)) {
-        if(cap == GL_TEXTURE_2D) fp_set_texture_enabled(false);
+        if(cap == GL_TEXTURE_2D) {
+            fp_set_texture_enabled(false);
+            fp_dl_capture_texture_enable(false);
+        }
         if(cap == GL_ALPHA_TEST) fp_set_alpha_test(false);
         return;
     }
@@ -481,6 +487,8 @@ void glBindTexture(GLenum target, GLuint texture) {
     if(!current_context) return;
     GLTRACE_CALL(glBindTexture, es3_functions.glBindTexture(target, texture));
     if(target == GL_TEXTURE_2D) fp_notify_texture_bind();
+    // 显示列表编译期间：记录纹理绑定，回放时按录制单元恢复
+    fp_dl_capture_bind_texture(target, texture);
 }
 void glActiveTexture(GLenum texture) {
     if(!current_context) return;
@@ -672,6 +680,7 @@ void glBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint
 }
 void glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices) {
     if(!current_context) return;
+    if(fp_dl_capture_client_draw(mode, (GLint)start, count, true, type, indices)) return;
     // 与 glDrawElements 走同一套兼容处理：QUADS 展开 + 无 program 时固定管线。
     if(ltw_quads_draw_elements(mode, count, type, indices)) return;
     if(fp_try_draw_elements(mode, count, type, indices)) return;
@@ -1043,6 +1052,8 @@ void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     LTW_ENTER("glDrawArrays");
     if(!current_context) { LTW_EXIT(); return; }
+    // 显示列表编译期间：录制快照，编译期不真正绘制
+    if(fp_dl_capture_client_draw(mode, first, count, false, 0, NULL)) { LTW_EXIT(); return; }
     if(ltw_quads_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
     if(fp_try_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
     GLTRACE_CALL(glDrawArrays, current_context->fast_gl.glDrawArrays(mode, first, count));
@@ -1052,6 +1063,7 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
     LTW_ENTER("glDrawElements");
     if(!current_context) { LTW_EXIT(); return; }
+    if(fp_dl_capture_client_draw(mode, 0, count, true, type, indices)) { LTW_EXIT(); return; }
     if(ltw_quads_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
     if(fp_try_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
     GLTRACE_CALL(glDrawElements, current_context->fast_gl.glDrawElements(mode, count, type, indices));

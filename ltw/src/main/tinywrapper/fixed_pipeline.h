@@ -18,6 +18,7 @@
 #define LTW_FIXED_PIPELINE_H
 
 #include <GLES3/gl3.h>
+#include <stdint.h>
 #include <stdbool.h>
 
 // GLES3/gl3.h 不含 GLdouble（桌面 GL 类型）。仓库 GL/gl.h 定义了它；
@@ -134,5 +135,25 @@ bool fp_default_program_ready(void);
 // 查询固定管线矩阵（GL_MODELVIEW_MATRIX/GL_PROJECTION_MATRIX/GL_TEXTURE_MATRIX），
 // 返回 true 表示 pname 是固定管线矩阵且已写入 out（16 floats）
 bool fp_get_matrix(GLenum pname, GLfloat* out);
+
+// ---- Display list support ----
+// Minecraft <=1.12 renders entity models through glNewList/glCallList display
+// lists, which do not exist on GLES. The fixed pipeline records the
+// fixed-function calls at compile time (dl_capture_*) and replays them on
+// glCallList (dl_call), reusing the current matrix/texture state.
+bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
+                               bool indexed, GLenum itype, const void* indices);
+void fp_dl_capture_bind_texture(GLenum target, GLuint texture);
+void fp_dl_capture_texture_enable(bool enabled);
+bool dl_is_compiling(void);
+bool dl_capture_op(uint32_t type, const void* data, uint32_t size);
+GLuint dl_gen(GLsizei range);
+void dl_new(GLuint list, GLenum mode);
+void dl_end(void);
+void dl_delete(GLuint list, GLsizei range);
+bool dl_is_list(GLuint list);
+void dl_list_base(GLuint base);
+void dl_call(GLuint list);
+void dl_calls(GLsizei n, GLenum type, const void* lists);
 
 #endif //LTW_FIXED_PIPELINE_H

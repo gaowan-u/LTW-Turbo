@@ -258,6 +258,41 @@ void glArrayElement(GLint i) {
     fp_array_element(i);
 }
 
+// ---- 显示列表（display list）----
+// GLES 无显示列表，由 fixed_pipeline.c 录制/回放（MC <=1.12 生物模型依赖）。
+GLuint glGenLists(GLsizei range) {
+    if(!current_context) return 0;
+    return dl_gen(range);
+}
+void glNewList(GLuint list, GLenum mode) {
+    if(!current_context) return;
+    dl_new(list, mode);
+}
+void glEndList(void) {
+    if(!current_context) return;
+    dl_end();
+}
+void glCallList(GLuint list) {
+    if(!current_context) return;
+    dl_call(list);
+}
+void glCallLists(GLsizei n, GLenum type, const void* lists) {
+    if(!current_context || n <= 0 || !lists) return;
+    dl_calls(n, type, lists);
+}
+void glDeleteLists(GLuint list, GLsizei range) {
+    if(!current_context) return;
+    dl_delete(list, range);
+}
+GLboolean glIsList(GLuint list) {
+    if(!current_context) return GL_FALSE;
+    return dl_is_list(list) ? GL_TRUE : GL_FALSE;
+}
+void glListBase(GLuint base) {
+    if(!current_context) return;
+    dl_list_base(base);
+}
+
 // ---- 其他固定管线函数（no-op 兜底，避免 functionMissingAbort）----
 void glShadeModel(GLenum mode) {
     if(!current_context) return;
