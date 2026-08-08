@@ -4,6 +4,9 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：内存池接口与常量声明（见 mempool.c）。
+ */
 #ifndef POJAVLAUNCHER_MEMPOOL_H
 #define POJAVLAUNCHER_MEMPOOL_H
 

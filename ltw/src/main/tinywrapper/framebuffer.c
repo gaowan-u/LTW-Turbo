@@ -4,6 +4,13 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：帧缓冲对象（FBO）模拟。
+ *
+ * 维护虚拟 drawbuffer 列表（virt_drawbuffers）到物理 drawbuffer
+ * （phys_drawbuffers）的映射，处理 glDrawBuffers/glFramebufferTexture*
+ * 等桌面语义与 GLES 的差异，并缓存当前绑定 FBO 的状态。
+ */
 #include "proc.h"
 #include "egl.h"
 #include "mempool.h"

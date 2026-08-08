@@ -3,6 +3,15 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：EGL 上下文管理。
+ *
+ * 拦截 eglCreateContext/eglDestroyContext/eglMakeCurrent，维护 context_t
+ * （着色器/程序/帧缓冲/swizzle/显示列表等映射表、内存池、格式缓存、
+ * 热路径函数指针缓存），并用线程局部变量 current_context 向其余模块
+ * 提供“当前 GL 上下文”。
+ */
 #include "egl.h"
 #include "unordered_map/int_hash.h"
 #include "string_utils.h"

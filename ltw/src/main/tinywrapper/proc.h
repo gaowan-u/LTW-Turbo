@@ -4,6 +4,13 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：es3_functions 函数指针表与 eglGetProcAddress 声明。
+ *
+ * 用 GLESFUNC 宏展开 es3_functions.h/es3_extended.h，生成宿主机
+ * GLES 函数的指针表；声明 host_eglGetProcAddress 与 LTW 的
+ * eglGetProcAddress/glXGetProcAddress。
+ */
 #ifndef POJAVLAUNCHER_PROC_H
 #define POJAVLAUNCHER_PROC_H
 

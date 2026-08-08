@@ -4,6 +4,13 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：纹理内部格式选择与转换。
+ *
+ * 把桌面 GL 允许、GLES 不支持的 internalformat/type/format 组合映射为
+ * GLES 可用格式（深度、BGRA、GL_ALPHA、GL_LUMINANCE 等），并修正
+ * 数据指针语义（如 glTexImage2D 传 NULL 时确保 GLES 可接受）。
+ */
 #include <stdbool.h>
 #include "egl.h"
 #include "glformats.h"

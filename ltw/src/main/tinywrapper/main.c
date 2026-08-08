@@ -3,6 +3,15 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：桌面 GL → GLES 的核心翻译入口。
+ *
+ * 集中实现 GL 版本/厂商/扩展伪装（glGetString/glGetStringi）、桌面专属
+ * 状态的过滤与吞掉（fixed-function cap、纹理参数白名单）、代理纹理模拟，
+ * 以及 glDrawArrays/glDrawElements 等高频入口的分发：
+ * 显示列表录制 → QUADS 展开 → 固定管线接管 → 宿主机直通。
+ */
 #include <stdio.h>
 #include <dlfcn.h>
 
@@ -24,13 +33,14 @@
 #include "quads.h"
 #include "fixed_pipeline.h"
 
-//GL清空深度缓存使用glClearDepth这个GL的api
+// 桌面 glClearDepth 接收 GLdouble；GLES 只有 glClearDepthf，这里转换后转发
 void glClearDepth(GLdouble depth) {
-    if(!current_context) return;    //判断是否为context_t结构体中成员，否则直接返回
-    es3_functions.glClearDepthf((GLfloat) depth);   //对应ltw\src\main\tinywrapper\es3_functions.h中的GLESFUNC(glClearDepthf,PFNGLCLEARDEPTHFPROC)
+    if(!current_context) return;    // 无当前 GL 上下文（线程局部指针为空）时直接返回
+    // 转发到 GLES 的 glClearDepthf（函数指针来自 es3_functions.h）
+    es3_functions.glClearDepthf((GLfloat) depth);
 }
 
-//GL映射缓冲区
+// 桌面 glMapBuffer：把 GLES 的 glMapBufferRange 包装成桌面语义
 void *glMapBuffer(GLenum target, GLenum access) {
     if(!current_context) return NULL;
 
@@ -75,7 +85,7 @@ void *glMapBuffer(GLenum target, GLenum access) {
     return es3_functions.glMapBufferRange(target, 0, length, access_range);
 }
 
-//判断是否为代理纹理
+// 是否为代理纹理目标（桌面纹理分配前的“容量探测”纹理）
 INTERNAL int isProxyTexture(GLenum target) {
     switch (target) {
         case GL_PROXY_TEXTURE_1D:
@@ -87,7 +97,7 @@ INTERNAL int isProxyTexture(GLenum target) {
     return 0;   //返回假
 }
 
-//查询纹理在glext.h中的映射
+// 纹理目标对应的“当前绑定查询”枚举（glGetIntegerv 用）
 INTERNAL GLenum get_textarget_query_param(GLenum target) {
     switch (target) {
         case GL_TEXTURE_2D:
@@ -117,7 +127,7 @@ INTERNAL GLenum get_textarget_query_param(GLenum target) {
     }
 }
 
-//此处为一个内联函数，计算纹理级别的尺寸，可以插入到调用它的地方
+// 计算 level 级 mip 的尺寸（右移后最小为 1）
 static int inline nlevel(int size, int level) {
     if(size) {
         size>>=level;   //右移赋值运算符，将size右移level位后赋值给size
@@ -126,7 +136,7 @@ static int inline nlevel(int size, int level) {
     return size;
 }
 
-static bool trigger_texlevelparameter = false;  //纹理级别参数触发器，默认关闭
+static bool trigger_texlevelparameter = false;  // 已提示过“ES 3.1 以下不支持”的开关
 
 //纹理级别参数验证
 static bool check_texlevelparameter() {
@@ -222,6 +232,8 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
         if(data != NULL) swizzle_process_upload(target, &format, &type);
         pick_internalformat(&internalformat, &type, &format, &data);
         GLTRACE_CALL(glTexImage2D, es3_functions.glTexImage2D(target, level, internalformat, width, height, border, format, type, data));
+        // 内部格式可能变化：固定管线纹理格式缓存失效
+        fp_texture_upload_invalidate();
     }
 }
 
@@ -486,7 +498,8 @@ void glDisable(GLenum cap) {
 void glBindTexture(GLenum target, GLuint texture) {
     if(!current_context) return;
     GLTRACE_CALL(glBindTexture, es3_functions.glBindTexture(target, texture));
-    if(target == GL_TEXTURE_2D) fp_notify_texture_bind();
+    // unit0 绑定用 CPU 维护（免去每次绑定的驱动查询），单通道格式走本地缓存
+    if(target == GL_TEXTURE_2D) fp_notify_texture_bind_tex(texture);
     // 显示列表编译期间：记录纹理绑定，回放时按录制单元恢复
     fp_dl_capture_bind_texture(target, texture);
 }
@@ -673,6 +686,7 @@ void glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, G
 void glCopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border) {
     if(!current_context) return;
     GLTRACE_CALL(glCopyTexImage2D, es3_functions.glCopyTexImage2D(target, level, internalformat, x, y, width, height, border));
+    fp_texture_upload_invalidate();
 }
 void glBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) {
     if(!current_context) return;

@@ -1,9 +1,11 @@
 /**
- * QUADS -> TRIANGLES 转换实现。
+ * 文件功能：QUADS → TRIANGLES 转换实现。
  * GLES 3.x 移除了 GL_QUADS（桌面枚举 0x0007），MC 1.12（lwjglx 兼容层）
  * 的方块面却用基础版 glDrawArrays/glDrawElements 以 QUADS 提交，导致
  * 驱动报 "draw mode 7 is unknown" 且绘制被丢弃（黑屏）。
  * 这里拦截这些调用，把每 4 个顶点展开为 2 个三角形（a,b,c + a,c,d）。
+ * 配合 EBO CPU 影子副本零同步读索引；客户端数组路径按 (first, count)
+ * 缓存展开结果，避免每帧重传。
  */
 #include <stdlib.h>
 #include <string.h>
@@ -225,7 +227,12 @@ static uint32_t* quads_read_indices(GLenum type, GLsizei count, const void* indi
 }
 
 // 把展开后的索引上传到临时 ELEMENT_ARRAY_BUFFER 并绘制。
-static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint src_ebo, uint64_t src_gen) {
+// first/count 仅客户端数组（非索引）路径使用：展开结果只取决于二者，
+// 与顶点内容无关，相同参数时可跳过重复上传。client_arrays 为 true 表示
+// 非索引 glDrawArrays（源索引即 first..first+count-1），false 表示索引路径
+// （源索引每次调用内容可变，src_ebo==0 时一律重新上传）。
+static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint src_ebo, uint64_t src_gen,
+                                 GLint first, GLsizei count, bool client_arrays) {
     context_t* ctx = current_context;
     if(!ctx || ctx->quads_scratch_buffer == 0) return;
 
@@ -240,15 +247,42 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint 
     // 否则 glDrawElements 会读到 fp_vao 里残留的旧 EBO（时序相关，偶发黑块）。
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ctx->quads_scratch_buffer);
     // 同一来源 EBO + 同一数据版本 + 同样顶点数时，scratch 内容未变，跳过重新上传
-    bool skip_upload = (src_ebo != 0 && src_gen != 0 &&
-                        ctx->quads_last_ebo == src_ebo &&
-                        ctx->quads_last_gen == src_gen &&
-                        ctx->quads_last_tri_count == tri_count);
+    bool skip_upload;
+    if(src_ebo != 0) {
+        skip_upload = (src_gen != 0 &&
+                       ctx->quads_last_ebo == src_ebo &&
+                       ctx->quads_last_gen == src_gen &&
+                       ctx->quads_last_tri_count == tri_count);
+    } else if(client_arrays) {
+        // 客户端数组路径：缓存键是 (first, count)
+        skip_upload = (ctx->quads_last_ebo == 0 &&
+                       ctx->quads_last_first == first &&
+                       ctx->quads_last_count == count);
+    } else {
+        // 客户端索引路径：内容随每次调用变化，不缓存
+        skip_upload = false;
+    }
     if(!skip_upload) {
         es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)tri_count * 4, indices, GL_STREAM_DRAW);
-        ctx->quads_last_ebo = src_ebo;
-        ctx->quads_last_gen = src_gen;
-        ctx->quads_last_tri_count = tri_count;
+        if(src_ebo != 0) {
+            ctx->quads_last_ebo = src_ebo;
+            ctx->quads_last_gen = src_gen;
+            ctx->quads_last_tri_count = tri_count;
+        } else if(client_arrays) {
+            // 客户端数组路径：记录 (first, count)，并清空其他缓存键
+            ctx->quads_last_ebo = 0;
+            ctx->quads_last_gen = 0;
+            ctx->quads_last_tri_count = 0;
+            ctx->quads_last_first = first;
+            ctx->quads_last_count = count;
+        } else {
+            // 客户端索引路径：标记 scratch 内容来自该路径，使其他缓存键失效
+            ctx->quads_last_ebo = (GLuint)-1;
+            ctx->quads_last_gen = 0;
+            ctx->quads_last_tri_count = 0;
+            ctx->quads_last_first = 0;
+            ctx->quads_last_count = 0;
+        }
     }
     if(fp_bound) {
         fp_prepare_client_arrays(quads * 4);
@@ -296,15 +330,19 @@ bool ltw_quads_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(!ctx) return false;
 
     GLsizei quads = count >> 2;
-    uint32_t* src = (uint32_t*)malloc((size_t)count * sizeof(uint32_t));
-    if(!src) return false;
-    if(!quads_ensure_expanded(quads)) { free(src); return false; }
-    for(GLsizei i = 0; i < count; i++) src[i] = (uint32_t)(first + i);
-
-    quads_expand(src, count, ctx->quads_expanded);
-    quads_draw_triangles(quads, ctx->quads_expanded, 0, 0);
-
-    free(src);
+    if(!quads_ensure_expanded(quads)) return false;
+    // 非索引路径的源索引就是 first..first+count-1，直接生成展开结果，
+    // 免去临时数组的 malloc/展开两趟开销
+    for(GLsizei q = 0; q < quads; q++) {
+        uint32_t a = (uint32_t)(first + q * 4 + 0);
+        uint32_t b = (uint32_t)(first + q * 4 + 1);
+        uint32_t c = (uint32_t)(first + q * 4 + 2);
+        uint32_t d = (uint32_t)(first + q * 4 + 3);
+        uint32_t* t = ctx->quads_expanded + q * 6;
+        t[0] = a; t[1] = b; t[2] = c;
+        t[3] = a; t[4] = c; t[5] = d;
+    }
+    quads_draw_triangles(quads, ctx->quads_expanded, 0, 0, first, count, true);
     return true;
 }
 
@@ -321,7 +359,7 @@ bool ltw_quads_draw_elements(GLenum mode, GLsizei count, GLenum type, const void
     if(!quads_ensure_expanded(quads)) { free(src); return false; }
 
     quads_expand(src, count, ctx->quads_expanded);
-    quads_draw_triangles(quads, ctx->quads_expanded, src_ebo, src_gen);
+    quads_draw_triangles(quads, ctx->quads_expanded, src_ebo, src_gen, 0, count, false);
 
     free(src);
     return true;

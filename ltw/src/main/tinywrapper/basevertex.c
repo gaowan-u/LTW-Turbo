@@ -3,6 +3,13 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：DrawElementsBaseVertex 系列兼容实现。
+ *
+ * 宿主机支持时直通（glDrawElementsBaseVertex）；不支持时通过间接绘制
+ * 缓冲（glMultiDrawElementsIndirect）模拟 baseVertex 偏移。
+ */
 #include <GLES3/gl31.h>
 #include "proc.h"
 #include "egl.h"

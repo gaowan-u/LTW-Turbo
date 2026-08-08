@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：纹理 swizzle 状态跟踪与补偿。
+ *
+ * 记录每个纹理的 swizzle 设置，处理 BGRA 上传与端序差异；支持
+ * glLTWBeginBatchUpdate/EndBatchUpdate 批量应用，减少每帧状态抖动。
+ */
 #include "proc.h"
 #include "egl.h"
 #include "mempool.h"

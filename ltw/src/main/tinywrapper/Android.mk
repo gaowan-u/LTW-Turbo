@@ -1,3 +1,10 @@
+# ============================================================
+# 文件功能：ndk-build 构建脚本。
+#
+# 1) glsl_optimizer：Mesa 系 GLSL 编译器（静态库，供着色器降级转换）；
+# 2) ltw_turbo：LTW 渲染兼容层主库 libltw_turbo.so（共享库）。
+# 产物只导出 gl 系/egl 系/stub_ 系符号（见 version.script）。
+# ============================================================
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)

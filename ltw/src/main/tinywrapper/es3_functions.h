@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：GLES3 函数指针表（GLESFUNC 宏生成）。
+ *
+ * 每行是一个 GLESFUNC(函数名, 指针类型)，被 proc.h 的 es3_functions_t
+ * 展开为函数指针成员，被 proc.c 的 init_es3_proc 展开为初始化代码。
+ */
 /*
 // Java program to assemble this file from the GLES3 header.
 package pfngernerator;

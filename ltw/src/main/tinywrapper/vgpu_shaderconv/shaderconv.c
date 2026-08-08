@@ -3,6 +3,10 @@
  * Copyright (c) 2025 SerpentSpirale, artDev, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：GLSL 桌面版 → GLES 文本级转换器实现（见 shaderconv.h）。
+ */
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>

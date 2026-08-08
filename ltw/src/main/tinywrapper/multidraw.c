@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：glMultiDrawArrays/glMultiDrawElements 兼容实现。
+ *
+ * 过滤空绘制调用，逐个分发到单绘制路径（含 QUADS 展开与固定管线接管），
+ * 避免把多绘制直接丢给 GLES（GLES 无对应入口）。
+ */
 #include <proc.h>
 #include <egl.h>
 #include "basevertex.h"

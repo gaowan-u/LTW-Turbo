@@ -1,5 +1,5 @@
 /**
- * 固定管线（桌面 GL 1.x 兼容层）模拟。
+ * 文件功能：固定管线（桌面 GL 1.x 兼容层）模拟的公开接口声明。
  *
  * GLES 3.x 移除了全部固定管线：glBegin/glEnd 即时模式、矩阵栈、
  * 客户端顶点数组、GL_TEXTURE_2D 开关等。MC <=1.12（经 lwjglx）的
@@ -109,6 +109,12 @@ void fp_set_active_texture(GLuint unit);
 // glBindTexture(GL_TEXTURE_2D) 后调用：若当前活动单元是 unit0，刷新固定管线
 // 缓存的绑定纹理（避免 glBindTexture 后、绘制前被其他单元/路径覆盖）。
 void fp_notify_texture_bind(void);
+// glBindTexture(GL_TEXTURE_2D) 包装器直接通知绑定对象：unit0 的绑定状态用
+// CPU 维护，避免每次绑定都向驱动查询（纹理格式单通道判断走本地缓存）。
+void fp_notify_texture_bind_tex(GLuint texture);
+// 纹理内容/格式可能变化后调用（glTexImage2D / glCopyTexImage2D 等），
+// 使固定管线的纹理格式缓存失效。
+void fp_texture_upload_invalidate(void);
 
 // alpha test 状态（MC 1.12 文字/透明渲染依赖）
 void fp_set_alpha_test(bool enabled);

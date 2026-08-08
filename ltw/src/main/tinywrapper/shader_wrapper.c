@@ -4,6 +4,14 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：着色器翻译管线。
+ *
+ * 拦截 glShaderSource：拼接源码 → 双哈希查 LRU 缓存 → vgpu_shaderconv
+ * 文本转换 + Mesa glsl_optimizer 编译降级到 GLSL ES → gl_FragColor/
+ * gl_FragData 改写为显式输出 → 链接期注入输出 location；
+ * 并完整提供 LWJGL2 时代的 ARB shader API（glShaderSourceARB 等）。
+ */
 #include "unordered_map/unordered_map.h"
 #include "vgpu_shaderconv/shaderconv.h"
 #include "glsl_optimizer/src/code/c_wrapper.h"

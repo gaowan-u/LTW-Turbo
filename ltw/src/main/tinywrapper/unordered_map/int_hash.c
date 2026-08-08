@@ -3,6 +3,10 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：整数键哈希表实现（64 位旋转哈希，见 int_hash.h）。
+ */
 #include "int_hash.h"
 #include "../libraryinternal.h"
 #include "../debug.h"

@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：glVertexAttrib* 标量/向量入口。
+ *
+ * 把 GLshort/GLbyte 等桌面允许的参数类型转成 GLfloat 后转发 GLES；
+ * 归一化（normalized）场景使用 ARM NEON（simd_utils.h）批量转换。
+ */
 #include <proc.h>
 #include <egl.h>
 #include <stdio.h>

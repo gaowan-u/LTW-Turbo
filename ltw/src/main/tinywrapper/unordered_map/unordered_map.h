@@ -1,6 +1,12 @@
 #ifndef UNORDERED_MAP_H
 #define	UNORDERED_MAP_H
 
+/**
+ * 文件功能：通用哈希表接口。
+ *
+ * 以 void* 为键的哈希表，链式解决冲突，同时维护插入顺序的双向链表
+ * （支持顺序迭代）；提供迭代器与便捷的 int 键分配器（见 int_hash.h）。
+ */
 #include <stdlib.h>
 #include <stdbool.h>
 

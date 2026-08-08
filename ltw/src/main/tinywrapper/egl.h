@@ -4,6 +4,13 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：核心状态结构 context_t 与 EGL 上下文接口声明。
+ *
+ * context_t 是 LTW 各模块共用的“每个 GL 上下文”状态根：着色器/程序/
+ * 帧缓冲/纹理 swizzle 映射表、内存池、格式缓存、缓冲绑定跟踪、
+ * 热路径函数指针等；并声明 current_context（线程局部）与 EGL 初始化接口。
+ */
 #ifndef POJAVLAUNCHER_EGL_H
 #define POJAVLAUNCHER_EGL_H
 
@@ -151,6 +158,8 @@ typedef struct {
     GLuint quads_last_ebo;          // 上次展开上传的来源 EBO
     uint64_t quads_last_gen;        // 上次展开上传的 EBO 数据版本
     GLsizei quads_last_tri_count;   // 上次展开上传的三角形索引数
+    GLint quads_last_first;         // 客户端数组路径：上次展开上传的源 first
+    GLsizei quads_last_count;       // 客户端数组路径：上次展开上传的源 count
     uint32_t* quads_expanded;       // 展开索引的可复用缓冲区
     GLsizei quads_expanded_cap;     // 容量（uint32 元素数）
 } context_t;        //表示OpenGL ES的上下文状态信息

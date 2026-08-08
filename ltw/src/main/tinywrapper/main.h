@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：main.c 内部接口声明。
+ *
+ * 提供 GL 缓冲目标的索引映射（get_buffer_index 等）与
+ * glLTWBeginBatchUpdate/EndBatchUpdate 批量更新开关。
+ */
 #ifndef POJAVLAUNCHER_MAIN_H
 #define POJAVLAUNCHER_MAIN_H
 

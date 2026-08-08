@@ -1,7 +1,10 @@
 /**
- * 固定管线 GL 入口包装：glBegin/glEnd/glVertex 系列/glTexCoord 系列/
- * glColor 系列、矩阵栈函数等，全部转发到 fixed_pipeline.c 的模拟实现。
- * 这些函数在 GLES 上不存在，此前被 functionMissingAbort 静默丢弃。
+ * 文件功能：固定管线桌面 GL API 入口包装。
+ *
+ * 把 glBegin/glEnd/glVertex 系列/glTexCoord 系列/glColor 系列、矩阵栈函数、
+ * 显示列表（glGenLists/glNewList/glCallList 等）等桌面 API 全部转发到
+ * fixed_pipeline.c 的模拟实现。这些函数在 GLES 上不存在，此前被
+ * functionMissingAbort 静默丢弃。
  */
 #include <stdio.h>
 #include <GLES3/gl3.h>

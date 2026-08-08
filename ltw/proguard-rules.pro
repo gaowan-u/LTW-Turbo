@@ -1,3 +1,5 @@
+# ProGuard 混淆规则。ltw 是纯 native 库（无 Java 代码），
+# 目前无需额外 keep 规则，保留 Android 模板说明。
 # Add project specific ProGuard rules here.
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.

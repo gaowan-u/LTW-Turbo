@@ -4,7 +4,13 @@
  * For use under LGPL-3.0
  */
 
-//run:
+/**
+ * 文件功能：未实现桌面 GL 函数的空实现（stub_*）。
+ *
+ * 游戏探针请求到 GLES 不存在的函数时，返回空实现而不是
+ * functionMissingAbort 直接中止；同时提供少量固定管线杂项入口
+ * （glGetDoublev、glMaterial* 等）的桌面语义兜底。
+ */
 #include <stdbool.h>
 #include <stdio.h>
 void stub_glCullFace() {

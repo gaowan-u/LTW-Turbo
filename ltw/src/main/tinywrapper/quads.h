@@ -1,5 +1,5 @@
 /**
- * QUADS -> TRIANGLES 转换。
+ * 文件功能：QUADS → TRIANGLES 转换与 EBO 影子副本接口声明。
  * GLES 3.x 不支持 GL_QUADS（mode=7），MC 1.12（lwjglx 兼容层）却大量使用。
  * 在基础版 glDrawArrays/glDrawElements 中拦截，把每 4 个顶点展开为 2 个三角形。
  */

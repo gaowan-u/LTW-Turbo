@@ -4,6 +4,13 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：调试与 GL 错误追踪宏。
+ *
+ * 提供 LTW_ENTER/LTW_EXIT（当前 GL 函数名）、LTW_DEBUG_PRINTF、
+ * LTW_ERROR_PRINTF、GLERR_CHECK 与 GLTRACE_CALL（按采样率双排空
+ * 错误队列，定位“哪次调用产生了 GL 错误”）。
+ */
 #ifndef POJAVLAUNCHER_DEBUG_H
 #define POJAVLAUNCHER_DEBUG_H
 

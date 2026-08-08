@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：固定大小对象内存池。
+ *
+ * 为 shader_info/program_info/framebuffer/swizzle 跟踪等高频小对象提供
+ * O(1) 分配/释放，减少碎片与 malloc 开销；按块扩容、支持整体复位。
+ */
 #include "mempool.h"
 #include "debug.h"
 #include <stdlib.h>

@@ -4,6 +4,9 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：纹理 swizzle 处理接口声明（见 swizzle.c）。
+ */
 #ifndef GL4ES_WRAPPER_SWIZZLE_H
 #define GL4ES_WRAPPER_SWIZZLE_H
 

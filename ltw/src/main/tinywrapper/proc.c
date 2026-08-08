@@ -3,6 +3,14 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：GL 函数解析与劫持核心。
+ *
+ * 实现 eglGetProcAddress / glXGetProcAddress：把游戏的 gl* 请求分发到
+ * LTW 覆写实现（es3_overrides.h 注册表）、stub_* 空实现或宿主机 EGL；
+ * 启动时加载宿主机 EGL 并填充 es3_functions 函数表。
+ */
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
 #include <dlfcn.h>

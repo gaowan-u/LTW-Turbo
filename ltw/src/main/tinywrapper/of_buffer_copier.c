@@ -3,6 +3,14 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：帧缓冲拷贝器与纹理上传兼容。
+ *
+ * 通过临时 FBO + glBlitFramebuffer 实现 glGetTexImage 与深度纹理读回；
+ * 并在 glTexSubImage2D 中处理 GL_BGRA + UNSIGNED_INT_8_8_8_8_REV 的
+ * CPU 字节交换（绕开驱动 swizzle 异常）。
+ */
 #include "proc.h"
 #include "egl.h"
 #include <stdbool.h>

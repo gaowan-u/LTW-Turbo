@@ -1,11 +1,13 @@
 /**
- * 固定管线模拟实现，见 fixed_pipeline.h。
+ * 文件功能：桌面固定管线（GL 1.x）模拟。
  *
  * 设计要点：
  *  - 默认 shader 懒加载（首次绘制时），GLSL 300 es
  *  - 即时模式顶点收集到 CPU 缓冲，glEnd 时一次性上传
  *  - 矩阵列主序（与桌面 GL 一致），MVP = Projection * ModelView
  *  - 客户端数组模式下顶点由应用侧指针提供，绘制时绑定
+ *  - 显示列表录制/回放：批量状态摊分 + 每 op 几何缓存（VAO/VBO/EBO）
+ *  - 纹理/程序/缓冲绑定的 CPU 跟踪，减少每帧驱动查询
  *  - 所有状态都是 context 无关的进程级状态（固定管线只有一个）
  */
 #include <string.h>
@@ -249,9 +251,6 @@ static GLuint fp_vbo_uv = 0;static GLuint fp_vao = 0;
 static GLuint fp_index_ebo = 0;
 static GLsizeiptr fp_index_ebo_cap = 0;
 static GLuint fp_saved_vao = 0;
-static GLint fp_saved_active_tex = GL_TEXTURE0;
-static GLint fp_saved_bound_tex = 0;
-static bool fp_saved_texture_valid = false;
 static bool fp_init_done = false;
 
 // alpha test 状态（MC 1.12 文字渲染依赖 GL_ALPHA_TEST）
@@ -312,6 +311,19 @@ static bool fp_client_normal_enabled = false;
 // 纹理状态
 static bool fp_texture_enabled = false;
 static GLuint fp_bound_texture = 0;
+
+// 单通道纹理格式缓存：GL_TEXTURE_INTERNAL_FORMAT 在纹理分配后不会变化，
+// 没必要每次 glBindTexture/绘制都向驱动查询。直接映射槽 + 世代号，
+// glTexImage2D/glCopyTexImage2D 等可能改变格式的入口统一使缓存失效。
+#define FP_TEXFMT_CACHE_SIZE 64
+typedef struct {
+    GLuint texture;
+    bool single_channel;
+    uint32_t epoch;
+    const void* ctx;             // 建立缓存的 context_t*，防跨 context 误用
+} fp_texfmt_entry_t;
+static fp_texfmt_entry_t fp_texfmt_cache[FP_TEXFMT_CACHE_SIZE];
+static uint32_t fp_texfmt_epoch = 1;
 
 // 前向声明
 static void fp_set_default_uniforms(void);
@@ -509,26 +521,24 @@ static void fp_flush_immediate(void) {
     // 先保存应用绑定状态，并把 fp_vbo 绑定为当前 ARRAY_BUFFER，
     // glBufferData 操作的是"当前绑定的 buffer"，必须先绑定。
     GLint old_vao = 0;
-    GLint old_array_buffer = 0;
-    GLint old_program = 0;
+    GLint old_array_buffer = current_context ? (GLint)current_context->bound_buffers[0] : 0;
+    GLint old_program = current_context ? (GLint)current_context->program : 0;
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &old_vao);
-    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_array_buffer);
-    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
 
     // QUADS -> TRIANGLES：复制顶点展开
     if(mode == GL_QUADS && count >= 4 && (count & 3) == 0) {
         GLsizei quads = count >> 2;
         GLsizei tri_count = quads * 6;
         if(tri_count > FP_MAX_VERTICES) {
-            es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
+            glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
             fp_immediate_count = 0;
             return;
         }
         if((size_t)tri_count > (size_t)fp_quad_scratch_cap) {
             GLfloat* nb = (GLfloat*)realloc(fp_quad_scratch, (size_t)tri_count * FP_VERTEX_BYTES);
             if(!nb) {
-                es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
+                glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
                 fp_immediate_count = 0;
                 return;
             }
@@ -537,7 +547,7 @@ static void fp_flush_immediate(void) {
         }
         GLfloat* expanded = fp_quad_scratch;
         if(!expanded) {
-            es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
+            glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
             fp_immediate_count = 0;
             return;
         }
@@ -565,6 +575,7 @@ static void fp_flush_immediate(void) {
     // 绑定默认 program + 属性（使用私有 VAO，避免污染应用绑定的 VAO）
     es3_functions.glBindVertexArray(fp_vao);
     es3_functions.glUseProgram(fp_program);
+    if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
     es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
@@ -575,26 +586,15 @@ static void fp_flush_immediate(void) {
     es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
                                         (const void*)(7 * sizeof(GLfloat)));
 
-    // 纹理绑定到 unit 0
-    GLint old_active_tex = 0;
-    GLint old_bound_tex = 0;
-    if(fp_bound_texture != 0) {
-        es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_tex);
-        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_bound_tex);
-        es3_functions.glActiveTexture(GL_TEXTURE0);
-        es3_functions.glBindTexture(GL_TEXTURE_2D, fp_bound_texture);
-    }
-
     es3_functions.glDrawArrays(mode, 0, count);
 
     // 恢复状态
-    if(fp_bound_texture != 0) {
-        es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)old_bound_tex);
-        es3_functions.glActiveTexture((GLenum)old_active_tex);
-    }
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
     es3_functions.glBindVertexArray((GLuint)old_vao);
-    if(old_program != (GLint)fp_program) es3_functions.glUseProgram((GLuint)old_program);
+    if(old_program != (GLint)fp_program) {
+        es3_functions.glUseProgram((GLuint)old_program);
+        if(current_context) current_context->program = (GLuint)old_program;
+    }
 
     // 即时模式路径定制过 uniforms（uUseColor 等），批量回放中的
     // 后续缓存绘制需重设 uniforms，避免沿用即时模式的设置
@@ -615,7 +615,6 @@ void fp_init(void) {
     fp_index_ebo = 0;
     fp_index_ebo_cap = 0;
     fp_saved_vao = 0;
-    fp_saved_texture_valid = false;
     for(int m = 0; m < FP_MATRIX_COUNT; m++) {
         fp_matrix_top[m] = 0;
         fp_mat_identity(fp_matrix_stack[m][0]);
@@ -640,6 +639,9 @@ void fp_init(void) {
 
     // 显示列表 CPU 快照保留，但 GL 对象句柄随旧 context 失效，清零后惰性重建
     fp_dl_reset_caches();
+    // 纹理格式缓存同样随 context 失效
+    fp_texfmt_epoch++;
+    if(fp_texfmt_epoch == 0) fp_texfmt_epoch = 1;
     dl_replay_active = false;
     dl_replay_dirty = true;
 }
@@ -886,6 +888,44 @@ void fp_alpha_func(GLenum func, GLfloat ref) { fp_alpha_test_func = func; fp_alp
 // glBindTexture 包装器里的记忆值。MC 的 GlStateManager 会缓存纹理绑定，
 // 连续绘制同一字形时可能根本不调用 glBindTexture，记忆值一旦被其他
 // 单元/路径覆盖，字就会以“无纹理”的纯色方块画出来。
+// 现在 unit0 的绑定由 glBindTexture 包装器用 CPU 维护（fp_notify_texture_bind_tex），
+// 这里的查询只作为兜底：活动单元切回 unit0、显示列表批量回放等防御性入口。
+
+// 纹理格式缓存查询：命中返回 true 并写出是否单通道
+static bool fp_texfmt_lookup(GLuint tex, bool* single) {
+    if(!current_context) return false;
+    unsigned idx = (unsigned)(tex * 2654435761u) & (FP_TEXFMT_CACHE_SIZE - 1);
+    fp_texfmt_entry_t* e = &fp_texfmt_cache[idx];
+    if(e->texture == tex && e->epoch == fp_texfmt_epoch &&
+       e->ctx == (const void*)current_context) {
+        *single = e->single_channel;
+        return true;
+    }
+    return false;
+}
+
+// 纹理格式缓存写入（直接映射槽，冲突时覆盖，最坏只是多一次驱动查询）
+static void fp_texfmt_store(GLuint tex, bool single) {
+    if(!current_context) return;
+    unsigned idx = (unsigned)(tex * 2654435761u) & (FP_TEXFMT_CACHE_SIZE - 1);
+    fp_texfmt_entry_t* e = &fp_texfmt_cache[idx];
+    e->texture = tex;
+    e->single_channel = single;
+    e->epoch = fp_texfmt_epoch;
+    e->ctx = (const void*)current_context;
+}
+
+// 解析纹理是否单通道（R8/RED/R16F/R32F）：缓存未命中才查询驱动
+static bool fp_texfmt_resolve(GLuint tex) {
+    bool single = false;
+    if(fp_texfmt_lookup(tex, &single)) return single;
+    GLint fmt = 0;
+    es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
+    single = (fmt == GL_R8 || fmt == GL_RED || fmt == GL_R16F || fmt == GL_R32F);
+    fp_texfmt_store(tex, single);
+    return single;
+}
+
 static void fp_refresh_bound_texture(void) {
     if(!current_context) return;
     // GL_TEXTURE_BINDING_2D 查询的是“当前活动单元”的绑定；固定管线始终用
@@ -897,15 +937,24 @@ static void fp_refresh_bound_texture(void) {
     GLint tex = 0;
     es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
     fp_bound_texture = (GLuint)tex;
-    fp_bound_single_channel = false;
-    if(tex != 0) {
-        GLint fmt = 0;
-        es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
-        if(fmt == GL_R8 || fmt == GL_RED || fmt == GL_R16F || fmt == GL_R32F) {
-            fp_bound_single_channel = true;
-        }
-    }
+    fp_bound_single_channel = (tex != 0) && fp_texfmt_resolve((GLuint)tex);
     if(old_active != GL_TEXTURE0) es3_functions.glActiveTexture((GLenum)old_active);
+    // 同步内部活动单元跟踪（refresh 结束后活动单元即 old_active）
+    fp_active_texture = (GLenum)old_active;
+}
+
+// glBindTexture(GL_TEXTURE_2D) 且活动单元为 unit0 时由包装器直接通知：
+// unit0 绑定用 CPU 维护，免去每次绑定的驱动查询（单通道判断走本地缓存）
+void fp_notify_texture_bind_tex(GLuint texture) {
+    if(!current_context || fp_active_texture != GL_TEXTURE0) return;
+    fp_bound_texture = texture;
+    fp_bound_single_channel = (texture != 0) && fp_texfmt_resolve(texture);
+}
+
+// 纹理格式可能变化：使格式缓存整体失效（纹理上传不频繁，64 项惰性重建）
+void fp_texture_upload_invalidate(void) {
+    fp_texfmt_epoch++;
+    if(fp_texfmt_epoch == 0) fp_texfmt_epoch = 1;
 }
 
 // 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 由绑定纹理决定：
@@ -949,21 +998,12 @@ bool fp_bind_default_program(void) {
     if(!fp_program) return false;
     fp_refresh_bound_texture();
     es3_functions.glUseProgram(fp_program);
+    if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
 
     // 使用私有 VAO，避免污染应用绑定的 VAO 的 attribute 状态
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, (GLint*)&fp_saved_vao);
     if(fp_vao) es3_functions.glBindVertexArray(fp_vao);
-
-    fp_saved_texture_valid = false;
-    if(fp_bound_texture != 0) {
-        fp_saved_texture_valid = true;
-        es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &fp_saved_active_tex);
-        // 先切到 unit0 再查询绑定，否则保存的是其他单元的纹理，恢复时会写错单元。
-        es3_functions.glActiveTexture(GL_TEXTURE0);
-        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &fp_saved_bound_tex);
-        es3_functions.glBindTexture(GL_TEXTURE_2D, fp_bound_texture);
-    }
     return true;
 }
 
@@ -987,8 +1027,8 @@ static size_t fp_type_bytes(GLenum type) {
 // 位置+纹理+颜色，glColorPointer/glTexCoordPointer 的指针指向块内偏移）。
 static void fp_upload_client_arrays(GLsizei count) {
     if(!fp_client_vertex_enabled || fp_client_vertex_size <= 0 || !fp_client_vertex_ptr) return;
-    GLint old_abo = 0;
-    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_abo);
+    // ABO 绑定由 glBindBuffer 包装器（含内部绑定）统一维护，无需驱动查询
+    GLint old_abo = current_context ? (GLint)current_context->bound_buffers[0] : 0;
 
     size_t tsize = fp_type_bytes(fp_client_vertex_type);
     size_t vsize = fp_client_vertex_stride ? (size_t)fp_client_vertex_stride
@@ -996,7 +1036,7 @@ static void fp_upload_client_arrays(GLsizei count) {
     if(vsize == 0 || (size_t)count > (size_t)FP_MAX_VERTICES) return;
 
     // 一次上传整个交错数组
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count, fp_client_vertex_ptr, GL_STREAM_DRAW);
 
     // 位置 attribute：offset 0
@@ -1033,7 +1073,7 @@ static void fp_upload_client_arrays(GLsizei count) {
         es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
     }
 
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
 }
 
 bool fp_prepare_client_arrays(GLsizei count) {
@@ -1050,18 +1090,17 @@ bool fp_prepare_client_arrays(GLsizei count) {
         // VBO 路径：pointer 是偏移，直通（必须先绑定对应的 VBO，偏移才有效）。
         // 应用在 glVertexPointer 时绑定了 VBO（fp_client_*_abo），绘制时当前
         // ARRAY_BUFFER 可能已换成别的 buffer，这里按各自 abo 重新绑定。
-        GLint old_abo = 0;
-        es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_abo);
+        GLint old_abo = current_context ? (GLint)current_context->bound_buffers[0] : 0;
         GLint vbo = fp_client_vertex_abo ? fp_client_vertex_abo : old_abo;
-        if(vbo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)vbo);
+        if(vbo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)vbo);
         if(fp_client_vertex_enabled && fp_client_vertex_size > 0) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
             es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
                                                 GL_FALSE, fp_client_vertex_stride, fp_client_vertex_ptr);
         }
-        if(vbo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
+        if(vbo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
         GLint cbo = fp_client_color_abo ? fp_client_color_abo : old_abo;
-        if(cbo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)cbo);
+        if(cbo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)cbo);
         if(fp_client_color_enabled && fp_client_color_size > 0) {
             fp_client_color_active = true;
             es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
@@ -1071,9 +1110,9 @@ bool fp_prepare_client_arrays(GLsizei count) {
             fp_client_color_active = false;
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
-        if(cbo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
+        if(cbo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
         GLint ubo = fp_client_texcoord_abo ? fp_client_texcoord_abo : old_abo;
-        if(ubo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)ubo);
+        if(ubo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)ubo);
         if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
             es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
@@ -1081,7 +1120,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
         }
-        if(ubo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
+        if(ubo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
     }
     // attribute 启用情况影响 uUseColor，这里重设 uniforms（bind 先于 prepare）
     fp_set_default_uniforms();
@@ -1090,25 +1129,20 @@ bool fp_prepare_client_arrays(GLsizei count) {
 
 void fp_unbind_default_program(void) {
     if(!fp_program) return;
-    if(fp_saved_texture_valid) {
-        // 恢复必须先把活动单元切回 unit0 再绑回原纹理，最后恢复活动单元，
-        // 否则会把 unit0 的绑定写到别的单元上。
-        es3_functions.glActiveTexture(GL_TEXTURE0);
-        es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)fp_saved_bound_tex);
-        es3_functions.glActiveTexture((GLenum)fp_saved_active_tex);
-        fp_saved_texture_valid = false;
-    }
+    // unit0 绑定在绑定阶段从未被改写（fp_bound_texture 即 unit0 当前绑定，
+    // 由 glBindTexture 包装器 CPU 维护），无需恢复纹理状态
     if(fp_saved_vao != 0) es3_functions.glBindVertexArray(fp_saved_vao);
     es3_functions.glUseProgram(0);
+    if(current_context) current_context->program = 0;
 }
 
 // 无 program 时用默认 shader 绘制。应用已设置好 VAO attribute（MC 1.12
 // 的 Tessellator 用 glVertexAttribPointer + VBO），这里只切换 program。
 bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(!current_context) return false;
-    GLint prog = 0;
-    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
-    if(prog != 0) return false;
+    // 当前 program 由 glUseProgram 包装器 + 固定管线自身绑定路径统一维护，
+    // 无需向驱动查询（应用有 program 时说明走的现代管线，固定管线不介入）
+    if(current_context->program != 0) return false;
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
     es3_functions.glDrawArrays(mode, first, count);
@@ -1118,9 +1152,7 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
 
 bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
     if(!current_context) return false;
-    GLint prog = 0;
-    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
-    if(prog != 0) return false;
+    if(current_context->program != 0) return false;
     // GL_ELEMENT_ARRAY_BUFFER 绑定属于 VAO：必须在切到私有 fp_vao 之前
     // 记录应用的 EBO（可能为 0=客户端索引），切过去后重新绑定，否则
     // indices 会被当作 fp_vao 里残留 EBO 的偏移，画出垃圾几何。
@@ -1253,12 +1285,20 @@ bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
                                : (size_t)fp_client_vertex_size * fp_type_bytes(fp_client_vertex_type);
             size_t bytes = vsize * (size_t)count;
             if(vsize > 0 && count <= FP_MAX_VERTICES && bytes <= DL_OP_CAP) {
-                vertex_data = fp_client_vertex_ptr;
-                vertex_len = (uint32_t)bytes;
+                // 交错块内偏移：相对原始基址计算（即 stride 内偏移），
+                // 拷贝起点右移 first 后这些偏移仍然适用
+                const uint8_t* base = (const uint8_t*)fp_client_vertex_ptr;
                 snap.vertex_off = 0;
-                snap.texcoord_off = fp_dl_ptr_off(fp_client_vertex_ptr, fp_client_texcoord_ptr, bytes);
-                snap.color_off = fp_dl_ptr_off(fp_client_vertex_ptr, fp_client_color_ptr, bytes);
-                snap.normal_off = fp_dl_ptr_off(fp_client_vertex_ptr, fp_client_normal_ptr, bytes);
+                snap.texcoord_off = fp_dl_ptr_off(base, fp_client_texcoord_ptr, bytes);
+                snap.color_off = fp_dl_ptr_off(base, fp_client_color_ptr, bytes);
+                snap.normal_off = fp_dl_ptr_off(base, fp_client_normal_ptr, bytes);
+                // 桌面语义：glDrawArrays(mode, first, count) 从第 first 个
+                // 顶点开始。快照从 first 处拷贝并把回放 first 归零，
+                // 否则回放会越界读到缓冲区之后。
+                vertex_data = (first > 0) ? (const void*)(base + (size_t)first * vsize)
+                                          : (const void*)base;
+                if(first > 0) first = 0;
+                vertex_len = (uint32_t)bytes;
             }
         }
     } else {
@@ -1457,22 +1497,18 @@ static bool fp_begin_dl_replay(void) {
     fp_ensure_program();
     if(!fp_program || !fp_vao) return false;
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &dl_saved_vao);
-    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &dl_saved_program);
     es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &dl_saved_abo);
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &dl_saved_eab);
+    dl_saved_program = current_context ? (GLint)current_context->program : 0;
 
     // 固定管线只消费 unit0 的纹理；先记录应用的活动单元与 unit0 绑定
     fp_refresh_bound_texture();
-    es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &dl_saved_active_tex);
-    dl_saved_texture_valid = false;
-    if(fp_bound_texture != 0) {
-        dl_saved_texture_valid = true;
-        es3_functions.glActiveTexture(GL_TEXTURE0);
-        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &dl_saved_bound_tex);
-        es3_functions.glBindTexture(GL_TEXTURE_2D, fp_bound_texture);
-    }
+    dl_saved_active_tex = (GLint)fp_active_texture;
+    dl_saved_bound_tex = (GLint)fp_bound_texture;
+    dl_saved_texture_valid = (fp_bound_texture != 0);
 
     es3_functions.glUseProgram(fp_program);
+    if(current_context) current_context->program = fp_program;
     es3_functions.glBindVertexArray(fp_vao);
     dl_replay_dirty = true;
     dl_last_uuse_color = !fp_client_color_active; // 强制首次缓存绘制重设 uUseColor
@@ -1484,7 +1520,7 @@ static void fp_end_dl_replay(void) {
     if(dl_saved_texture_valid) {
         es3_functions.glActiveTexture(GL_TEXTURE0);
         es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)dl_saved_bound_tex);
-        dl_saved_texture_valid = false;
+        fp_bound_texture = (GLuint)dl_saved_bound_tex; // unit0 绑定已还原，同步跟踪
     }
     es3_functions.glActiveTexture((GLenum)dl_saved_active_tex);
     // 同步内部活动单元跟踪，避免后续 glBindTexture 的刷新判断用旧值
@@ -1497,8 +1533,11 @@ static void fp_end_dl_replay(void) {
         es3_functions.glBindVertexArray(0);
     }
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)dl_saved_eab);
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
-    if((GLint)fp_program != dl_saved_program) es3_functions.glUseProgram((GLuint)dl_saved_program);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
+    if((GLint)fp_program != dl_saved_program) {
+        es3_functions.glUseProgram((GLuint)dl_saved_program);
+        if(current_context) current_context->program = (GLuint)dl_saved_program;
+    }
 }
 
 // 为 CLIENT_DRAW op 建立回放缓存（仅 CPU 快照路径）。录制后的顶点/索引
@@ -1534,7 +1573,7 @@ static bool fp_dl_build_client_cache(dl_op_entry_t* op, const dl_client_draw_pay
     bool ok = false;
 
     es3_functions.glBindVertexArray(vao);
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)p->vertex_len, vdata, GL_STATIC_DRAW);
 
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
@@ -1631,7 +1670,7 @@ static bool fp_dl_build_client_cache(dl_op_entry_t* op, const dl_client_draw_pay
 fail:
     // ok=true 时是正常收尾（无 goto 到此），ok=false 时是错误清理路径
     if(expanded) free(expanded);
-    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
     es3_functions.glBindVertexArray(0);
     if(!ok) {
         if(ebo) es3_functions.glDeleteBuffers(1, &ebo);
@@ -1670,8 +1709,14 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
         }
     }
 
-    // uUseColor 由客户端颜色数组是否启用决定；与上次不一致时重设 uniforms
-    bool use_color = p->snap.color_enabled && p->snap.color_size > 0 && p->snap.color_off >= 0;
+    // uUseColor 由客户端颜色数组是否启用决定；判断条件必须与缓存构建端
+    // （fp_dl_build_client_cache）完全一致，否则颜色偏移非法时 uUseColor=1
+    // 但颜色 attribute 已被禁用，shader 会读到 (0,0,0,1) 的脏值
+    size_t tsize = fp_type_bytes(p->snap.vertex_type);
+    size_t vsize = p->snap.vertex_stride ? (size_t)p->snap.vertex_stride
+                                         : (size_t)p->snap.vertex_size * tsize;
+    bool use_color = p->snap.color_enabled && p->snap.color_size > 0 && p->snap.color_off >= 0 &&
+                     vsize != 0 && (size_t)p->snap.color_off < vsize;
     if(dl_replay_dirty || use_color != dl_last_uuse_color) {
         fp_client_color_active = use_color;
         fp_set_default_uniforms();
@@ -2063,8 +2108,12 @@ static void dl_execute_list(GLuint list) {
     if(l->pending_delete && l->exec_count == 0) dl_free_list(l);
 
     if(outer) {
-        dl_replay_active = false;
-        fp_end_dl_replay();
+        // fallback 路径可能临时退出并重新进入批量状态；若重新进入失败
+        // （理论上仅在 program/VAO 初始化失败时发生），这里不再重复恢复
+        if(dl_replay_active) {
+            dl_replay_active = false;
+            fp_end_dl_replay();
+        }
     }
 }
 

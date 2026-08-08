@@ -7,6 +7,12 @@
 
 #pragma GCC visibility push(hidden)
 
+/**
+ * 文件功能：字符串处理工具（gl4es 移植）。
+ *
+ * 提供着色器文本改写所需的查找/替换/插入/扩容/拼接等原语，供
+ * vgpu_shaderconv 与 shader_wrapper 使用。
+ */
 const char* AllSeparators = " \t\n\r.,;()[]{}-<>+*/%&\\\"'^$=!:?";
 
 char* gl4es_resize_if_needed(char* pBuffer, int *size, int addsize);

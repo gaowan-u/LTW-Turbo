@@ -2,6 +2,9 @@
 // Created by maks on 12.07.2025.
 //
 
+/**
+ * 文件功能：env.c 接口声明（环境开关与设备内存检测）。
+ */
 #ifndef GL4ES_WRAPPER_ENV_H
 #define GL4ES_WRAPPER_ENV_H
 

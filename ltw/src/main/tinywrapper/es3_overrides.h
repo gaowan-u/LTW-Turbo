@@ -3,6 +3,13 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：LTW 覆写函数注册表。
+ *
+ * 每个 GLESOVERRIDE(name) 声明一个 LTW 实现的桌面 GL 入口；
+ * proc.c 的 eglGetProcAddress 按此表把游戏请求分发到 LTW 实现。
+ */
 void glClearDepth(double depth);
 void* glMapBuffer(GLenum target, GLenum access);
 void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *params);
