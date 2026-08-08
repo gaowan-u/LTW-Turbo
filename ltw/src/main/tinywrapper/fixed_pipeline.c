@@ -558,6 +558,27 @@ static void fp_ensure_program(void) {
 }
 
 // 提交即时模式顶点
+// MathCode: 1282 排查——内部 glUseProgram(fp_program) 是原生调用，不在
+// GLTRACE_CALL 覆盖内；fp_set_default_uniforms 探针在它之后立刻读到 stale
+// 0x502，两者之间没有别的调用。给三处内部绑定加同样的双排空探针，并查询
+// glIsProgram 确认句柄是否已失效（被删/未链接/跨上下文）。
+static void fp_trace_use_program(const char* site, GLuint prog) {
+    if(!glerr_trace) { es3_functions.glUseProgram(prog); return; }
+    static unsigned int _fp_up_n = 0;
+    if((++_fp_up_n & 0xF) == 0) {
+        GLenum _s = es3_functions.glGetError();
+        es3_functions.glUseProgram(prog);
+        GLenum _f = es3_functions.glGetError();
+        if(_s != GL_NO_ERROR)
+            printf("[LTW ERROR] stale 0x%x before fp glUseProgram (%s)\n", (unsigned)_s, site);
+        if(_f != GL_NO_ERROR)
+            printf("[LTW ERROR] fp glUseProgram produced 0x%x (%s, prog=%u isProgram=%u)\n",
+                   (unsigned)_f, site, prog, (unsigned)es3_functions.glIsProgram(prog));
+        return;
+    }
+    es3_functions.glUseProgram(prog);
+}
+
 static void fp_flush_immediate(void) {
     if(!fp_immediate_active || fp_immediate_count == 0) return;
     fp_ensure_program();
@@ -625,7 +646,7 @@ static void fp_flush_immediate(void) {
 
     // 绑定默认 program + 属性（使用私有 VAO，避免污染应用绑定的 VAO）
     es3_functions.glBindVertexArray(fp_vao);
-    es3_functions.glUseProgram(fp_program);
+    fp_trace_use_program("fp_flush_immediate", fp_program);
     if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
@@ -1153,7 +1174,7 @@ bool fp_bind_default_program(void) {
     fp_ensure_program();
     if(!fp_program) return false;
     fp_refresh_bound_texture();
-    es3_functions.glUseProgram(fp_program);
+    fp_trace_use_program("fp_bind_default_program", fp_program);
     if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
 
@@ -1689,7 +1710,7 @@ static bool fp_begin_dl_replay(void) {
     dl_saved_bound_tex = (GLint)fp_bound_texture;
     dl_saved_texture_valid = (fp_bound_texture != 0);
 
-    es3_functions.glUseProgram(fp_program);
+    fp_trace_use_program("fp_begin_dl_replay", fp_program);
     if(current_context) current_context->program = fp_program;
     es3_functions.glBindVertexArray(fp_vao);
     dl_current_vao = fp_vao;
