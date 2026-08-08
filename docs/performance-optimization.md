@@ -146,6 +146,14 @@ op 的顶点拼进一个大 VBO、索引拼进一个大 EBO，回放时一次
 - 缓存首次建立时一次性 CPU 拼接 + GPU 上传，之后每帧只有一次绘制；
 - 合并缓存随列表删除/EGL context 重建释放或失效，与原有每 op 缓存一致。
 
+> **2026-08-08 状态**：合并路径仍在实验期。实测日志曾出现
+> `LTW: merged display list draw err 0x502`（即 MC 帧末
+> “Post render 1282”）刷屏与生物贴图错乱。已修复：
+> 内部 VAO 跟踪（`dl_current_vao`）被即时模式/默认 program 路径绑定解绑后
+> 不同步，导致合并绘制用错误 VAO 执行 `glDrawElements`；合并路径改为每次
+> 绘制前强制绑定自己的 VAO + EBO，并限制 UV/COLOR 必须与顶点同 stride
+> 才允许合并。默认保持开启，继续实验验证。
+
 ### 9.1 应用侧桥接（参考 MobileGlues 思路，实现独立）
 
 设置 App 会把配置写到共享文件 `/sdcard/LTW-Turbo/config.json`

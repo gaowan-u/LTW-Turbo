@@ -203,6 +203,7 @@ static bool dl_saved_texture_valid = false;
 
 static void dl_execute_list(GLuint list);
 static void fp_dl_reset_caches(void);
+static void fp_dl_free_merged(fp_dl_list_t* l);
 
 // ---- 默认 shader ----
 // MathCode: 默认 shader 增加受伤红闪模拟（uLightTint/uLightColor，2026-08）
@@ -641,6 +642,10 @@ static void fp_flush_immediate(void) {
     // 恢复状态
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
     es3_functions.glBindVertexArray((GLuint)old_vao);
+    // MathCode: 即时模式路径绑定/解绑了 VAO，必须同步内部跟踪值，
+    // 否则显示列表合并路径会误以为自己的 VAO 仍处于绑定状态而跳过绑定，
+    // 用应用侧 VAO（可能没有 EBO）执行 glDrawElements → GL_INVALID_OPERATION。
+    dl_current_vao = (GLuint)old_vao;
     if(old_program != (GLint)fp_program) {
         es3_functions.glUseProgram((GLuint)old_program);
         if(current_context) current_context->program = (GLuint)old_program;
@@ -662,6 +667,9 @@ void fp_init(void) {
         dl_merge_enabled = env_istrue("LTW_DL_MERGE");
     } else {
         ltw_config_init();
+        // MathCode: 2026-08-08 修复合并绘制 1282（Post render）与生物贴图错乱：
+        // 合并路径每次绘制前强制绑定自己的 VAO+EBO，并修复内部 VAO 跟踪被
+        // 即时模式/默认 program 路径解绑后不同步的问题；默认保持开启。
         dl_merge_enabled = ltw_config_get_bool("dlMerge", true);
     }
     fp_init_done = false;
@@ -1273,6 +1281,9 @@ void fp_unbind_default_program(void) {
     // unit0 绑定在绑定阶段从未被改写（fp_bound_texture 即 unit0 当前绑定，
     // 由 glBindTexture 包装器 CPU 维护），无需恢复纹理状态
     if(fp_saved_vao != 0) es3_functions.glBindVertexArray(fp_saved_vao);
+    // 与 fp_flush_immediate 同理：恢复应用 VAO 后同步内部跟踪值，
+    // 避免显示列表合并路径基于过期值跳过自己的 VAO 绑定。
+    dl_current_vao = (GLuint)fp_saved_vao;
     es3_functions.glUseProgram(0);
     if(current_context) current_context->program = 0;
 }
@@ -1897,6 +1908,10 @@ static bool fp_dl_merge_op_cacheable(const dl_op_entry_t* op, const dl_client_dr
     if(p->snap.vertex_abo != 0 || p->snap.texcoord_abo != 0 || p->snap.color_abo != 0) return false;
     if(p->indices_ebo != 0 || p->vertex_len == 0 || p->count <= 0 || p->first != 0) return false;
     if((size_t)p->vertex_off + (size_t)p->vertex_len > (size_t)op->size) return false;
+    // 合并 VBO 按 vertex_stride 交错拼接，UV/COLOR 必须与顶点同 stride，
+    // 否则合并后的 attribute 偏移全部错位（生物贴图错乱）。
+    if(p->snap.texcoord_stride != 0 && p->snap.texcoord_stride != p->snap.vertex_stride) return false;
+    if(p->snap.color_stride != 0 && p->snap.color_stride != p->snap.vertex_stride) return false;
     if(p->indexed) {
         if(p->indices_len == 0 || (size_t)p->indices_off + (size_t)p->indices_len > (size_t)op->size) return false;
         if(p->itype != GL_UNSIGNED_BYTE && p->itype != GL_UNSIGNED_SHORT && p->itype != GL_UNSIGNED_INT) return false;
@@ -2115,24 +2130,49 @@ static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
         if(l->merge.attempted) return false;
         if(!fp_dl_build_merged_cache(l)) return false;
     }
-    if(l->merge.draw_count <= 0 || !l->merge.vao) return false;
+    if(l->merge.draw_count <= 0 || !l->merge.vao || !l->merge.ebo) return false;
+
+    // MathCode: 1282 排查（2026-08-08）。此前合并绘制刷屏
+    // “merged display list draw err 0x502”（即 MC 帧末 Post render 1282）。
+    // 根因是 dl_current_vao 只是内部跟踪值，fp_flush_immediate /
+    // fp_unbind_default_program 等路径绑定/解绑 VAO 时并不更新它；
+    // 若合并路径按“跟踪值相同”跳过 VAO 绑定，就会用应用侧 VAO
+    // （可能无 ELEMENT_ARRAY_BUFFER）执行 glDrawElements →
+    // GL_INVALID_OPERATION，并画错 attribute（贴图错乱）。
+    // 这里每次绘制前强制绑定自己的 VAO + EBO，不再信任可能过期的跟踪值；
+    // 若 GL 对象已失效（列表重建/上下文重建后）则丢弃缓存走逐 op 回退。
+    if(es3_functions.glIsVertexArray(l->merge.vao) != GL_TRUE ||
+       es3_functions.glIsBuffer(l->merge.ebo) != GL_TRUE ||
+       es3_functions.glIsBuffer(l->merge.vbo) != GL_TRUE) {
+        LTW_ERROR_PRINTF("LTW: merged display list cache invalid (vao=%u vbo=%u ebo=%u), fallback",
+                         l->merge.vao, l->merge.vbo, l->merge.ebo);
+        fp_dl_free_merged(l);
+        return false;
+    }
+
     fp_client_color_active = l->merge.use_color;
     if(dl_replay_dirty || l->merge.use_color != dl_last_uuse_color) {
         fp_set_default_uniforms();
         dl_replay_dirty = false;
         dl_last_uuse_color = l->merge.use_color;
     }
-    if(dl_current_vao != l->merge.vao) {
-        es3_functions.glBindVertexArray(l->merge.vao);
-        dl_current_vao = l->merge.vao;
+
+    es3_functions.glBindVertexArray(l->merge.vao);
+    dl_current_vao = l->merge.vao;
+    GLenum vao_err = es3_functions.glGetError();
+    if(vao_err != GL_NO_ERROR) {
+        LTW_ERROR_PRINTF("LTW: merged display list VAO bind err 0x%x (vao=%u)", vao_err, l->merge.vao);
     }
-    if(l->merge.ebo) {
-        es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, l->merge.ebo);
+    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, l->merge.ebo);
+    GLenum ebo_err = es3_functions.glGetError();
+    if(ebo_err != GL_NO_ERROR) {
+        LTW_ERROR_PRINTF("LTW: merged display list EBO bind err 0x%x (ebo=%u)", ebo_err, l->merge.ebo);
     }
     es3_functions.glDrawElements(GL_TRIANGLES, l->merge.draw_count, GL_UNSIGNED_INT, NULL);
     GLenum draw_err = es3_functions.glGetError();
     if(draw_err != GL_NO_ERROR) {
-        LTW_ERROR_PRINTF("LTW: merged display list draw err 0x%x (count=%d)", draw_err, l->merge.draw_count);
+        LTW_ERROR_PRINTF("LTW: merged display list draw err 0x%x (count=%d vao=%u vbo=%u ebo=%u)",
+                         draw_err, l->merge.draw_count, l->merge.vao, l->merge.vbo, l->merge.ebo);
     }
     return true;
 }
@@ -2142,7 +2182,10 @@ static void fp_dl_free_merged(fp_dl_list_t* l) {
     if(l->merge.vao) {
         GLint bound_vao = 0;
         es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
-        if((GLuint)bound_vao == l->merge.vao) es3_functions.glBindVertexArray(0);
+        if((GLuint)bound_vao == l->merge.vao) {
+            es3_functions.glBindVertexArray(0);
+            dl_current_vao = 0;
+        }
         if(l->merge.ebo) es3_functions.glDeleteBuffers(1, &l->merge.ebo);
         if(l->merge.vbo) es3_functions.glDeleteBuffers(1, &l->merge.vbo);
         es3_functions.glDeleteVertexArrays(1, &l->merge.vao);
@@ -2160,7 +2203,10 @@ static void fp_dl_free_cache(dl_op_entry_t* op) {
     if(!op || !op->cache_vao) return;
     GLint bound_vao = 0;
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
-    if((GLuint)bound_vao == op->cache_vao) es3_functions.glBindVertexArray(0);
+    if((GLuint)bound_vao == op->cache_vao) {
+        es3_functions.glBindVertexArray(0);
+        dl_current_vao = 0;
+    }
     if(op->cache_ebo) es3_functions.glDeleteBuffers(1, &op->cache_ebo);
     if(op->cache_vbo) es3_functions.glDeleteBuffers(1, &op->cache_vbo);
     es3_functions.glDeleteVertexArrays(1, &op->cache_vao);
