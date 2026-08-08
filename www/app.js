@@ -82,16 +82,25 @@ function buildSharedConfig(){
 
 async function ensureAllFilesAccess(silent){
   const A=window.Capacitor?.Plugins?.AllFilesAccess;
-  if(!A) return true;
-  try{
-    const {granted}=await A.isGranted();
-    if(granted) return true;
-  }catch(e){ return true; }
+  const FS=window.Capacitor?.Plugins?.Filesystem;
+  if(!FS) return true;
+  if(A){
+    try{
+      const {granted}=await A.isGranted();
+      if(granted) return true;
+    }catch(e){}
+  }
   if(!silent&&!sharedConfigPrompted){
     sharedConfigPrompted=true;
-    showDialog('需要“所有文件访问”权限',
-      'LTW 需要写入共享目录 /sdcard/LTW-Turbo/config.json，渲染库启动时才能读到实验性开关。请授权后返回。',
-      '去授权',()=>A.openSettings());
+    if(A){
+      showDialog('需要“所有文件访问”权限',
+        'LTW 需要写入共享目录 /sdcard/LTW-Turbo/config.json，渲染库启动时才能读到实验性开关。请授权后返回。',
+        '去授权',()=>A.openSettings());
+    }else{
+      showDialog('需要“所有文件访问”权限',
+        '检测不到权限插件，请在系统设置里手动授予本应用“所有文件访问”权限，然后回到本页点“立即写入共享配置”。',
+        '知道了',()=>{});
+    }
   }
   return false;
 }
@@ -99,7 +108,10 @@ async function ensureAllFilesAccess(silent){
 async function syncSharedConfig(silent){
   const FS=window.Capacitor?.Plugins?.Filesystem;
   if(!FS) return;
-  if(!await ensureAllFilesAccess(silent)) return;
+  if(!await ensureAllFilesAccess(silent)){
+    if(!silent) toast('请先授予“所有文件访问”权限');
+    return;
+  }
   try{
     await FS.writeFile({
       path:SHARED_CONFIG_PATH,
@@ -137,7 +149,8 @@ const SETTINGS=[
   {type:'accent',key:'accent',label:'强调色'}]},
  {title:'渲染',items:[
   {type:'select',key:'backend',label:'渲染后端',options:['GLES','Vulkan'],def:0,disable:[1]},
-  {type:'switch',key:'dlMerge',label:'显示列表整表合并（实验）',def:true,status:'lab'}]},
+  {type:'switch',key:'dlMerge',label:'显示列表整表合并（实验）',def:true,status:'lab'},
+  {type:'action',key:'sharedConfig',label:'立即写入共享配置',status:'lab'}]},
  {title:'缓存',items:[
   {type:'slider',key:'cache',label:'着色器缓存大小',min:64,max:1024,step:64,def:512,unit:' MiB',status:'off'},
   {type:'switch',key:'preheat',label:'缓存预热',def:false,status:'plan'}]},
@@ -255,7 +268,11 @@ function groupCard(title,items,lab){
       const idx=Store.get(it.key,it.def)<it.options.length?Store.get(it.key,it.def):it.def;
       openMenu(row,it.options,idx,i=>{ Store.set(it.key,i); row.querySelector('.sel').innerHTML=it.options[i]+ARROW; if(it.key==='theme') applyTheme(i); },it.disable||[]);
     };
-    if(it.type==='action') row.onclick=()=>{ if(it.key==='export') openExport(); else openImport(); };
+    if(it.type==='action') row.onclick=()=>{
+      if(it.key==='export') openExport();
+      else if(it.key==='import') openImport();
+      else if(it.key==='sharedConfig') syncSharedConfig(false);
+    };
     if(it.type==='accent'&&!dis) row.querySelectorAll('.swatch').forEach(b=>b.onclick=()=>{ applyAccent(b.dataset.c); Store.set('accent',b.dataset.c); row.querySelectorAll('.swatch').forEach(x=>x.classList.toggle('on',x===b)); });
     card.appendChild(row);
   });
@@ -313,7 +330,7 @@ function drawQR(text,canvas){
 let toastTimer=null;
 function toast(msg){
   const t=$('#toast'); t.textContent=msg; t.hidden=false;
-  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.hidden=true,1800);
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.hidden=true,3000);
 }
 function openExport(){
   const json=JSON.stringify(collectConfig(),null,2);
@@ -545,5 +562,11 @@ $('#scan-modal').onclick=e=>{ if(e.target===$('#scan-modal')){ stopScan(); $('#s
   applyAccent(Store.get('accent',ACCENTS[0]));
   applyTheme(Store.get('theme',0));
   renderSettings(); renderInfo(); switchView('home',false);
-  syncSharedConfig(true);
+  if(window.Capacitor?.Plugins?.Filesystem) ensureAllFilesAccess(false);
 })();
+
+if(window.Capacitor?.Plugins?.App){
+  window.Capacitor.Plugins.App.addListener('appStateChange',(state)=>{
+    if(state.isActive) syncSharedConfig(true);
+  });
+}
