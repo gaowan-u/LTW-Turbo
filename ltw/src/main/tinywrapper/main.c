@@ -380,7 +380,10 @@ void *glMapBufferRange( 	GLenum target,
         es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
         if(eab != 0) ltw_ebo_shadow_invalidate((GLuint)eab);
     }
-    return es3_functions.glMapBufferRange(target, offset, length, access);
+    GLvoid* _fp_map_ret = NULL;
+    GLTRACE_CALL(glMapBufferRange,
+                 _fp_map_ret = es3_functions.glMapBufferRange(target, offset, length, access));
+    return _fp_map_ret;
 }
 
 void glFlushMappedBufferRange( 	GLenum target,

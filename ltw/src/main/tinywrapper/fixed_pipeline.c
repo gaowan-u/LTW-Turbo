@@ -579,6 +579,26 @@ static void fp_trace_use_program(const char* site, GLuint prog) {
     es3_functions.glUseProgram(prog);
 }
 
+// MathCode: 1282 排查——fp 路径的原生 glBindVertexArray(fp_vao) 同样未被
+// 追踪，且恰好位于探针读到 stale 之前。若 fp_vao 句柄失效（上下文重建/
+// 被删），每次绑定都会生成 GL_INVALID_OPERATION(0x502)。
+static void fp_trace_bind_vao(const char* site, GLuint vao) {
+    if(!glerr_trace) { es3_functions.glBindVertexArray(vao); return; }
+    static unsigned int _fp_vao_n = 0;
+    if((++_fp_vao_n & 0xF) == 0) {
+        GLenum _s = es3_functions.glGetError();
+        es3_functions.glBindVertexArray(vao);
+        GLenum _f = es3_functions.glGetError();
+        if(_s != GL_NO_ERROR)
+            printf("[LTW ERROR] stale 0x%x before fp glBindVertexArray (%s)\n", (unsigned)_s, site);
+        if(_f != GL_NO_ERROR)
+            printf("[LTW ERROR] fp glBindVertexArray produced 0x%x (%s, vao=%u isVAO=%u)\n",
+                   (unsigned)_f, site, vao, (unsigned)es3_functions.glIsVertexArray(vao));
+        return;
+    }
+    es3_functions.glBindVertexArray(vao);
+}
+
 static void fp_flush_immediate(void) {
     if(!fp_immediate_active || fp_immediate_count == 0) return;
     fp_ensure_program();
@@ -645,18 +665,20 @@ static void fp_flush_immediate(void) {
     }
 
     // 绑定默认 program + 属性（使用私有 VAO，避免污染应用绑定的 VAO）
-    es3_functions.glBindVertexArray(fp_vao);
+    fp_trace_bind_vao("fp_flush_immediate", fp_vao);
     fp_trace_use_program("fp_flush_immediate", fp_program);
     if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
-    es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
-    es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
-    es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
-    es3_functions.glVertexAttribPointer(FP_ATTR_POS, 3, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES, NULL);
-    es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, 4, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
-                                        (const void*)(3 * sizeof(GLfloat)));
-    es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
-                                        (const void*)(7 * sizeof(GLfloat)));
+    GLTRACE_CALL(fp_attrib_setup_immediate, {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+        es3_functions.glVertexAttribPointer(FP_ATTR_POS, 3, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES, NULL);
+        es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, 4, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
+                                            (const void*)(3 * sizeof(GLfloat)));
+        es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
+                                            (const void*)(7 * sizeof(GLfloat)));
+    });
 
     GLTRACE_CALL(glDrawArrays_fp_immediate, es3_functions.glDrawArrays(mode, 0, count));
 
@@ -1180,7 +1202,7 @@ bool fp_bind_default_program(void) {
 
     // 使用私有 VAO，避免污染应用绑定的 VAO 的 attribute 状态
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, (GLint*)&fp_saved_vao);
-    if(fp_vao) es3_functions.glBindVertexArray(fp_vao);
+    if(fp_vao) fp_trace_bind_vao("fp_bind_default_program", fp_vao);
     return true;
 }
 
@@ -1219,38 +1241,40 @@ static void fp_upload_client_arrays(GLsizei count) {
                                             fp_client_vertex_ptr, GL_STREAM_DRAW));
 
     // 位置 attribute：offset 0
-    es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
-    es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
-                                        GL_FALSE, fp_client_vertex_stride, NULL);
+    GLTRACE_CALL(fp_attrib_setup_client, {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+        es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
+                                            GL_FALSE, fp_client_vertex_stride, NULL);
 
-    // 纹理 attribute：偏移 = texcoord 指针 - 顶点指针（交错布局内）
-    if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0 && fp_client_texcoord_ptr) {
-        ptrdiff_t off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
-        if(off >= 0 && (size_t)off < vsize) {
-            es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
-            es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
-                                                GL_FALSE, fp_client_vertex_stride, (const void*)off);
+        // 纹理 attribute：偏移 = texcoord 指针 - 顶点指针（交错布局内）
+        if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0 && fp_client_texcoord_ptr) {
+            ptrdiff_t off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            if(off >= 0 && (size_t)off < vsize) {
+                es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+                es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
+                                                    GL_FALSE, fp_client_vertex_stride, (const void*)off);
+            } else {
+                es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+            }
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
         }
-    } else {
-        es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
-    }
-    // 颜色 attribute：偏移 = color 指针 - 顶点指针
-    fp_client_color_active = (fp_client_color_enabled && fp_client_color_size > 0 && fp_client_color_ptr);
-    if(fp_client_color_active) {
-        ptrdiff_t off = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
-        if(off >= 0 && (size_t)off < vsize) {
-            es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
-            es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
-                                                GL_TRUE, fp_client_vertex_stride, (const void*)off);
+        // 颜色 attribute：偏移 = color 指针 - 顶点指针
+        fp_client_color_active = (fp_client_color_enabled && fp_client_color_size > 0 && fp_client_color_ptr);
+        if(fp_client_color_active) {
+            ptrdiff_t off = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            if(off >= 0 && (size_t)off < vsize) {
+                es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+                es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
+                                                    GL_TRUE, fp_client_vertex_stride, (const void*)off);
+            } else {
+                fp_client_color_active = false;
+                es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+            }
         } else {
-            fp_client_color_active = false;
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
-    } else {
-        es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
-    }
+    });
 
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
 }
@@ -1712,7 +1736,7 @@ static bool fp_begin_dl_replay(void) {
 
     fp_trace_use_program("fp_begin_dl_replay", fp_program);
     if(current_context) current_context->program = fp_program;
-    es3_functions.glBindVertexArray(fp_vao);
+    fp_trace_bind_vao("fp_begin_dl_replay", fp_vao);
     dl_current_vao = fp_vao;
     dl_replay_dirty = true;
     dl_last_uuse_color = !fp_client_color_active; // 强制首次缓存绘制重设 uUseColor
