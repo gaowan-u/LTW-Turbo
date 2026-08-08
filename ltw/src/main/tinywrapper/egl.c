@@ -10,6 +10,7 @@
 #include "mempool.h"
 #include "debug.h"
 #include "fixed_pipeline.h"
+#include "quads.h"
 #include <string.h>
 #include <pthread.h>
 
@@ -63,6 +64,8 @@ static bool init_context(context_t* tw_context) {
     if(!tw_context->framebuffer_pool) goto fail_dealloc;
     tw_context->swizzle_track_pool = mempool_create(sizeof(texture_swizzle_track_t), 128);
     if(!tw_context->swizzle_track_pool) goto fail_dealloc;
+    tw_context->ebo_shadow_map = alloc_intmap_safe();
+    if(!tw_context->ebo_shadow_map) goto fail_dealloc;
 
     return true;
 
@@ -79,6 +82,8 @@ static bool init_context(context_t* tw_context) {
         unordered_map_free(tw_context->program_map);
     if(tw_context->texture_swztrack_map)
         unordered_map_free(tw_context->texture_swztrack_map);
+    if(tw_context->ebo_shadow_map)
+        unordered_map_free(tw_context->ebo_shadow_map);
     
     // 清理内存池
     if(tw_context->shader_info_pool) mempool_destroy(tw_context->shader_info_pool);
@@ -91,6 +96,9 @@ static bool init_context(context_t* tw_context) {
 }
 
 static void free_context(context_t* tw_context) {
+    ltw_ebo_shadow_destroy(tw_context);
+    if(tw_context->quads_expanded) free(tw_context->quads_expanded);
+
     unordered_map_free(tw_context->shader_map);
     unordered_map_free(tw_context->program_map);
     unordered_map_free(tw_context->framebuffer_map);

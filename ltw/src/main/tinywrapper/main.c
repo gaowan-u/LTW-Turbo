@@ -65,6 +65,12 @@ void *glMapBuffer(GLenum target, GLenum access) {
             return NULL;
     }
 
+    // 映射写会使 EBO 影子副本失效
+    if(target == GL_ELEMENT_ARRAY_BUFFER && (access_range & GL_MAP_WRITE_BIT)) {
+        GLint eab = 0;
+        es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
+        if(eab != 0) ltw_ebo_shadow_invalidate((GLuint)eab);
+    }
     es3_functions.glGetBufferParameteriv(target, GL_BUFFER_SIZE, &length);
     return es3_functions.glMapBufferRange(target, 0, length, access_range);
 }
@@ -346,6 +352,9 @@ void glBufferStorage(GLenum target,
         flags |= (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
     }
     es3_functions.glBufferStorageEXT(target, size, data, flags);
+    if(target == GL_ELEMENT_ARRAY_BUFFER && data != NULL) {
+        ltw_ebo_shadow_upload(target, size, data, 0, true);
+    }
 }
 
 void *glMapBufferRange( 	GLenum target,
@@ -353,6 +362,12 @@ void *glMapBufferRange( 	GLenum target,
                            GLsizeiptr length,
                            GLbitfield access) {
     if(never_flush_buffers) access &= ~GL_MAP_FLUSH_EXPLICIT_BIT;
+    // 映射写会使影子副本失效（无法跟踪 GPU 写入内容）
+    if(target == GL_ELEMENT_ARRAY_BUFFER && (access & (GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_INVALIDATE_RANGE_BIT))) {
+        GLint eab = 0;
+        es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
+        if(eab != 0) ltw_ebo_shadow_invalidate((GLuint)eab);
+    }
     return es3_functions.glMapBufferRange(target, offset, length, access);
 }
 
@@ -530,10 +545,19 @@ void glHint(GLenum target, GLenum mode) {
 void glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum usage) {
     if(!current_context) return;
     GLTRACE_CALL(glBufferData, es3_functions.glBufferData(target, size, data, usage));
+    ltw_ebo_shadow_upload(target, size, data, 0, true);
 }
 void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void* data) {
     if(!current_context) return;
     GLTRACE_CALL(glBufferSubData, es3_functions.glBufferSubData(target, offset, size, data));
+    ltw_ebo_shadow_upload(target, size, data, offset, false);
+}
+void glDeleteBuffers(GLsizei n, const GLuint* buffers) {
+    if(!current_context) return;
+    for(GLsizei i = 0; i < n; i++) {
+        if(buffers) ltw_ebo_shadow_invalidate(buffers[i]);
+    }
+    es3_functions.glDeleteBuffers(n, buffers);
 }
 void glCompileShader(GLuint shader) {
     if(!current_context) return;

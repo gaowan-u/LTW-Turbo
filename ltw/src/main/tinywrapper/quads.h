@@ -8,9 +8,16 @@
 
 #include <GLES3/gl3.h>
 #include <stdbool.h>
+#include "egl.h"
 
 // 尝试把 QUADS 绘制转换为 TRIANGLES。返回 true 表示已处理，false 表示不是 QUADS 模式。
 bool ltw_quads_draw_arrays(GLenum mode, GLint first, GLsizei count);
 bool ltw_quads_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* indices);
+
+// EBO CPU 影子副本（QUADS 展开零同步）：glBufferData/glBufferSubData 时保留
+// 索引副本，展开时直接读 CPU 内存，避免每帧 glMapBufferRange 造成 GPU 同步停顿。
+void ltw_ebo_shadow_upload(GLenum target, GLsizeiptr size, const void* data, GLintptr offset, bool full);
+void ltw_ebo_shadow_invalidate(GLuint buffer);
+void ltw_ebo_shadow_destroy(context_t* ctx);
 
 #endif //LTW_QUADS_H

@@ -8,6 +8,7 @@
 #define POJAVLAUNCHER_EGL_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <EGL/egl.h>
 #include "proc.h"
 #include "unordered_map/unordered_map.h"
@@ -143,6 +144,15 @@ typedef struct {
     mempool_t* program_info_pool;   //program_info_t 内存池
     mempool_t* framebuffer_pool;    //framebuffer_t 内存池
     mempool_t* swizzle_track_pool;  //texture_swizzle_track_t 内存池
+    // EBO CPU 影子副本（QUADS 展开零同步，实现见 quads.c）
+    unordered_map* ebo_shadow_map;  // EBO id -> ebo_shadow_t*
+    size_t ebo_shadow_total;        // 影子副本占用字节数
+    // QUADS 展开结果缓存：同一来源 EBO + 同一数据版本时跳过重新上传
+    GLuint quads_last_ebo;          // 上次展开上传的来源 EBO
+    uint64_t quads_last_gen;        // 上次展开上传的 EBO 数据版本
+    GLsizei quads_last_tri_count;   // 上次展开上传的三角形索引数
+    uint32_t* quads_expanded;       // 展开索引的可复用缓冲区
+    GLsizei quads_expanded_cap;     // 容量（uint32 元素数）
 } context_t;        //表示OpenGL ES的上下文状态信息
 
 extern thread_local context_t *current_context;
