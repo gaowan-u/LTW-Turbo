@@ -25,6 +25,7 @@
 // ---- 内部常量 ----
 #define FP_MAX_STACK_DEPTH 32
 #define FP_MAX_VERTICES 65536
+#define FP_TEXENV_UNITS 3
 #define FP_STRIDE (3 + 4 + 2)          // pos3 + color4 + uv2
 #define FP_VERTEX_BYTES (FP_STRIDE * sizeof(GLfloat))
 
@@ -315,7 +316,11 @@ static bool fp_client_color_enabled = false;
 static bool fp_client_normal_enabled = false;
 
 // 纹理状态
-static bool fp_texture_enabled = false;
+// MathCode: GL_TEXTURE_2D 启用状态是每个纹理单元独立的（桌面语义）。
+// 原版 disableLightmap() 会在光照贴图单元（unit1）上关纹理，若只用一个
+// bool 会把 unit0 的启用状态也带成 false，导致 GUI（准心/装备栏等不显式
+// enableTexture2D 的绘制）变成白色方块。
+static bool fp_texture_enabled[FP_TEXENV_UNITS];
 static GLuint fp_bound_texture = 0;
 
 // MathCode: 纹理环境状态模拟（2026-08 新增，修复生物受伤红闪）
@@ -324,7 +329,6 @@ static GLuint fp_bound_texture = 0;
 // GL_TEXTURE_ENV_COLOR 实现受伤红闪（env color = (1,0,0,0.3)）与亮度调整。
 // 这里只跟踪固定管线实际用到的单元（0=主纹理 1=光照贴图 2=亮度纹理），
 // 默认 shader 在绘制时按需应用。
-#define FP_TEXENV_UNITS 3
 typedef struct {
     GLint env_mode;      // GL_TEXTURE_ENV_MODE（默认 GL_MODULATE）
     GLint combine_rgb;   // GL_COMBINE_RGB
@@ -662,7 +666,7 @@ void fp_init(void) {
     fp_client_vertex_enabled = fp_client_texcoord_enabled = fp_client_color_enabled = fp_client_normal_enabled = false;
     fp_client_active_texture = GL_TEXTURE0;
     fp_active_texture = GL_TEXTURE0;
-    fp_texture_enabled = false;
+    fp_texture_enabled[0] = fp_texture_enabled[1] = fp_texture_enabled[2] = false;
     fp_bound_texture = 0;
     for(int i = 0; i < FP_TEXENV_UNITS; i++) {
         fp_texenv_state[i].env_mode = GL_MODULATE;
@@ -905,20 +909,31 @@ void fp_array_element(GLint i) {
 }
 
 // ---- 纹理状态 ----
-void fp_set_texture_enabled(bool enabled) { fp_texture_enabled = enabled; }
-void fp_set_active_texture(GLuint unit) {
-    fp_active_texture = unit;
-    if(unit == GL_TEXTURE0) {
-        fp_refresh_bound_texture();
-    }
-}
-
 static int fp_texenv_unit_index(GLenum unit) {
     switch(unit) {
         case GL_TEXTURE0: return 0;
         case GL_TEXTURE1: return 1;
         case GL_TEXTURE2: return 2;
         default: return -1;
+    }
+}
+
+// MathCode: 按当前活动纹理单元记录 GL_TEXTURE_2D 启用状态
+// （GL_TEXTURE_2D 是 per-unit 的桌面状态，unit1 的 disable 不能影响 unit0）。
+void fp_set_texture_enabled(bool enabled) {
+    int idx = fp_texenv_unit_index(fp_active_texture);
+    if(idx >= 0 && idx < FP_TEXENV_UNITS) fp_texture_enabled[idx] = enabled;
+}
+
+// 显示列表回放专用：TEXTURE_ENABLE op 录制时来自 unit0 的
+// glEnable/glDisable(GL_TEXTURE_2D)，回放时固定写 unit0 槽位。
+void fp_set_unit0_texture_enabled(bool enabled) {
+    fp_texture_enabled[0] = enabled;
+}
+void fp_set_active_texture(GLuint unit) {
+    fp_active_texture = unit;
+    if(unit == GL_TEXTURE0) {
+        fp_refresh_bound_texture();
     }
 }
 
@@ -1062,7 +1077,7 @@ static void fp_set_default_uniforms(void) {
                fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
     if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
     if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
-    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, (fp_bound_texture != 0 && fp_texture_enabled) ? 1 : 0);
+    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, (fp_bound_texture != 0 && fp_texture_enabled[0]) ? 1 : 0);
     // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
     if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
     if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
@@ -1914,7 +1929,7 @@ static void fp_dl_execute_op(dl_op_entry_t* op) {
         case DL_OP_TEXTURE_ENABLE: {
             if(op->size < sizeof(dl_texture_enable_payload_t)) return;
             const dl_texture_enable_payload_t* p = (const dl_texture_enable_payload_t*)payload;
-            fp_set_texture_enabled(p->enabled != 0);
+            fp_set_unit0_texture_enabled(p->enabled != 0);
             break;
         }
         default:
