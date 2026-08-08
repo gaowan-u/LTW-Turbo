@@ -65,7 +65,10 @@ void glGetTexImage( 	GLenum target,
                        void * pixels) {
     if(!current_context) return;
     if(!current_context->es31) goto unsupported_esver;
-    if(format != GL_RGBA && format != GL_RGBA_INTEGER && type != GL_UNSIGNED_BYTE && type != GL_UNSIGNED_INT && type != GL_INT && type != GL_FLOAT) goto unsupported;
+    // 白名单是“格式合法”且“类型合法”；之前的表达式用 && 串起 format 和 type
+    // 判断，导致 (合法格式 + 非法类型) 之类组合漏判，混进 glReadPixels 报错。
+    if(!(format == GL_RGBA || format == GL_RGBA_INTEGER) ||
+       !(type == GL_UNSIGNED_BYTE || type == GL_UNSIGNED_INT || type == GL_INT || type == GL_FLOAT)) goto unsupported;
     framebuffer_copier_t* copier = &current_context->framebuffer_copier;
     GLint texture;
     es3_functions.glGetIntegerv(get_textarget_query_param(target), &texture);

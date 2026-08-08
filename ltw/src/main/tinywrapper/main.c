@@ -460,11 +460,12 @@ void glDisable(GLenum cap) {
 void glBindTexture(GLenum target, GLuint texture) {
     if(!current_context) return;
     GLTRACE_CALL(glBindTexture, es3_functions.glBindTexture(target, texture));
-    if(target == GL_TEXTURE_2D) fp_set_active_texture(0);
+    if(target == GL_TEXTURE_2D) fp_notify_texture_bind();
 }
 void glActiveTexture(GLenum texture) {
     if(!current_context) return;
     GLTRACE_CALL(glActiveTexture, es3_functions.glActiveTexture(texture));
+    fp_set_active_texture(texture);
 }
 void glPixelStorei(GLenum pname, GLint param) {
     if(!current_context) return;
@@ -634,6 +635,9 @@ void glBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint
 }
 void glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices) {
     if(!current_context) return;
+    // 与 glDrawElements 走同一套兼容处理：QUADS 展开 + 无 program 时固定管线。
+    if(ltw_quads_draw_elements(mode, count, type, indices)) return;
+    if(fp_try_draw_elements(mode, count, type, indices)) return;
     GLTRACE_CALL(glDrawRangeElements, es3_functions.glDrawRangeElements(mode, start, end, count, type, indices));
 }
 void glSampleCoverage(GLfloat value, GLboolean invert) {

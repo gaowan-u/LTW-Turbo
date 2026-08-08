@@ -82,6 +82,11 @@ void fp_texcoord1f(GLfloat s);
 void fp_texcoord3f(GLfloat s, GLfloat t, GLfloat r);
 void fp_texcoord4f(GLfloat s, GLfloat t, GLfloat r, GLfloat q);
 void fp_texcoord2d(GLdouble s, GLdouble t);
+// 显式写 unit0 的即时模式纹理坐标（glMultiTexCoord2f(GL_TEXTURE0,...) 用，
+// 不受当前活动纹理单元影响）。
+void fp_texcoord2f_raw(GLfloat s, GLfloat t);
+void fp_texcoord3f_raw(GLfloat s, GLfloat t, GLfloat r);
+void fp_texcoord4f_raw(GLfloat s, GLfloat t, GLfloat r, GLfloat q);
 void fp_normal3f(GLfloat x, GLfloat y, GLfloat z);
 void fp_normal3fv(const GLfloat* v);
 
@@ -93,10 +98,16 @@ void fp_normal_pointer(GLenum type, GLsizei stride, const void* pointer);
 void fp_enable_client_state(GLenum cap);
 void fp_disable_client_state(GLenum cap);
 void fp_array_element(GLint i);
+// glClientActiveTexture：记录客户端活动纹理单元，决定 glTexCoordPointer
+// 写入的是哪个单元的纹理坐标（MC 1.12 区块用 unit1 存光照贴图坐标）。
+void fp_set_client_active_texture(GLenum unit);
 
 // 纹理状态
 void fp_set_texture_enabled(bool enabled);
 void fp_set_active_texture(GLuint unit);
+// glBindTexture(GL_TEXTURE_2D) 后调用：若当前活动单元是 unit0，刷新固定管线
+// 缓存的绑定纹理（避免 glBindTexture 后、绘制前被其他单元/路径覆盖）。
+void fp_notify_texture_bind(void);
 
 // alpha test 状态（MC 1.12 文字/透明渲染依赖）
 void fp_set_alpha_test(bool enabled);

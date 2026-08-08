@@ -85,10 +85,13 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices) {
     GLint eab = 0;
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
 
-    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ctx->quads_scratch_buffer);
-    es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)tri_count * 4, indices, GL_STREAM_DRAW);
     // 无 program 时用固定管线默认 shader（MC 1.12 GUI 的 QUADS 即时模式路径）
     bool fp_bound = fp_bind_default_program();
+    // GL_ELEMENT_ARRAY_BUFFER 绑定属于当前 VAO：fp_bind_default_program 已切到
+    // 私有 fp_vao，必须在这里把 scratch EBO 绑进 fp_vao，再上传索引并绘制，
+    // 否则 glDrawElements 会读到 fp_vao 里残留的旧 EBO（时序相关，偶发黑块）。
+    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ctx->quads_scratch_buffer);
+    es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)tri_count * 4, indices, GL_STREAM_DRAW);
     if(fp_bound) {
         fp_prepare_client_arrays(quads * 4);
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
@@ -97,6 +100,7 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices) {
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
     }
 
+    // fp_unbind_default_program 已恢复应用 VAO，这里恢复它原来的 EAB 绑定。
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
 }
 

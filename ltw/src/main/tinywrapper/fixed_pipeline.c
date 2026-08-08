@@ -105,6 +105,14 @@ static GLenum fp_alpha_test_func = 0x0207;   // GL_ALWAYS
 static GLfloat fp_alpha_ref = 0.0f;
 // 客户端颜色数组是否真实启用（决定 shader 用顶点色还是当前色）
 static bool fp_client_color_active = false;
+// glClientActiveTexture 选中的客户端活动纹理单元。MC 1.12 的
+// VertexBuffer.setupBufferState 会用 unit1 设置光照贴图坐标
+// （glTexCoordPointer(2, GL_SHORT, 32, 24)），若不去重会覆盖 unit0 的
+// 真实 UV（2 floats, offset 16），导致所有方块面采样到错误图集位置。
+static GLenum fp_client_active_texture = GL_TEXTURE0;
+// glActiveTexture 选中的活动纹理单元。固定管线模拟只消费 unit0 的纹理和
+// 即时模式纹理坐标（unit1 是光照贴图，由默认 shader 忽略）。
+static GLenum fp_active_texture = GL_TEXTURE0;
 // 绑定的纹理是否为单通道（GL_ALPHA 映射 GL_R8），shader 走 uSingle 分支
 static bool fp_bound_single_channel = false;
 
@@ -426,6 +434,15 @@ static void fp_flush_immediate(void) {
 
 // ---- 矩阵 API ----
 void fp_init(void) {
+    // 上下文重建时（FCL 偶尔会重建 EGL context），GL 对象是 context 私有的，
+    // 必须重置句柄并让 fp_ensure_program 在新 context 里重建。
+    fp_init_done = false;
+    fp_program = 0;
+    fp_mvp_loc = fp_tex_loc = fp_usetex_loc = fp_usecolor_loc = -1;
+    fp_color_loc = fp_alphafunc_loc = fp_alpharef_loc = fp_single_loc = -1;
+    fp_vbo = fp_vbo_pos = fp_vbo_color = fp_vbo_uv = fp_vao = 0;
+    fp_saved_vao = 0;
+    fp_saved_texture_valid = false;
     for(int m = 0; m < FP_MATRIX_COUNT; m++) {
         fp_matrix_top[m] = 0;
         fp_mat_identity(fp_matrix_stack[m][0]);
@@ -439,6 +456,8 @@ void fp_init(void) {
     fp_current_texcoord[0] = fp_current_texcoord[1] = 0.0f;
     fp_current_texcoord[2] = 0.0f; fp_current_texcoord[3] = 1.0f;
     fp_client_vertex_enabled = fp_client_texcoord_enabled = fp_client_color_enabled = fp_client_normal_enabled = false;
+    fp_client_active_texture = GL_TEXTURE0;
+    fp_active_texture = GL_TEXTURE0;
     fp_texture_enabled = false;
     fp_texture_bound = false;
     fp_bound_texture = 0;
@@ -548,13 +567,31 @@ void fp_color4fv(const GLfloat* v) { if(v) fp_color4f(v[0], v[1], v[2], v[3]); }
 void fp_color3fv(const GLfloat* v) { if(v) fp_color3f(v[0], v[1], v[2]); }
 void fp_color4ubv(const GLubyte* v) { if(v) fp_color4ub(v[0], v[1], v[2], v[3]); }
 
-void fp_texcoord2f(GLfloat s, GLfloat t) {
+void fp_texcoord2f_raw(GLfloat s, GLfloat t) {
     fp_current_texcoord[0] = s; fp_current_texcoord[1] = t;
+}
+void fp_texcoord3f_raw(GLfloat s, GLfloat t, GLfloat r) {
+    fp_current_texcoord[0] = s; fp_current_texcoord[1] = t; fp_current_texcoord[2] = r;
+}
+void fp_texcoord4f_raw(GLfloat s, GLfloat t, GLfloat r, GLfloat q) {
+    fp_current_texcoord[0] = s; fp_current_texcoord[1] = t;
+    fp_current_texcoord[2] = r; fp_current_texcoord[3] = q;
+}
+void fp_texcoord2f(GLfloat s, GLfloat t) {
+    // unit1 的即时模式纹理坐标（MC 1.12 光照贴图）不覆盖 unit0 的记录。
+    if(fp_active_texture != GL_TEXTURE0) return;
+    fp_texcoord2f_raw(s, t);
 }
 void fp_texcoord2fv(const GLfloat* v) { if(v) fp_texcoord2f(v[0], v[1]); }
 void fp_texcoord1f(GLfloat s) { fp_texcoord2f(s, 0.0f); }
-void fp_texcoord3f(GLfloat s, GLfloat t, GLfloat r) { fp_texcoord2f(s, t); fp_current_texcoord[2] = r; }
-void fp_texcoord4f(GLfloat s, GLfloat t, GLfloat r, GLfloat q) { fp_texcoord2f(s, t); fp_current_texcoord[2] = r; fp_current_texcoord[3] = q; }
+void fp_texcoord3f(GLfloat s, GLfloat t, GLfloat r) {
+    if(fp_active_texture != GL_TEXTURE0) return;
+    fp_texcoord3f_raw(s, t, r);
+}
+void fp_texcoord4f(GLfloat s, GLfloat t, GLfloat r, GLfloat q) {
+    if(fp_active_texture != GL_TEXTURE0) return;
+    fp_texcoord4f_raw(s, t, r, q);
+}
 void fp_texcoord2d(GLdouble s, GLdouble t) { fp_texcoord2f((GLfloat)s, (GLfloat)t); }
 
 void fp_normal3f(GLfloat x, GLfloat y, GLfloat z) { (void)x; (void)y; (void)z; /* 光照模拟未实现 */ }
@@ -580,9 +617,15 @@ void fp_vertex_pointer(GLint size, GLenum type, GLsizei stride, const void* poin
     fp_client_vertex_abo = fp_current_abo();
 }
 void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
+    // 固定管线模拟只消费 unit0 的纹理坐标；unit1（MC 1.12 光照贴图）忽略，
+    // 且不能让它覆盖 unit0 的记录。
+    if(fp_client_active_texture != GL_TEXTURE0) return;
     fp_client_texcoord_size = size; fp_client_texcoord_type = type;
     fp_client_texcoord_stride = stride; fp_client_texcoord_ptr = pointer;
     fp_client_texcoord_abo = fp_current_abo();
+}
+void fp_set_client_active_texture(GLenum unit) {
+    fp_client_active_texture = unit;
 }
 void fp_color_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
     fp_client_color_size = size; fp_client_color_type = type;
@@ -595,7 +638,9 @@ void fp_normal_pointer(GLenum type, GLsizei stride, const void* pointer) {
 void fp_enable_client_state(GLenum cap) {
     switch(cap) {
         case GL_VERTEX_ARRAY:  fp_client_vertex_enabled = true;   break;
-        case GL_TEXTURE_COORD_ARRAY: fp_client_texcoord_enabled = true; break;
+        case GL_TEXTURE_COORD_ARRAY:
+            if(fp_client_active_texture == GL_TEXTURE0) fp_client_texcoord_enabled = true;
+            break;
         case GL_COLOR_ARRAY:   fp_client_color_enabled = true;    break;
         case GL_NORMAL_ARRAY:  fp_client_normal_enabled = true;   break;
         default: break;
@@ -604,7 +649,9 @@ void fp_enable_client_state(GLenum cap) {
 void fp_disable_client_state(GLenum cap) {
     switch(cap) {
         case GL_VERTEX_ARRAY:  fp_client_vertex_enabled = false;  break;
-        case GL_TEXTURE_COORD_ARRAY: fp_client_texcoord_enabled = false; break;
+        case GL_TEXTURE_COORD_ARRAY:
+            if(fp_client_active_texture == GL_TEXTURE0) fp_client_texcoord_enabled = false;
+            break;
         case GL_COLOR_ARRAY:   fp_client_color_enabled = false;   break;
         case GL_NORMAL_ARRAY:  fp_client_normal_enabled = false;  break;
         default: break;
@@ -618,23 +665,15 @@ void fp_array_element(GLint i) {
 // ---- 纹理状态 ----
 void fp_set_texture_enabled(bool enabled) { fp_texture_enabled = enabled; }
 void fp_set_active_texture(GLuint unit) {
-    // 只跟踪 unit 0 的绑定纹理（固定管线场景下 MC 1.12 只用 unit 0）
+    fp_active_texture = unit;
     if(unit == 0) {
         fp_texture_bound = true;
-        GLint tex = 0;
-        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
-        fp_bound_texture = (GLuint)tex;
-        // 查询纹理格式：GL_R8/GL_RED 等单通道纹理（GL_ALPHA 映射而来）
-        // shader 采样时把 R 通道当 alpha/灰度用
-        fp_bound_single_channel = false;
-        if(tex != 0) {
-            GLint fmt = 0;
-            es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
-            if(fmt == GL_R8 || fmt == GL_RED || fmt == GL_R16F || fmt == GL_R32F) {
-                fp_bound_single_channel = true;
-            }
-        }
+        fp_refresh_bound_texture();
     }
+}
+
+void fp_notify_texture_bind(void) {
+    if(fp_active_texture == GL_TEXTURE0) fp_refresh_bound_texture();
 }
 
 // ---- alpha test ----
@@ -648,6 +687,12 @@ void fp_alpha_func(GLenum func, GLfloat ref) { fp_alpha_test_func = func; fp_alp
 // 单元/路径覆盖，字就会以“无纹理”的纯色方块画出来。
 static void fp_refresh_bound_texture(void) {
     if(!current_context) return;
+    // GL_TEXTURE_BINDING_2D 查询的是“当前活动单元”的绑定；固定管线始终用
+    // unit0 绘制，这里临时切到 unit0 再查询，避免活动单元是 unit1 时
+    // 把光照贴图当成方块纹理。
+    GLint old_active = 0;
+    es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active);
+    if(old_active != GL_TEXTURE0) es3_functions.glActiveTexture(GL_TEXTURE0);
     GLint tex = 0;
     es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
     fp_bound_texture = (GLuint)tex;
@@ -659,6 +704,7 @@ static void fp_refresh_bound_texture(void) {
             fp_bound_single_channel = true;
         }
     }
+    if(old_active != GL_TEXTURE0) es3_functions.glActiveTexture((GLenum)old_active);
 }
 
 // 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 由绑定纹理决定：
@@ -712,8 +758,9 @@ bool fp_bind_default_program(void) {
     if(fp_bound_texture != 0) {
         fp_saved_texture_valid = true;
         es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &fp_saved_active_tex);
-        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &fp_saved_bound_tex);
+        // 先切到 unit0 再查询绑定，否则保存的是其他单元的纹理，恢复时会写错单元。
         es3_functions.glActiveTexture(GL_TEXTURE0);
+        es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &fp_saved_bound_tex);
         es3_functions.glBindTexture(GL_TEXTURE_2D, fp_bound_texture);
     }
     return true;
@@ -763,7 +810,11 @@ static void fp_upload_client_arrays(GLsizei count) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
             es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
                                                 GL_FALSE, fp_client_vertex_stride, (const void*)off);
+        } else {
+            es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
         }
+    } else {
+        es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
     }
     // 颜色 attribute：偏移 = color 指针 - 顶点指针
     fp_client_color_active = (fp_client_color_enabled && fp_client_color_size > 0 && fp_client_color_ptr);
@@ -775,7 +826,10 @@ static void fp_upload_client_arrays(GLsizei count) {
                                                 GL_TRUE, fp_client_vertex_stride, (const void*)off);
         } else {
             fp_client_color_active = false;
+            es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
+    } else {
+        es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
     }
 
     es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
@@ -814,6 +868,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
                                                 GL_TRUE, fp_client_color_stride, fp_client_color_ptr);
         } else {
             fp_client_color_active = false;
+            es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
         if(cbo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
         GLint ubo = fp_client_texcoord_abo ? fp_client_texcoord_abo : old_abo;
@@ -822,6 +877,8 @@ bool fp_prepare_client_arrays(GLsizei count) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
             es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
                                                 GL_FALSE, fp_client_texcoord_stride, fp_client_texcoord_ptr);
+        } else {
+            es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
         }
         if(ubo != old_abo) es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
     }
@@ -833,6 +890,9 @@ bool fp_prepare_client_arrays(GLsizei count) {
 void fp_unbind_default_program(void) {
     if(!fp_program) return;
     if(fp_saved_texture_valid) {
+        // 恢复必须先把活动单元切回 unit0 再绑回原纹理，最后恢复活动单元，
+        // 否则会把 unit0 的绑定写到别的单元上。
+        es3_functions.glActiveTexture(GL_TEXTURE0);
         es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)fp_saved_bound_tex);
         es3_functions.glActiveTexture((GLenum)fp_saved_active_tex);
         fp_saved_texture_valid = false;
@@ -860,7 +920,13 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     GLint prog = 0;
     es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
     if(prog != 0) return false;
+    // GL_ELEMENT_ARRAY_BUFFER 绑定属于 VAO：必须在切到私有 fp_vao 之前
+    // 记录应用的 EBO（可能为 0=客户端索引），切过去后重新绑定，否则
+    // indices 会被当作 fp_vao 里残留 EBO 的偏移，画出垃圾几何。
+    GLint eab = 0;
+    es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
     if(!fp_bind_default_program()) return false;
+    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
     fp_prepare_client_arrays(count);
     es3_functions.glDrawElements(mode, count, type, indices);
     fp_unbind_default_program();

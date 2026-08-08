@@ -182,6 +182,31 @@ void glTexCoord2d(GLdouble s, GLdouble t) {
     fp_texcoord2d(s, t);
 }
 
+// ---- 多纹理坐标（直接指定单元）----
+// LWJGL2 时代代码/老版本 MC 用 glMultiTexCoord2f(GL_TEXTURE1, ...) 设光照
+// 贴图坐标。固定管线模拟只消费 unit0，unit1 忽略；实现这些入口同时避免
+// LWJGL 因解析不到函数而刷 "No context is current"。
+void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
+    if(!current_context) return;
+    if(texture == GL_TEXTURE0) fp_texcoord2f_raw(s, t);
+}
+void glMultiTexCoord2fv(GLenum texture, const GLfloat* v) {
+    if(!current_context || !v) return;
+    if(texture == GL_TEXTURE0) fp_texcoord2f_raw(v[0], v[1]);
+}
+void glMultiTexCoord3f(GLenum texture, GLfloat s, GLfloat t, GLfloat r) {
+    if(!current_context) return;
+    if(texture == GL_TEXTURE0) fp_texcoord3f_raw(s, t, r);
+}
+void glMultiTexCoord4f(GLenum texture, GLfloat s, GLfloat t, GLfloat r, GLfloat q) {
+    if(!current_context) return;
+    if(texture == GL_TEXTURE0) fp_texcoord4f_raw(s, t, r, q);
+}
+void glMultiTexCoord2fARB(GLenum texture, GLfloat s, GLfloat t) { glMultiTexCoord2f(texture, s, t); }
+void glMultiTexCoord2fvARB(GLenum texture, const GLfloat* v) { glMultiTexCoord2fv(texture, v); }
+void glMultiTexCoord3fARB(GLenum texture, GLfloat s, GLfloat t, GLfloat r) { glMultiTexCoord3f(texture, s, t, r); }
+void glMultiTexCoord4fARB(GLenum texture, GLfloat s, GLfloat t, GLfloat r, GLfloat q) { glMultiTexCoord4f(texture, s, t, r, q); }
+
 // ---- 法线 ----
 void glNormal3f(GLfloat x, GLfloat y, GLfloat z) {
     if(!current_context) return;
@@ -208,6 +233,17 @@ void glColorPointer(GLint size, GLenum type, GLsizei stride, const void* pointer
 void glNormalPointer(GLenum type, GLsizei stride, const void* pointer) {
     if(!current_context) return;
     fp_normal_pointer(type, stride, pointer);
+}
+// glClientActiveTexture 决定 glTexCoordPointer / glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+// 作用于哪个纹理单元。GLES 没有此入口，桌面 MC 1.12 用它在 unit1 上设置
+// 光照贴图坐标；这里记录单元选择，fixed_pipeline.c 只消费 unit0 的坐标。
+void glClientActiveTexture(GLenum texture) {
+    if(!current_context) return;
+    fp_set_client_active_texture(texture);
+}
+void glClientActiveTextureARB(GLenum texture) {
+    if(!current_context) return;
+    fp_set_client_active_texture(texture);
 }
 void glEnableClientState(GLenum cap) {
     if(!current_context) return;
@@ -249,16 +285,13 @@ void glGetFloatv(GLenum pname, GLfloat* params) {
     }
 }
 void glGetDoublev(GLenum pname, GLdouble* params) {
-    if(!current_context) return;
-    if(!fp_get_matrix(pname, (GLfloat*)params)) {
-        GLfloat tmp[FP_MATRIX_SIZE];
-        if(fp_get_matrix(pname, tmp)) {
-            for(int i = 0; i < FP_MATRIX_SIZE; i++) params[i] = (GLdouble)tmp[i];
-        } else {
-            es3_functions.glGetFloatv(pname, tmp);
-            for(int i = 0; i < FP_MATRIX_SIZE; i++) params[i] = (GLdouble)tmp[i];
-        }
+    if(!current_context || !params) return;
+    GLfloat tmp[FP_MATRIX_SIZE];
+    if(!fp_get_matrix(pname, tmp)) {
+        es3_functions.glGetFloatv(pname, tmp);
     }
+    // 之前直接把 float 位模式写进 double 缓冲区，值全是垃圾；必须逐元素转换。
+    for(int i = 0; i < FP_MATRIX_SIZE; i++) params[i] = (GLdouble)tmp[i];
 }
 void glGetBooleanv(GLenum pname, GLboolean* params) {
     if(!current_context) return;
