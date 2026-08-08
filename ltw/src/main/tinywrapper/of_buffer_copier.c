@@ -73,13 +73,19 @@ void glGetTexImage( 	GLenum target,
                        void * pixels) {
     if(!current_context) return;
     if(!current_context->es31) goto unsupported_esver;
-    // 白名单是“格式合法”且“类型合法”；之前的表达式用 && 串起 format 和 type
-    // 判断，导致 (合法格式 + 非法类型) 之类组合漏判，混进 glReadPixels 报错。
-    if(!(format == GL_RGBA || format == GL_RGBA_INTEGER) ||
-       !(type == GL_UNSIGNED_BYTE || type == GL_UNSIGNED_INT || type == GL_INT || type == GL_FLOAT)) goto unsupported;
+    // MathCode: MC 1.12 的截图/世界缩略图读回固定用
+    // GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV（32993/33639），GLES 没有该组合，
+    // 需要 CPU 转换；其余原白名单组合保持直通。
+    bool bgra_rev = (format == GL_BGRA_EXT && type == 0x8367);  // GL_UNSIGNED_INT_8_8_8_8_REV
+    bool rgba_direct = ((format == GL_RGBA || format == GL_RGBA_INTEGER) &&
+                        (type == GL_UNSIGNED_BYTE || type == GL_UNSIGNED_INT ||
+                         type == GL_INT || type == GL_FLOAT));
+    if(!bgra_rev && !rgba_direct) goto unsupported;
     framebuffer_copier_t* copier = &current_context->framebuffer_copier;
     GLint texture;
     es3_functions.glGetIntegerv(get_textarget_query_param(target), &texture);
+    GLint old_read_fb;
+    es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_fb);
     es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, copier->tempfb);
     es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, target, texture, level);
     GLint w, h;
@@ -88,10 +94,33 @@ void glGetTexImage( 	GLenum target,
     if(!pixels) {
         LTW_ERROR_PRINTF("LTW: glGetTexImage called with NULL pixels");
         es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+        es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
         return;
     }
-    es3_functions.glReadPixels(0, 0, w, h, format, type, pixels);
+    if(bgra_rev) {
+        // MathCode: 先按 RGBA/UNSIGNED_BYTE 读回，再把每个像素的 R/B 字节交换，
+        // 还原成 BGRA+UNSIGNED_INT_8_8_8_8_REV 的内存布局（即 Java ARGB 整数）。
+        unsigned char* tmp = (unsigned char*)malloc((size_t)w * (size_t)h * 4);
+        if(!tmp) {
+            LTW_ERROR_PRINTF("LTW: glGetTexImage BGRA+REV malloc failed");
+            es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+            es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
+            return;
+        }
+        es3_functions.glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
+        unsigned char* out = (unsigned char*)pixels;
+        for(size_t i = 0; i < (size_t)w * (size_t)h; ++i) {
+            out[i * 4 + 0] = tmp[i * 4 + 2];
+            out[i * 4 + 1] = tmp[i * 4 + 1];
+            out[i * 4 + 2] = tmp[i * 4 + 0];
+            out[i * 4 + 3] = tmp[i * 4 + 3];
+        }
+        free(tmp);
+    } else {
+        es3_functions.glReadPixels(0, 0, w, h, format, type, pixels);
+    }
     es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+    es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
     return;
     unsupported_esver:
     LTW_ERROR_PRINTF("LTW: glGetTexImage only supported on OpenGL ES 3.1");

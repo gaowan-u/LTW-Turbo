@@ -19,6 +19,8 @@
 | `Gui.java` | `drawGradientRect` 等无纹理矩形绘制（物品提示黑框） |
 | `GuiScreen.java` | `drawHoveringText` 物品提示框的完整调用序列 |
 | `FontRenderer.java` | 文字字形、下划线/删除线（无纹理 POSITION 矩形） |
+| `ScreenShotHelper.java` | 世界缩略图/F2 截图：从 FBO 颜色纹理 `glGetTexImage(GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV)` 读回 |
+| `GuiListWorldSelectionEntry.java` | 世界列表：加载 `icon.png` 为 `DynamicTexture` 并绘制 32x32 缩略图 |
 
 ## 已确认的关键调用序列（2026-08 调试记录）
 
@@ -57,6 +59,29 @@ LTW 之前的 bug：`glTexEnv*` 没进 override 表，GLES 也没有纹理环境
 glTexEnviv` 包装，`fixed_pipeline.c` 记录 unit1 的合并状态（`fp_texenv_state`），
 默认 shader 用 `uLightTint/uLightColor` 模拟：
 `fc.rgb = mix(fc.rgb, envColor.rgb, envColor.a)`。
+
+### 3. 世界缩略图变黑
+
+`EntityRenderer.createWorldIcon`（`EntityRenderer.java:1230`，世界渲染稳定后每
+秒检测一次）：
+
+1. `ScreenShotHelper.createScreenshot(displayWidth, displayHeight, mc.getFramebuffer())`；
+2. `GlStateManager.bindTexture(framebufferTexture)`；
+3. `GlStateManager.glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, pixelBuffer)`，
+   即 `glGetTexImage(3553, 0, 32993, 33639, ...)`；
+4. `ImageIO.write(64x64, "png", saves/<world>/icon.png)`。
+
+世界列表读取同一文件（`GuiListWorldSelectionEntry.loadServerIcon`），所以生成
+的全黑 PNG 会直接显示为黑色缩略图。
+
+LTW 之前的 bug：`glGetTexImage` 白名单只允许 RGBA 系格式/类型，
+`GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV` 被判为 unsupported，函数直接返回、
+不写 `pixelBuffer` → 像素数组全 0 → `icon.png` 全黑。
+
+修复：`of_buffer_copier.c` 的 `glGetTexImage` 对该组合先按
+`GL_RGBA + GL_UNSIGNED_BYTE` 读回，再把每个像素的 R/B 字节交换成
+BGRA+REV 的内存布局（即 Java ARGB 整数）。F2 截图与世界缩略图共用此路径，
+一并修复。
 
 ## 注意事项
 
