@@ -21,6 +21,7 @@
 #include "fixed_pipeline.h"
 #include "egl.h"
 #include "env.h"
+#include "ltw_config.h"
 #include "debug.h"
 
 // ---- 内部常量 ----
@@ -656,7 +657,13 @@ static void fp_flush_immediate(void) {
 void fp_init(void) {
     // 上下文重建时（FCL 偶尔会重建 EGL context），GL 对象是 context 私有的，
     // 必须重置句柄并让 fp_ensure_program 在新 context 里重建。
-    dl_merge_enabled = env_istrue_d("LTW_DL_MERGE", true);
+    // MathCode: 实验开关优先级 = LTW_DL_MERGE 环境变量 > 共享配置 dlMerge > 默认开。
+    if(getenv("LTW_DL_MERGE")) {
+        dl_merge_enabled = env_istrue("LTW_DL_MERGE");
+    } else {
+        ltw_config_init();
+        dl_merge_enabled = ltw_config_get_bool("dlMerge", true);
+    }
     fp_init_done = false;
     fp_program = 0;
     fp_mvp_loc = fp_tex_loc = fp_usetex_loc = fp_usecolor_loc = -1;

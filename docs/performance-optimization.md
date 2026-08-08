@@ -145,3 +145,13 @@ op 的顶点拼进一个大 VBO、索引拼进一个大 EBO，回放时一次
 - 开关：`LTW_DL_MERGE`（默认 `1`，设为 `0` 关闭）；
 - 缓存首次建立时一次性 CPU 拼接 + GPU 上传，之后每帧只有一次绘制；
 - 合并缓存随列表删除/EGL context 重建释放或失效，与原有每 op 缓存一致。
+
+### 9.1 应用侧桥接（参考 MobileGlues 思路，实现独立）
+
+设置 App 会把配置写到共享文件 `/sdcard/LTW-Turbo/config.json`
+（目录可用环境变量 `LTW_CONFIG_DIR` 覆盖），LTW 渲染库启动时自己读取：
+
+- `dlMerge`：整表合并开关（`true`/`false`）；
+- 优先级：`LTW_DL_MERGE` 环境变量 > 共享配置 > 内置默认值；
+- 不依赖启动器注入环境变量；`ltw_config.c` 是轻量扁平 JSON 读取器，
+  只解析本应用生成的 int/bool/string 字段。

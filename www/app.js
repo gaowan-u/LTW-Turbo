@@ -44,6 +44,7 @@ const Store = {
     }else{
       try{ localStorage.setItem('ltw.'+k,val); }catch(e){}
     }
+    if(window.Capacitor?.Plugins?.Filesystem) scheduleSharedConfig();
   },
   async clear(){
     prefCache={};
@@ -58,6 +59,59 @@ const Store = {
     }
   }
 };
+
+// ---- 共享配置桥接（应用写文件，LTW 渲染库自己读）----
+const SHARED_CONFIG_PATH='LTW-Turbo/config.json';
+let sharedConfigTimer=null;
+let sharedConfigPrompted=false;
+
+function scheduleSharedConfig(){
+  clearTimeout(sharedConfigTimer);
+  sharedConfigTimer=setTimeout(()=>syncSharedConfig(false),300);
+}
+
+function buildSharedConfig(){
+  const data={};
+  SETTINGS.flatMap(g=>g.items).forEach(it=>{
+    if(!it.key||!CONFIG_RULES[it.key]) return;
+    data[it.key]=Store.get(it.key,it.def);
+  });
+  data.plan=Store.get('plan',0);
+  return data;
+}
+
+async function ensureAllFilesAccess(silent){
+  const A=window.Capacitor?.Plugins?.AllFilesAccess;
+  if(!A) return true;
+  try{
+    const {granted}=await A.isGranted();
+    if(granted) return true;
+  }catch(e){ return true; }
+  if(!silent&&!sharedConfigPrompted){
+    sharedConfigPrompted=true;
+    showDialog('需要“所有文件访问”权限',
+      'LTW 需要写入共享目录 /sdcard/LTW-Turbo/config.json，渲染库启动时才能读到实验性开关。请授权后返回。',
+      '去授权',()=>A.openSettings());
+  }
+  return false;
+}
+
+async function syncSharedConfig(silent){
+  const FS=window.Capacitor?.Plugins?.Filesystem;
+  if(!FS) return;
+  if(!await ensureAllFilesAccess(silent)) return;
+  try{
+    await FS.writeFile({
+      path:SHARED_CONFIG_PATH,
+      data:JSON.stringify(buildSharedConfig()),
+      directory:'EXTERNAL_STORAGE',
+      recursive:true,
+      encoding:'utf8'
+    });
+  }catch(e){
+    if(!silent) toast('共享配置写入失败：'+e.message);
+  }
+}
 const ACCENTS=['#f08c2e','#2e7cf6','#34c77b','#8b5cf6'];
 const PLANS=['兼容','性能'];
 const VERSION='0.1.0-dev';
@@ -82,7 +136,8 @@ const SETTINGS=[
   {type:'select',key:'theme',label:'主题模式',options:['跟随系统','浅色','深色'],def:0},
   {type:'accent',key:'accent',label:'强调色'}]},
  {title:'渲染',items:[
-  {type:'select',key:'backend',label:'渲染后端',options:['GLES','Vulkan'],def:0,disable:[1]}]},
+  {type:'select',key:'backend',label:'渲染后端',options:['GLES','Vulkan'],def:0,disable:[1]},
+  {type:'switch',key:'dlMerge',label:'显示列表整表合并（实验）',def:true,status:'lab'}]},
  {title:'缓存',items:[
   {type:'slider',key:'cache',label:'着色器缓存大小',min:64,max:1024,step:64,def:512,unit:' MiB',status:'off'},
   {type:'switch',key:'preheat',label:'缓存预热',def:false,status:'plan'}]},
@@ -100,6 +155,7 @@ const CONFIG_RULES={
   backend:{t:'int',min:0,max:1},
   cache:{t:'int',min:64,max:1024},
   preheat:{t:'bool'},
+  dlMerge:{t:'bool'},
   plan:{t:'int',min:0,max:1},
   backDirect:{t:'bool'}
 };
@@ -489,4 +545,5 @@ $('#scan-modal').onclick=e=>{ if(e.target===$('#scan-modal')){ stopScan(); $('#s
   applyAccent(Store.get('accent',ACCENTS[0]));
   applyTheme(Store.get('theme',0));
   renderSettings(); renderInfo(); switchView('home',false);
+  syncSharedConfig(true);
 })();
