@@ -90,11 +90,11 @@ typedef struct {
     bool indexed;
     GLenum itype;          // indexed 时有效
     GLuint indices_ebo;    // 录制时的源 EBO（0=客户端索引）
-    GLintptr indices_off;  // 客户端索引: 0；EBO: 字节偏移
+    GLintptr indices_src_off; // 客户端索引: 0；EBO: 字节偏移
     uint32_t vertex_len;   // CPU 顶点数据长度（0=VBO 偏移路径）
     uint32_t indices_len;  // CPU 索引数据长度
     uint32_t vertex_off;   // 顶点数据区偏移（相对 payload 起始）
-    uint32_t indices_data_off; // 索引数据区偏移（相对 payload 起始）
+    uint32_t indices_off;  // 索引数据区偏移（相对 payload 起始）
 } dl_client_draw_payload_t;
 
 typedef struct {
@@ -1252,11 +1252,11 @@ bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
     pl->indexed = indexed;
     pl->itype = itype;
     pl->indices_ebo = indices_ebo;
-    pl->indices_off = indices_off;
+    pl->indices_src_off = indices_off;
     pl->vertex_len = vertex_len;
     pl->indices_len = indices_len;
     pl->vertex_off = v_off;
-    pl->indices_data_off = i_off;
+    pl->indices_off = i_off;
     if(vertex_len && vertex_data) memcpy(buf + v_off, vertex_data, vertex_len);
     if(indices_len && indices_data) memcpy(buf + i_off, indices_data, indices_len);
 
@@ -1403,11 +1403,11 @@ static void fp_dl_execute_op(uint32_t type, const void* payload, uint32_t size) 
                 data = (const uint8_t*)payload + p->vertex_off;
             }
             if(p->indexed && p->indices_len > 0 &&
-               (size_t)p->indices_data_off + (size_t)p->indices_len <= (size_t)size) {
-                idx = (const uint8_t*)payload + p->indices_data_off;
+               (size_t)p->indices_off + (size_t)p->indices_len <= (size_t)size) {
+                idx = (const uint8_t*)payload + p->indices_off;
             }
             fp_dl_play_client_draw(&p->snap, p->mode, p->first, p->count, p->indexed, p->itype,
-                                   p->indices_ebo, p->indices_off, idx, p->indices_len, data);
+                                   p->indices_ebo, p->indices_src_off, idx, p->indices_len, data);
             break;
         }
         case DL_OP_BIND_TEXTURE: {
