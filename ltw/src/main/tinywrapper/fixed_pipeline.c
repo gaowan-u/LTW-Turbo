@@ -1109,36 +1109,41 @@ void fp_texture_upload_invalidate(void) {
 // MathCode: 黑框修复——纹理采样必须同时满足“绑定了纹理”和
 // “GL_TEXTURE_2D 已启用”（桌面固定管线语义）。
 static void fp_set_default_uniforms(void) {
-    GLfloat mvp[FP_MATRIX_SIZE];
-    fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
-               fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
-    if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
-    if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
-    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, (fp_bound_texture != 0 && fp_texture_enabled[0]) ? 1 : 0);
-    // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
-    if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
-    if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
-    if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
-    if(fp_lighttint_loc >= 0) es3_functions.glUniform1i(fp_lighttint_loc, fp_light_tint ? 1 : 0);
-    if(fp_lightcolor_loc >= 0) es3_functions.glUniform4fv(fp_lightcolor_loc, 1, fp_texenv_state[1].color);
-    // shader 里用 0..7 表示 GL_NEVER..GL_ALWAYS，不能直接传原始 GLenum
-    // （例如 GL_GREATER=516），否则所有分支都匹配不上、alpha test 失效。
-    GLint alpha_mode = 7;
-    if(fp_alpha_test) {
-        switch(fp_alpha_test_func) {
-            case GL_NEVER:    alpha_mode = 0; break;
-            case GL_LESS:     alpha_mode = 1; break;
-            case GL_EQUAL:    alpha_mode = 2; break;
-            case GL_LEQUAL:   alpha_mode = 3; break;
-            case GL_GREATER:  alpha_mode = 4; break;
-            case GL_NOTEQUAL: alpha_mode = 5; break;
-            case GL_GEQUAL:   alpha_mode = 6; break;
-            case GL_ALWAYS:   alpha_mode = 7; break;
-            default:          alpha_mode = 7; break;
+    // MathCode: 1282 排查——glUniform* 在“当前 program 不是预期 program”
+    // 或 program=0 时会生成 GL_INVALID_OPERATION(0x502)。用双排空包住整个
+    // 函数，下一次日志直接给出 uniform 是否产生错误。
+    GLTRACE_CALL(fp_set_default_uniforms, {
+        GLfloat mvp[FP_MATRIX_SIZE];
+        fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
+                   fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
+        if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
+        if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
+        if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, (fp_bound_texture != 0 && fp_texture_enabled[0]) ? 1 : 0);
+        // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
+        if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
+        if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
+        if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
+        if(fp_lighttint_loc >= 0) es3_functions.glUniform1i(fp_lighttint_loc, fp_light_tint ? 1 : 0);
+        if(fp_lightcolor_loc >= 0) es3_functions.glUniform4fv(fp_lightcolor_loc, 1, fp_texenv_state[1].color);
+        // shader 里用 0..7 表示 GL_NEVER..GL_ALWAYS，不能直接传原始 GLenum
+        // （例如 GL_GREATER=516），否则所有分支都匹配不上、alpha test 失效。
+        GLint alpha_mode = 7;
+        if(fp_alpha_test) {
+            switch(fp_alpha_test_func) {
+                case GL_NEVER:    alpha_mode = 0; break;
+                case GL_LESS:     alpha_mode = 1; break;
+                case GL_EQUAL:    alpha_mode = 2; break;
+                case GL_LEQUAL:   alpha_mode = 3; break;
+                case GL_GREATER:  alpha_mode = 4; break;
+                case GL_NOTEQUAL: alpha_mode = 5; break;
+                case GL_GEQUAL:   alpha_mode = 6; break;
+                case GL_ALWAYS:   alpha_mode = 7; break;
+                default:          alpha_mode = 7; break;
+            }
         }
-    }
-    if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, alpha_mode);
-    if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
+        if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, alpha_mode);
+        if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
+    });
 }
 
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。

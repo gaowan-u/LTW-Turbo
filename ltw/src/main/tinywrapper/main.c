@@ -477,7 +477,7 @@ void glEnable(GLenum cap) {
     // GL_SCISSOR_TEST 等全部被吞掉。MC 1.12 画方块破坏裂纹时依赖
     // glEnable(GL_POLYGON_OFFSET_FILL) + glPolygonOffset(-1,-10) 把裂纹推离
     // 方块面，否则裂纹与方块面 z-fighting，出现“贴图穿透”闪烁。
-    es3_functions.glEnable(cap);
+    GLTRACE_CALL(glEnable, es3_functions.glEnable(cap));
 }
 
 void glDisable(GLenum cap) {
@@ -490,7 +490,7 @@ void glDisable(GLenum cap) {
         if(cap == GL_ALPHA_TEST) fp_set_alpha_test(false);
         return;
     }
-    es3_functions.glDisable(cap);
+    GLTRACE_CALL(glDisable, es3_functions.glDisable(cap));
 }
 
 // Pass-through wrappers with double-drain error tracing (LTW_DEBUG trace
@@ -874,7 +874,7 @@ INTERNAL GLenum get_base_buffer_enum(int buffer_index) {
 
 void glBindBuffer(GLenum buffer, GLuint name) {
     if(!current_context) return;
-    es3_functions.glBindBuffer(buffer, name);
+    GLTRACE_CALL(glBindBuffer, es3_functions.glBindBuffer(buffer, name));
     int buffer_index = get_buffer_index(buffer);
     if(buffer_index == -1) return;
     current_context->bound_buffers[buffer_index] = name;
