@@ -94,7 +94,7 @@ typedef struct {
     uint32_t vertex_len;   // CPU 顶点数据长度（0=VBO 偏移路径）
     uint32_t indices_len;  // CPU 索引数据长度
     uint32_t vertex_off;   // 顶点数据区偏移（相对 payload 起始）
-    uint32_t indices_off;  // 索引数据区偏移（相对 payload 起始）
+    uint32_t indices_data_off; // 索引数据区偏移（相对 payload 起始）
 } dl_client_draw_payload_t;
 
 typedef struct {
@@ -1256,7 +1256,7 @@ bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
     pl->vertex_len = vertex_len;
     pl->indices_len = indices_len;
     pl->vertex_off = v_off;
-    pl->indices_off = i_off;
+    pl->indices_data_off = i_off;
     if(vertex_len && vertex_data) memcpy(buf + v_off, vertex_data, vertex_len);
     if(indices_len && indices_data) memcpy(buf + i_off, indices_data, indices_len);
 
@@ -1403,8 +1403,8 @@ static void fp_dl_execute_op(uint32_t type, const void* payload, uint32_t size) 
                 data = (const uint8_t*)payload + p->vertex_off;
             }
             if(p->indexed && p->indices_len > 0 &&
-               (size_t)p->indices_off + (size_t)p->indices_len <= (size_t)size) {
-                idx = (const uint8_t*)payload + p->indices_off;
+               (size_t)p->indices_data_off + (size_t)p->indices_len <= (size_t)size) {
+                idx = (const uint8_t*)payload + p->indices_data_off;
             }
             fp_dl_play_client_draw(&p->snap, p->mode, p->first, p->count, p->indexed, p->itype,
                                    p->indices_ebo, p->indices_off, idx, p->indices_len, data);
