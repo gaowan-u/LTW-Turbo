@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <math.h>
 #include <time.h>
+#include <android/log.h>
 #include <GLES3/gl3.h>
 #include "GL/gl.h"
 #include "fixed_pipeline.h"
@@ -201,16 +202,17 @@ void fp_perf_frame_boundary(void) {
     uint64_t elapsed = fp_perf_last_dump_ns ? now - fp_perf_last_dump_ns : 0;
     fp_perf_last_dump_ns = now;
     double fps = elapsed ? (double)FP_PERF_DUMP_FRAMES * 1000000000.0 / (double)elapsed : 0.0;
-    printf("[LTW PERF] frames=%llu fps=%.1f callList=%llu replayMs=%.2f cachedOps=%llu "
-           "fallbackOps=%llu immediateOps=%llu avgCallListUs=%.1f avgCachedOpUs=%.1f\n",
-           (unsigned long long)FP_PERF_DUMP_FRAMES, fps,
-           (unsigned long long)fp_perf_call_list,
-           (double)fp_perf_replay_ns / 1000000.0,
-           (unsigned long long)fp_perf_cached_ops,
-           (unsigned long long)fp_perf_fallback_ops,
-           (unsigned long long)fp_perf_immediate_ops,
-           fp_perf_call_list ? (double)fp_perf_replay_ns / (double)fp_perf_call_list / 1000.0 : 0.0,
-           fp_perf_cached_ops ? (double)fp_perf_replay_ns / (double)fp_perf_cached_ops / 1000.0 : 0.0);
+    __android_log_print(ANDROID_LOG_INFO, "LTWPerf",
+                        "frames=%llu fps=%.1f callList=%llu replayMs=%.2f cachedOps=%llu "
+                        "fallbackOps=%llu immediateOps=%llu avgCallListUs=%.1f avgCachedOpUs=%.1f",
+                        (unsigned long long)FP_PERF_DUMP_FRAMES, fps,
+                        (unsigned long long)fp_perf_call_list,
+                        (double)fp_perf_replay_ns / 1000000.0,
+                        (unsigned long long)fp_perf_cached_ops,
+                        (unsigned long long)fp_perf_fallback_ops,
+                        (unsigned long long)fp_perf_immediate_ops,
+                        fp_perf_call_list ? (double)fp_perf_replay_ns / (double)fp_perf_call_list / 1000.0 : 0.0,
+                        fp_perf_cached_ops ? (double)fp_perf_replay_ns / (double)fp_perf_cached_ops / 1000.0 : 0.0);
     fp_perf_frame_count = 0;
     fp_perf_call_list = 0;
     fp_perf_replay_ns = 0;
