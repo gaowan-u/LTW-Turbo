@@ -291,8 +291,8 @@ static int fp_doublev_count(GLenum pname) {
         case GL_DEPTH_RANGE:
         case GL_ALIASED_POINT_SIZE_RANGE:
         case GL_ALIASED_LINE_WIDTH_RANGE:
-        case GL_SMOOTH_POINT_SIZE_RANGE:
-        case GL_SMOOTH_LINE_WIDTH_RANGE:
+        // 注意：GL_POINT_SIZE_RANGE 与 GL_SMOOTH_POINT_SIZE_RANGE、GL_LINE_WIDTH_RANGE
+        // 与 GL_SMOOTH_LINE_WIDTH_RANGE 值相同（0x0B12 / 0x0B22），不能同时出现。
         case GL_LINE_WIDTH_RANGE:
         case GL_POINT_SIZE_RANGE:
             return 2;
