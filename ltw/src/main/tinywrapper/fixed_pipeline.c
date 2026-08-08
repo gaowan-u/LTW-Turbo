@@ -174,6 +174,8 @@ static GLuint dl_list_base_id = 0;
 static bool dl_replay_active = false;
 static bool dl_replay_dirty = true;      // 纹理等状态变化后，绘制前需重设 uniforms
 static bool dl_last_uuse_color = false;  // 上一次缓存绘制实际设置的 uUseColor
+static GLuint dl_current_vao = 0;        // MathCode: 批量回放期间当前绑定的 VAO，
+                                         // 连续缓存 op 之间不再切回 fp_vao
 static GLint dl_saved_vao = 0;
 static GLint dl_saved_program = 0;
 static GLint dl_saved_abo = 0;
@@ -686,6 +688,7 @@ void fp_init(void) {
     if(fp_texfmt_epoch == 0) fp_texfmt_epoch = 1;
     dl_replay_active = false;
     dl_replay_dirty = true;
+    dl_current_vao = 0;
 }
 
 void fp_matrix_mode(GLenum mode) {
@@ -1624,6 +1627,7 @@ static bool fp_begin_dl_replay(void) {
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
     es3_functions.glBindVertexArray(fp_vao);
+    dl_current_vao = fp_vao;
     dl_replay_dirty = true;
     dl_last_uuse_color = !fp_client_color_active; // 强制首次缓存绘制重设 uUseColor
     return true;
@@ -1646,6 +1650,7 @@ static void fp_end_dl_replay(void) {
     } else {
         es3_functions.glBindVertexArray(0);
     }
+    dl_current_vao = (GLuint)dl_saved_vao;
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)dl_saved_eab);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
     if((GLint)fp_program != dl_saved_program) {
@@ -1821,6 +1826,9 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
             dl_replay_active = fp_begin_dl_replay();
             return;
         }
+        // MathCode: 缓存构建内部绑定过临时 VAO，结束后实际绑定为 0，
+        // 清掉跟踪值，下面按需重新绑定 cache_vao。
+        dl_current_vao = 0;
     }
 
     // uUseColor 由客户端颜色数组是否启用决定；判断条件必须与缓存构建端
@@ -1838,13 +1846,17 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
         dl_replay_dirty = false;
     }
 
-    es3_functions.glBindVertexArray(op->cache_vao);
+    if(dl_current_vao != op->cache_vao) {
+        es3_functions.glBindVertexArray(op->cache_vao);
+        dl_current_vao = op->cache_vao;
+    }
     if(op->cache_indexed) {
         es3_functions.glDrawElements(op->cache_mode, op->cache_count, op->cache_itype, NULL);
     } else {
         es3_functions.glDrawArrays(op->cache_mode, op->cache_first, op->cache_count);
     }
-    es3_functions.glBindVertexArray(fp_vao); // 保持批量不变量：始终回到私有 VAO
+    // MathCode: 不再每 op 切回 fp_vao；列表结束/遇到非缓存路径时再恢复，
+    // 生物密集场景每个缓存 op 省一次 VAO 绑定。
 }
 
 // 释放 op 的回放缓存 GL 对象。缓存句柄非 0 时一定属于当前 context
