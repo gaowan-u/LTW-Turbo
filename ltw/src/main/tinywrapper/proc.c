@@ -6,6 +6,7 @@
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
 #include <dlfcn.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <android/log.h>
 #include <string.h>
@@ -94,5 +95,33 @@ eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *procname) {
 fallback:
     function = host_eglGetProcAddress(procname);
     if(function == NULL) function = resolve_stub(procname);
+    if(function == NULL) {
+        // 老代码/驱动探针会请求 ARB/EXT 后缀的入口名（如 glActiveTextureARB、
+        // glGenTexturesEXT 等），GLES 驱动不导出这些别名；同一函数有现代名字，
+        // 去掉后缀再解析一次。
+        size_t len = strlen(procname);
+        if(len > 3 && procname[len-3] == 'A' && procname[len-2] == 'R' && procname[len-1] == 'B') {
+            char base[160];
+            if(len - 3 < sizeof(base)) {
+                memcpy(base, procname, len - 3);
+                base[len - 3] = '\0';
+                function = eglGetProcAddress(base);
+            }
+        } else if(len > 3 && procname[len-3] == 'E' && procname[len-2] == 'X' && procname[len-1] == 'T') {
+            char base[160];
+            if(len - 3 < sizeof(base)) {
+                memcpy(base, procname, len - 3);
+                base[len - 3] = '\0';
+                function = eglGetProcAddress(base);
+            }
+        }
+    }
+    if(function == NULL && procname[0] == 'g' && procname[1] == 'l') {
+        // 诊断：列出仍然解析不到的 GL 函数，用于定位 "No context is current
+        // or a function that is not available in the current context was called"
+        // 刷屏的具体来源。
+        fprintf(stderr, "[LTW MISS] unresolved GL function: %s\n", procname);
+        fflush(stderr);
+    }
     return function;
 }

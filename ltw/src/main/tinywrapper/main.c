@@ -467,6 +467,9 @@ void glActiveTexture(GLenum texture) {
     GLTRACE_CALL(glActiveTexture, es3_functions.glActiveTexture(texture));
     fp_set_active_texture(texture);
 }
+void glActiveTextureARB(GLenum texture) {
+    glActiveTexture(texture);
+}
 void glPixelStorei(GLenum pname, GLint param) {
     if(!current_context) return;
     GLTRACE_CALL(glPixelStorei, es3_functions.glPixelStorei(pname, param));
@@ -517,6 +520,11 @@ void glLineWidth(GLfloat width) {
 }
 void glHint(GLenum target, GLenum mode) {
     if(!current_context) return;
+    // GLES 3 只接受 GL_GENERATE_MIPMAP_HINT / GL_FRAGMENT_SHADER_DERIVATIVE_HINT。
+    // MC 1.12 启动时会调 glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST)，
+    // 桌面枚举在 ES 上是非法枚举，直接产生 1280 Invalid enum（即日志里
+    // "@ Pre startup 1280" 的来源），这里把桌面 hint 吞掉。
+    if(target != GL_GENERATE_MIPMAP_HINT && target != GL_FRAGMENT_SHADER_DERIVATIVE_HINT) return;
     GLTRACE_CALL(glHint, es3_functions.glHint(target, mode));
 }
 void glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum usage) {
