@@ -1055,6 +1055,7 @@ void glTestIntercept(void) {
 // 增强关键函数的日志输出
 void glClear(GLbitfield mask) {
     if(!current_context) return;
+    fp_perf_frame_boundary();
     GLTRACE_CALL(glClear, es3_functions.glClear(mask));
 }
 

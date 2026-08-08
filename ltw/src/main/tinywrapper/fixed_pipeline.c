@@ -16,6 +16,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <math.h>
+#include <time.h>
 #include <GLES3/gl3.h>
 #include "GL/gl.h"
 #include "fixed_pipeline.h"
@@ -176,6 +177,48 @@ static bool dl_replay_dirty = true;      // 纹理等状态变化后，绘制前
 static bool dl_last_uuse_color = false;  // 上一次缓存绘制实际设置的 uUseColor
 static GLuint dl_current_vao = 0;        // MathCode: 批量回放期间当前绑定的 VAO，
                                          // 连续缓存 op 之间不再切回 fp_vao
+
+// ---- 临时性能计数（[LTW PERF]，定位生物密集场景掉帧用，定位完删除）----
+#define FP_PERF_DUMP_FRAMES 120
+static uint64_t fp_perf_frame_count = 0;
+static uint64_t fp_perf_call_list = 0;
+static uint64_t fp_perf_replay_ns = 0;
+static uint64_t fp_perf_cached_ops = 0;
+static uint64_t fp_perf_fallback_ops = 0;
+static uint64_t fp_perf_immediate_ops = 0;
+static uint64_t fp_perf_last_dump_ns = 0;
+
+static uint64_t fp_perf_now_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+void fp_perf_frame_boundary(void) {
+    fp_perf_frame_count++;
+    if(fp_perf_frame_count < FP_PERF_DUMP_FRAMES) return;
+    uint64_t now = fp_perf_now_ns();
+    uint64_t elapsed = fp_perf_last_dump_ns ? now - fp_perf_last_dump_ns : 0;
+    fp_perf_last_dump_ns = now;
+    double fps = elapsed ? (double)FP_PERF_DUMP_FRAMES * 1000000000.0 / (double)elapsed : 0.0;
+    printf("[LTW PERF] frames=%llu fps=%.1f callList=%llu replayMs=%.2f cachedOps=%llu "
+           "fallbackOps=%llu immediateOps=%llu avgCallListUs=%.1f avgCachedOpUs=%.1f\n",
+           (unsigned long long)FP_PERF_DUMP_FRAMES, fps,
+           (unsigned long long)fp_perf_call_list,
+           (double)fp_perf_replay_ns / 1000000.0,
+           (unsigned long long)fp_perf_cached_ops,
+           (unsigned long long)fp_perf_fallback_ops,
+           (unsigned long long)fp_perf_immediate_ops,
+           fp_perf_call_list ? (double)fp_perf_replay_ns / (double)fp_perf_call_list / 1000.0 : 0.0,
+           fp_perf_cached_ops ? (double)fp_perf_replay_ns / (double)fp_perf_cached_ops / 1000.0 : 0.0);
+    fp_perf_frame_count = 0;
+    fp_perf_call_list = 0;
+    fp_perf_replay_ns = 0;
+    fp_perf_cached_ops = 0;
+    fp_perf_fallback_ops = 0;
+    fp_perf_immediate_ops = 0;
+}
+
 static GLint dl_saved_vao = 0;
 static GLint dl_saved_program = 0;
 static GLint dl_saved_abo = 0;
@@ -689,6 +732,13 @@ void fp_init(void) {
     dl_replay_active = false;
     dl_replay_dirty = true;
     dl_current_vao = 0;
+    fp_perf_frame_count = 0;
+    fp_perf_call_list = 0;
+    fp_perf_replay_ns = 0;
+    fp_perf_cached_ops = 0;
+    fp_perf_fallback_ops = 0;
+    fp_perf_immediate_ops = 0;
+    fp_perf_last_dump_ns = 0;
 }
 
 void fp_matrix_mode(GLenum mode) {
@@ -1819,6 +1869,7 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
     if(!op->cache_valid || op->cache_ctx != (const void*)current_context) {
         if(!fp_dl_build_client_cache(op, p)) {
             // 挂起批量状态：旧路径自行绑定/绘制/解绑，再重新进入批量
+            fp_perf_fallback_ops++;
             dl_replay_active = false;
             fp_end_dl_replay();
             fp_dl_play_client_draw(&p->snap, p->mode, p->first, p->count, p->indexed, p->itype,
@@ -1846,6 +1897,7 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
         dl_replay_dirty = false;
     }
 
+    fp_perf_cached_ops++;
     if(dl_current_vao != op->cache_vao) {
         es3_functions.glBindVertexArray(op->cache_vao);
         dl_current_vao = op->cache_vao;
@@ -1902,6 +1954,7 @@ static void fp_dl_execute_op(dl_op_entry_t* op) {
             if(op->size < sizeof(dl_immediate_payload_t)) return;
             const dl_immediate_payload_t* p = (const dl_immediate_payload_t*)payload;
             if((size_t)p->verts_off + (size_t)p->count * FP_VERTEX_BYTES > (size_t)op->size) return;
+            fp_perf_immediate_ops++;
             fp_dl_play_immediate(p->mode,
                                  (const GLfloat*)((const uint8_t*)payload + p->verts_off),
                                  (GLsizei)p->count);
@@ -1923,6 +1976,7 @@ static void fp_dl_execute_op(dl_op_entry_t* op) {
             if(dl_replay_active) {
                 fp_dl_play_client_cached(op, p, data, idx);
             } else {
+                fp_perf_fallback_ops++;
                 fp_dl_play_client_draw(&p->snap, p->mode, p->first, p->count, p->indexed, p->itype,
                                        p->indices_ebo, p->indices_src_off, idx, p->indices_len, data);
             }
@@ -2251,7 +2305,10 @@ void dl_call(GLuint list) {
         dl_capture_op(DL_OP_CALL_LIST, &p, sizeof(p));
         return;
     }
+    uint64_t t0 = fp_perf_now_ns();
     dl_execute_list(list);
+    fp_perf_call_list++;
+    fp_perf_replay_ns += fp_perf_now_ns() - t0;
 }
 
 void dl_calls(GLsizei n, GLenum type, const void* lists) {
