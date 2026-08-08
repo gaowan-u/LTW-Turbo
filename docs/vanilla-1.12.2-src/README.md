@@ -80,8 +80,12 @@ LTW 之前的 bug：`glGetTexImage` 白名单只允许 RGBA 系格式/类型，
 
 修复：`of_buffer_copier.c` 的 `glGetTexImage` 对该组合先按
 `GL_RGBA + GL_UNSIGNED_BYTE` 读回，再把每个像素的 R/B 字节交换成
-BGRA+REV 的内存布局（即 Java ARGB 整数）。F2 截图与世界缩略图共用此路径，
-一并修复。
+BGRA+REV 的内存布局（即 Java ARGB 整数）。
+
+第二个坑：`tempfb` 同时被深度纹理拷贝（`buffer_copier_store/release`）复用，
+可能残留尺寸不匹配的深度/模板附件，导致读颜色时 FBO 不完整、`glReadPixels`
+失败。修复：读回前先清空 `tempfb` 上的旧颜色/深度/模板附件，再挂目标纹理。
+F2 截图与世界缩略图共用此路径，一并修复。
 
 ## 注意事项
 

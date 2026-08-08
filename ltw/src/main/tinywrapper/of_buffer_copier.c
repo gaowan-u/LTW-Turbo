@@ -87,10 +87,24 @@ void glGetTexImage( 	GLenum target,
     GLint old_read_fb;
     es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_fb);
     es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, copier->tempfb);
+    // MathCode: tempfb 同时被深度拷贝路径（buffer_copier_store/release）复用，
+    // 可能残留尺寸不匹配的深度/模板附件；先清空旧附件再挂颜色纹理，否则
+    // FBO 不完整，glReadPixels 失败 → 截图/世界缩略图全黑。
+    es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+    es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
+    es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
     es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, target, texture, level);
     GLint w, h;
     es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &w);
     es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_HEIGHT, &h);
+    if(es3_functions.glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        LTW_ERROR_PRINTF("LTW: glGetTexImage temp FBO incomplete (w=%d h=%d target=%x)", w, h, target);
+        es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+        es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
+        return;
+    }
     if(!pixels) {
         LTW_ERROR_PRINTF("LTW: glGetTexImage called with NULL pixels");
         es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
@@ -137,6 +151,25 @@ void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format
         copier->depthWidth = width;
         copier->depthHeight = height;
         buffer_copier_store(x, y, width, height);
+        return;
+    }
+    // MathCode: MC 截图/世界缩略图在“不使用 FBO”的兼容路径下也会发
+    // GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV，GLES 不支持，这里同样做 CPU 转换。
+    if(format == GL_BGRA_EXT && type == 0x8367) {
+        unsigned char* tmp = (unsigned char*)malloc((size_t)width * (size_t)height * 4);
+        if(!tmp) {
+            LTW_ERROR_PRINTF("LTW: glReadPixels BGRA+REV malloc failed");
+            return;
+        }
+        GLTRACE_CALL(glReadPixels, es3_functions.glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, tmp));
+        unsigned char* out = (unsigned char*)data;
+        for(size_t i = 0; i < (size_t)width * (size_t)height; ++i) {
+            out[i * 4 + 0] = tmp[i * 4 + 2];
+            out[i * 4 + 1] = tmp[i * 4 + 1];
+            out[i * 4 + 2] = tmp[i * 4 + 0];
+            out[i * 4 + 3] = tmp[i * 4 + 3];
+        }
+        free(tmp);
         return;
     }
     GLTRACE_CALL(glReadPixels, es3_functions.glReadPixels(x, y, width, height, format, type, data));
