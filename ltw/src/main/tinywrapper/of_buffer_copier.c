@@ -66,6 +66,27 @@ static void buffer_copier_release(GLenum target, GLint level, GLint x, GLint y, 
     es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, current_context->read_framebuffer);
 }
 
+// MathCode: 把 GLES 的 RGBA/UNSIGNED_BYTE 读回结果转换成 MC 截图用的
+// BGRA+UNSIGNED_INT_8_8_8_8_REV 内存布局（即 Java ARGB 整数）。
+static bool bgra_rev_readback(GLint x, GLint y, GLsizei w, GLsizei h, void* data) {
+    if(!current_context || !data || w <= 0 || h <= 0) return false;
+    unsigned char* tmp = (unsigned char*)malloc((size_t)w * (size_t)h * 4);
+    if(!tmp) {
+        LTW_ERROR_PRINTF("LTW: BGRA+REV readback malloc failed");
+        return false;
+    }
+    es3_functions.glReadPixels(x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
+    unsigned char* out = (unsigned char*)data;
+    for(size_t i = 0; i < (size_t)w * (size_t)h; ++i) {
+        out[i * 4 + 0] = tmp[i * 4 + 2];
+        out[i * 4 + 1] = tmp[i * 4 + 1];
+        out[i * 4 + 2] = tmp[i * 4 + 0];
+        out[i * 4 + 3] = tmp[i * 4 + 3];
+    }
+    free(tmp);
+    return true;
+}
+
 void glGetTexImage( 	GLenum target,
                        GLint level,
                        GLenum format,
@@ -100,8 +121,16 @@ void glGetTexImage( 	GLenum target,
     es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &w);
     es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_HEIGHT, &h);
     if(es3_functions.glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        LTW_ERROR_PRINTF("LTW: glGetTexImage temp FBO incomplete (w=%d h=%d target=%x)", w, h, target);
+        LTW_ERROR_PRINTF("LTW: glGetTexImage temp FBO incomplete (w=%d h=%d target=%x tex=%u)",
+                         w, h, target, texture);
+        // MathCode: 兜底路径——截图时当前读帧缓冲通常仍是主 FBO，
+        // 直接对它 glReadPixels，不再依赖临时 FBO 是否完整。
         es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+        if(old_read_fb != 0 && pixels && bgra_rev) {
+            es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
+            bgra_rev_readback(0, 0, w, h, pixels);
+            return;
+        }
         es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
         return;
     }
@@ -112,24 +141,7 @@ void glGetTexImage( 	GLenum target,
         return;
     }
     if(bgra_rev) {
-        // MathCode: 先按 RGBA/UNSIGNED_BYTE 读回，再把每个像素的 R/B 字节交换，
-        // 还原成 BGRA+UNSIGNED_INT_8_8_8_8_REV 的内存布局（即 Java ARGB 整数）。
-        unsigned char* tmp = (unsigned char*)malloc((size_t)w * (size_t)h * 4);
-        if(!tmp) {
-            LTW_ERROR_PRINTF("LTW: glGetTexImage BGRA+REV malloc failed");
-            es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
-            es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
-            return;
-        }
-        es3_functions.glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
-        unsigned char* out = (unsigned char*)pixels;
-        for(size_t i = 0; i < (size_t)w * (size_t)h; ++i) {
-            out[i * 4 + 0] = tmp[i * 4 + 2];
-            out[i * 4 + 1] = tmp[i * 4 + 1];
-            out[i * 4 + 2] = tmp[i * 4 + 0];
-            out[i * 4 + 3] = tmp[i * 4 + 3];
-        }
-        free(tmp);
+        bgra_rev_readback(0, 0, w, h, pixels);
     } else {
         es3_functions.glReadPixels(0, 0, w, h, format, type, pixels);
     }
@@ -156,20 +168,7 @@ void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format
     // MathCode: MC 截图/世界缩略图在“不使用 FBO”的兼容路径下也会发
     // GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV，GLES 不支持，这里同样做 CPU 转换。
     if(format == GL_BGRA_EXT && type == 0x8367) {
-        unsigned char* tmp = (unsigned char*)malloc((size_t)width * (size_t)height * 4);
-        if(!tmp) {
-            LTW_ERROR_PRINTF("LTW: glReadPixels BGRA+REV malloc failed");
-            return;
-        }
-        GLTRACE_CALL(glReadPixels, es3_functions.glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, tmp));
-        unsigned char* out = (unsigned char*)data;
-        for(size_t i = 0; i < (size_t)width * (size_t)height; ++i) {
-            out[i * 4 + 0] = tmp[i * 4 + 2];
-            out[i * 4 + 1] = tmp[i * 4 + 1];
-            out[i * 4 + 2] = tmp[i * 4 + 0];
-            out[i * 4 + 3] = tmp[i * 4 + 3];
-        }
-        free(tmp);
+        bgra_rev_readback(x, y, width, height, data);
         return;
     }
     GLTRACE_CALL(glReadPixels, es3_functions.glReadPixels(x, y, width, height, format, type, data));

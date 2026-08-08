@@ -85,6 +85,8 @@ BGRA+REV 的内存布局（即 Java ARGB 整数）。
 第二个坑：`tempfb` 同时被深度纹理拷贝（`buffer_copier_store/release`）复用，
 可能残留尺寸不匹配的深度/模板附件，导致读颜色时 FBO 不完整、`glReadPixels`
 失败。修复：读回前先清空 `tempfb` 上的旧颜色/深度/模板附件，再挂目标纹理。
+若临时 FBO 仍不完整，则直接回退到“当前读帧缓冲”（截图时通常仍是主 FBO）
+执行 `glReadPixels`，不再依赖临时 FBO。
 F2 截图与世界缩略图共用此路径，一并修复。
 
 ## 注意事项
