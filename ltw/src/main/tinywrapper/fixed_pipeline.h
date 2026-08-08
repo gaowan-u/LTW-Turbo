@@ -169,8 +169,4 @@ void dl_list_base(GLuint base);
 void dl_call(GLuint list);
 void dl_calls(GLsizei n, GLenum type, const void* lists);
 
-// 临时性能计数：每帧（以 glClear 为边界）累计显示列表回放统计，
-// 定位生物密集场景掉帧用；定位完成后删除。
-void fp_perf_frame_boundary(void);
-
 #endif //LTW_FIXED_PIPELINE_H
