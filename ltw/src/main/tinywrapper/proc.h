@@ -18,13 +18,13 @@
 #include <GLES2/gl2ext.h>
 #include <threads.h>
 
-typedef void (*eglMustCastToProperFunctionPointerType)(void);
+typedef void (*eglMustCastToProperFunctionPointerType)(void); //通用的 EGL 函数指针类型，用于兼容 eglGetProcAddress 返回值
 
 typedef struct {
-#define GLESFUNC(name, type) type name; //GLES的api匹配？新的宏定义
+#define GLESFUNC(name, type) type name; //展开成结构体成员声明
 #include "es3_functions.h"
 #include "es3_extended.h"
-#undef GLESFUNC //取消之前定义的宏
+#undef GLESFUNC //用完后取消宏定义，避免影响后续代码
 } es3_functions_t;  
 
 extern eglMustCastToProperFunctionPointerType (*host_eglGetProcAddress)(const char *procname);

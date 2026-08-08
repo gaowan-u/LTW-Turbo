@@ -2,6 +2,7 @@
  * Created by: artDev
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
+ * 拦截入口:override → host → stub 的三级查找,整个链路起点
  */
 
 /**
@@ -47,6 +48,7 @@ static void init_es3_proc() {
 #undef GLESFUNC
 }
 
+//用于初始化 EGL（嵌入式图形库），它尝试加载指定的 EGL 库，如果加载失败，则回退到默认的 libEGL.so
 __attribute__((constructor, used)) void proc_init(){
     const char* systemEglPath = "libEGL.so";
     const char* eglPath = getenv("LIBGL_EGL") != NULL ? getenv("LIBGL_EGL") : systemEglPath;
@@ -64,11 +66,12 @@ __attribute__((constructor, used)) void proc_init(){
     init_es3_proc();
 }
 
-// This is exported for it to be automatically picked up by LWJGL's symbol resolver.
+// 供 LWJGL 的符号解析器找到，把请求交给当前模块的 eglGetProcAddress
 __attribute__((used)) eglMustCastToProperFunctionPointerType glXGetProcAddress(const char *procname) {
     return eglGetProcAddress(procname);
 }
 
+// 用于生成一个以 "stub_" 前缀开头的函数名，并通过 dlsym 查找对应的函数指针
 static eglMustCastToProperFunctionPointerType resolve_stub(const char* procname) {
     size_t procnamelen = strlen(procname);
     size_t stublen = procnamelen + 6;
