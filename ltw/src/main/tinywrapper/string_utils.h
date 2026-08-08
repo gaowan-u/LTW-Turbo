@@ -1,6 +1,9 @@
 #ifndef _GL4ES_STRING_UTILS_H_
 #define _GL4ES_STRING_UTILS_H_
 
+/**
+ * 文件功能：字符串处理工具接口声明（gl4es 移植，见 string_utils.c）。
+ */
 extern const char* AllSeparators;
 
 int isDigit(char value);

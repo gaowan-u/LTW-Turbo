@@ -1,4 +1,4 @@
 {
-   global: gl*; egl*;
+   global: gl*; egl*; stub_*;
    local: *;
 };

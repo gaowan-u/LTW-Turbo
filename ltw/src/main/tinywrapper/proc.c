@@ -4,9 +4,18 @@
  * For use under LGPL-3.0
  * 拦截入口:override → host → stub 的三级查找,整个链路起点
  */
+
+/**
+ * 文件功能：GL 函数解析与劫持核心。
+ *
+ * 实现 eglGetProcAddress / glXGetProcAddress：把游戏的 gl* 请求分发到
+ * LTW 覆写实现（es3_overrides.h 注册表）、stub_* 空实现或宿主机 EGL；
+ * 启动时加载宿主机 EGL 并填充 es3_functions 函数表。
+ */
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
 #include <dlfcn.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <android/log.h>
 #include <string.h>
@@ -89,7 +98,6 @@ eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *procname) {
     if(strncmp(procname, "gl", 2) != 0) goto fallback;
 #define GLESOVERRIDE(name)                                        \
     if(!strcmp(procname, #name)) {                                \
-        printf("LTW: Overridden %s\n", #name);                        \
         return (eglMustCastToProperFunctionPointerType) name;     \
     }
 #include "es3_overrides.h"
@@ -98,5 +106,26 @@ eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *procname) {
 fallback:
     function = host_eglGetProcAddress(procname);
     if(function == NULL) function = resolve_stub(procname);
+    if(function == NULL) {
+        // 老代码/驱动探针会请求 ARB/EXT 后缀的入口名（如 glActiveTextureARB、
+        // glGenTexturesEXT 等），GLES 驱动不导出这些别名；同一函数有现代名字，
+        // 去掉后缀再解析一次。
+        size_t len = strlen(procname);
+        if(len > 3 && procname[len-3] == 'A' && procname[len-2] == 'R' && procname[len-1] == 'B') {
+            char base[160];
+            if(len - 3 < sizeof(base)) {
+                memcpy(base, procname, len - 3);
+                base[len - 3] = '\0';
+                function = eglGetProcAddress(base);
+            }
+        } else if(len > 3 && procname[len-3] == 'E' && procname[len-2] == 'X' && procname[len-1] == 'T') {
+            char base[160];
+            if(len - 3 < sizeof(base)) {
+                memcpy(base, procname, len - 3);
+                base[len - 3] = '\0';
+                function = eglGetProcAddress(base);
+            }
+        }
+    }
     return function;
 }

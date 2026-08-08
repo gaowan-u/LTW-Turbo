@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：GLSL 桌面版 → GLES 文本级转换器接口（vgpu 方案）。
+ *
+ * 实现精度限定符、位运算、switch、int/float 强转、gl_FragColor 等
+ * 桌面语法到 GLSL ES 的文本改写；由 shader_wrapper.c 在编译前调用。
+ */
 #ifndef UNTITLED_SHADERCONV_H
 #define UNTITLED_SHADERCONV_H
 

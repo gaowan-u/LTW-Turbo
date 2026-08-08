@@ -4,12 +4,16 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：纹理 swizzle 处理接口声明（见 swizzle.c）。
+ */
 #ifndef GL4ES_WRAPPER_SWIZZLE_H
 #define GL4ES_WRAPPER_SWIZZLE_H
 
 #include "egl.h"
 
 void swizzle_process_upload(GLenum target, GLenum *format, GLenum *type);
+void swizzle_reset_texture(GLenum target);
 void swizzle_process_swizzle_param(GLenum target, GLenum swizzle_param, const GLenum* swizzle);
 void swizzle_begin_batch_update(void);
 void swizzle_end_batch_update(void);

@@ -3,6 +3,13 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：DrawElementsBaseVertex 系列兼容实现。
+ *
+ * 宿主机支持时直通（glDrawElementsBaseVertex）；不支持时通过间接绘制
+ * 缓冲（glMultiDrawElementsIndirect）模拟 baseVertex 偏移。
+ */
 #include <GLES3/gl31.h>
 #include "proc.h"
 #include "egl.h"
@@ -50,7 +57,8 @@ static void restore_state(GLuint element_buffer) {
 }
 
 void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLint basevertex) {
-    if(!current_context) return;
+    LTW_ENTER("glDrawElementsBaseVertex");
+    if(!current_context) { LTW_EXIT(); return; }
     if(current_context->drawelementsbasevertex != NULL) {
         current_context->drawelementsbasevertex(mode, count, type, indices, basevertex);
         return;
@@ -94,7 +102,8 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
                                    const void * const *indices,
                                    GLsizei drawcount,
                                    const GLint *basevertex) {
-    if(!current_context) return;
+    LTW_ENTER("glMultiDrawElementsBaseVertex");
+    if(!current_context) { LTW_EXIT(); return; }
     // 添加参数验证
     if(!count || !indices || !basevertex) {
         LTW_ERROR_PRINTF("LTW: NULL pointer passed to glMultiDrawElementsBaseVertex");

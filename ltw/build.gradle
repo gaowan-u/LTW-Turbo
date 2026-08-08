@@ -1,3 +1,6 @@
+// 文件功能：Gradle 模块配置——Android library（AAR）。
+// 通过 ndkBuild 编译 tinywrapper 原生代码（仅 arm64-v8a），
+// 供启动器（FCL/Pojav 等）以渲染器插件方式加载。
 plugins {
     id 'com.android.library'
 }

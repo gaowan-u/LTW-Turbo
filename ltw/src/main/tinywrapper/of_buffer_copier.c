@@ -3,9 +3,19 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：帧缓冲拷贝器与纹理上传兼容。
+ *
+ * 通过临时 FBO + glBlitFramebuffer 实现 glGetTexImage 与深度纹理读回；
+ * 并在 glTexSubImage2D 中处理 GL_BGRA + UNSIGNED_INT_8_8_8_8_REV 的
+ * CPU 字节交换（绕开驱动 swizzle 异常）。
+ */
 #include "proc.h"
 #include "egl.h"
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 #include "swizzle.h"
 #include "debug.h"
 void buffer_copier_init(context_t* context) {
@@ -63,7 +73,10 @@ void glGetTexImage( 	GLenum target,
                        void * pixels) {
     if(!current_context) return;
     if(!current_context->es31) goto unsupported_esver;
-    if(format != GL_RGBA && format != GL_RGBA_INTEGER && type != GL_UNSIGNED_BYTE && type != GL_UNSIGNED_INT && type != GL_INT && type != GL_FLOAT) goto unsupported;
+    // 白名单是“格式合法”且“类型合法”；之前的表达式用 && 串起 format 和 type
+    // 判断，导致 (合法格式 + 非法类型) 之类组合漏判，混进 glReadPixels 报错。
+    if(!(format == GL_RGBA || format == GL_RGBA_INTEGER) ||
+       !(type == GL_UNSIGNED_BYTE || type == GL_UNSIGNED_INT || type == GL_INT || type == GL_FLOAT)) goto unsupported;
     framebuffer_copier_t* copier = &current_context->framebuffer_copier;
     GLint texture;
     es3_functions.glGetIntegerv(get_textarget_query_param(target), &texture);
@@ -97,7 +110,7 @@ void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format
         buffer_copier_store(x, y, width, height);
         return;
     }
-    es3_functions.glReadPixels(x, y, width, height, format, type, data);
+    GLTRACE_CALL(glReadPixels, es3_functions.glReadPixels(x, y, width, height, format, type, data));
 }
 
 void glTexSubImage2D(GLenum target,
@@ -112,15 +125,44 @@ void glTexSubImage2D(GLenum target,
     if(!current_context) return;
     // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查
     bool is_depth = (format == GL_DEPTH_COMPONENT);
-    swizzle_process_upload(target, &format, &type);
+    // MC 1.12 的字形/unicode 纹理用 GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV
+    // 上传。驱动侧 swizzle 补偿在这台设备上不可靠（查询/写入表现异常），
+    // 这里直接在 CPU 上把每个像素的 B/R 字节交换成 RGBA，并把纹理 swizzle
+    // 复位为默认值，彻底绕开驱动 swizzle。
+    bool cpu_bgra_rev = (data != NULL && format == GL_BGRA_EXT && type == 0x8367);
+    void* converted_data = NULL;
+    if(cpu_bgra_rev) {
+        size_t bytes = (size_t)width * (size_t)height * 4;
+        converted_data = malloc(bytes);
+        if(converted_data) {
+            memcpy(converted_data, data, bytes);
+            unsigned char* p = (unsigned char*)converted_data;
+            for(size_t i = 0; i < bytes; i += 4) {
+                unsigned char t = p[i];
+                p[i] = p[i + 2];
+                p[i + 2] = t;
+            }
+            format = GL_RGBA;
+            type = GL_UNSIGNED_BYTE;
+            swizzle_reset_texture(target);
+        } else {
+            cpu_bgra_rev = false;
+        }
+    }
+    if(!cpu_bgra_rev) {
+        swizzle_process_upload(target, &format, &type);
+    }
     if(is_depth) {
         framebuffer_copier_t* copier = &current_context->framebuffer_copier;
         if(width == copier->depthWidth && height == copier->depthHeight && copier->depthData == data) {
             buffer_copier_release(target, level, xoffset, yoffset, width, height);
+            free(converted_data);
             return;
         }
     }
-    es3_functions.glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, data);
+    GLTRACE_CALL(glTexSubImage2D, es3_functions.glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type,
+                                                                converted_data ? converted_data : data));
+    free(converted_data);
 }
 
 void texture_blit_framebuffer(GLenum target,

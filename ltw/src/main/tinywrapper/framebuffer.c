@@ -4,6 +4,13 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：帧缓冲对象（FBO）模拟。
+ *
+ * 维护虚拟 drawbuffer 列表（virt_drawbuffers）到物理 drawbuffer
+ * （phys_drawbuffers）的映射，处理 glDrawBuffers/glFramebufferTexture*
+ * 等桌面语义与 GLES 的差异，并缓存当前绑定 FBO 的状态。
+ */
 #include "proc.h"
 #include "egl.h"
 #include "mempool.h"
@@ -130,7 +137,7 @@ void glClearBufferiv( 	GLenum buffer,
         GLenum attachment = map_attachment(framebuffer, GL_COLOR_ATTACHMENT0 + drawBuffer);
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
-    es3_functions.glClearBufferiv(buffer, drawBuffer, value);
+    GLTRACE_CALL(glClearBufferiv, es3_functions.glClearBufferiv(buffer, drawBuffer, value));
 }
 
 void glClearBufferuiv( 	GLenum buffer,
@@ -141,7 +148,7 @@ void glClearBufferuiv( 	GLenum buffer,
         GLenum attachment = map_attachment(framebuffer, GL_COLOR_ATTACHMENT0 + drawBuffer);
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
-    es3_functions.glClearBufferuiv(buffer, drawBuffer, value);
+    GLTRACE_CALL(glClearBufferuiv, es3_functions.glClearBufferuiv(buffer, drawBuffer, value));
 }
 
 void glClearBufferfv( 	GLenum buffer,
@@ -152,7 +159,7 @@ void glClearBufferfv( 	GLenum buffer,
         GLenum attachment = map_attachment(framebuffer, GL_COLOR_ATTACHMENT0 + drawBuffer);
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
-    es3_functions.glClearBufferfv(buffer, drawBuffer, value);
+    GLTRACE_CALL(glClearBufferfv, es3_functions.glClearBufferfv(buffer, drawBuffer, value));
 }
 
 void glDrawBuffers(GLsizei n, const GLenum* buffers) {
@@ -175,7 +182,7 @@ void glDrawBuffers(GLsizei n, const GLenum* buffers) {
         if(buffer != GL_NONE) phys_drawbuffers[i] = GL_COLOR_ATTACHMENT0+i;
         else phys_drawbuffers[i] = GL_NONE;
     }
-    es3_functions.glDrawBuffers(n, phys_drawbuffers);
+    GLTRACE_CALL(glDrawBuffers, es3_functions.glDrawBuffers(n, phys_drawbuffers));
 }
 
 void glDrawBuffer(GLenum buffer) {
@@ -359,7 +366,7 @@ void glDeleteFramebuffers(GLsizei n, const GLuint* framebuffers) {
 
 void glBindFramebuffer(GLenum target, GLuint framebuffer) {
     if(!current_context) return;
-    es3_functions.glBindFramebuffer(target, framebuffer);
+    GLTRACE_CALL(glBindFramebuffer, es3_functions.glBindFramebuffer(target, framebuffer));
     switch (target) {
         case GL_FRAMEBUFFER:
             current_context->read_framebuffer = current_context->draw_framebuffer = framebuffer;

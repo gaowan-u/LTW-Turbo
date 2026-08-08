@@ -4,6 +4,9 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：纹理格式选择接口声明（见 glformats.c）。
+ */
 #ifndef POJAVLAUNCHER_GLFORMATS_H
 #define POJAVLAUNCHER_GLFORMATS_H
 

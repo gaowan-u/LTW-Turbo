@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：ARM NEON SIMD 工具。
+ *
+ * 提供顶点属性（GLshort 等）批量归一化转换的内联实现，供 vertexattrib.c
+ * 在支持的 ARM 平台上使用；非 ARM 回退到标量循环。
+ */
 #ifndef LTW_SIMD_UTILS_H
 #define LTW_SIMD_UTILS_H
 

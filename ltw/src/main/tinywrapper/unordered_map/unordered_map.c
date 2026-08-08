@@ -1,3 +1,6 @@
+/**
+ * 文件功能：通用哈希表实现（见 unordered_map.h）。
+ */
 #include "unordered_map.h"
 #include <stdbool.h>
 #include <stdlib.h>

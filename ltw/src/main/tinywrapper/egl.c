@@ -3,12 +3,23 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：EGL 上下文管理。
+ *
+ * 拦截 eglCreateContext/eglDestroyContext/eglMakeCurrent，维护 context_t
+ * （着色器/程序/帧缓冲/swizzle/显示列表等映射表、内存池、格式缓存、
+ * 热路径函数指针缓存），并用线程局部变量 current_context 向其余模块
+ * 提供“当前 GL 上下文”。
+ */
 #include "egl.h"
 #include "unordered_map/int_hash.h"
 #include "string_utils.h"
 #include "env.h"
 #include "mempool.h"
 #include "debug.h"
+#include "fixed_pipeline.h"
+#include "quads.h"
 #include <string.h>
 #include <pthread.h>
 
@@ -62,6 +73,8 @@ static bool init_context(context_t* tw_context) {
     if(!tw_context->framebuffer_pool) goto fail_dealloc;
     tw_context->swizzle_track_pool = mempool_create(sizeof(texture_swizzle_track_t), 128);
     if(!tw_context->swizzle_track_pool) goto fail_dealloc;
+    tw_context->ebo_shadow_map = alloc_intmap_safe();
+    if(!tw_context->ebo_shadow_map) goto fail_dealloc;
 
     return true;
 
@@ -78,6 +91,8 @@ static bool init_context(context_t* tw_context) {
         unordered_map_free(tw_context->program_map);
     if(tw_context->texture_swztrack_map)
         unordered_map_free(tw_context->texture_swztrack_map);
+    if(tw_context->ebo_shadow_map)
+        unordered_map_free(tw_context->ebo_shadow_map);
     
     // 清理内存池
     if(tw_context->shader_info_pool) mempool_destroy(tw_context->shader_info_pool);
@@ -90,6 +105,9 @@ static bool init_context(context_t* tw_context) {
 }
 
 static void free_context(context_t* tw_context) {
+    ltw_ebo_shadow_destroy(tw_context);
+    if(tw_context->quads_expanded) free(tw_context->quads_expanded);
+
     unordered_map_free(tw_context->shader_map);
     unordered_map_free(tw_context->program_map);
     unordered_map_free(tw_context->framebuffer_map);
@@ -208,6 +226,51 @@ void build_extension_string(context_t* context) {
     }
     add_extra_extension(context, &length, "GL_ARB_draw_elements_base_vertex");
 
+    // LWJGL2-era games (Minecraft <=1.16) decide their render path from the
+    // extension list and GL version tokens. LWJGL3's GLCapabilities sets
+    // OpenGL20/OpenGL21/etc. from "GL_VERSION_x_y" tokens in the extension
+    // string, and lwjglx mirrors those into ContextCapabilities.OpenGLNN.
+    // Without them the game believes shaders are unsupported and falls back
+    // to the fixed-function pipeline, which GLES does not have -> black screen.
+    // Report the core feature set that GLES 3.x actually covers (desktop GL 3.1+).
+    //
+    // The ARB shader extensions are what LWJGL2 games (Minecraft's
+    // OpenGlHelper) actually probe for before initializing GLSL: they check
+    // GL_ARB_vertex_shader && GL_ARB_fragment_shader and, if present, route
+    // shaders through glUseProgramObjectARB & friends. gl4es does exactly
+    // this. We mirror it and provide those entry points in shader_wrapper.c.
+    static const char* const legacy_exts[] = {
+        "GL_VERSION_1_1",
+        "GL_VERSION_1_2",
+        "GL_VERSION_1_3",
+        "GL_VERSION_1_4",
+        "GL_VERSION_1_5",
+        "GL_VERSION_2_0",
+        "GL_VERSION_2_1",
+        "GL_VERSION_3_0",
+        "GL_VERSION_3_1",
+        "GL_VERSION_3_2",
+        "GL_ARB_multitexture",
+        "GL_ARB_vertex_buffer_object",
+        "GL_ARB_framebuffer_object",
+        "GL_ARB_vertex_array_object",
+        "GL_ARB_texture_non_power_of_two",
+        "GL_ARB_texture_float",
+        "GL_ARB_sync",
+        "GL_ARB_map_buffer_range",
+        "GL_ARB_uniform_buffer_object",
+        "GL_ARB_texture_rectangle",
+        "GL_ARB_vertex_shader",
+        "GL_ARB_fragment_shader",
+        "GL_ARB_shader_objects",
+        "GL_ARB_shading_language_100",
+    };
+    for(size_t i = 0; i < sizeof(legacy_exts)/sizeof(legacy_exts[0]); i++) {
+        add_extra_extension(context, &length, legacy_exts[i]);
+    }
+
+    LTW_ERROR_PRINTF("LTW: injected %zu extra extensions (total %d)", context->nextras, context->nextensions_es + (int)context->nextras);
+
     // More extensions are possible, but will need way more wraps and tracking.
     fin_extra_extensions(context, length);
 }
@@ -254,6 +317,41 @@ static void find_esversion(context_t* context) {
 
 void basevertex_init(context_t* context);
 void buffer_copier_init(context_t* context);
+
+// GL_KHR_debug error tracing: the driver reports the exact function and
+// arguments for every GL error via this callback. KHR_debug constants
+// (GLES 3.2 core) hardcoded as the stub headers lack them.
+#define LTW_DEBUG_OUTPUT             0x92E0
+#define LTW_DEBUG_OUTPUT_SYNC        0x8242
+#define LTW_DEBUG_TYPE_ERROR         0x824C
+#define LTW_DEBUG_TYPE_UNDEF_BEHAV   0x824E
+#define LTW_DONT_CARE                0x1100
+typedef void (GL_APIENTRYP LTWDEBUG_CALLBACKPROC)(GLenum source, GLenum type, GLuint id,
+        GLenum severity, GLsizei length, const GLchar *message, const void *userParam);
+typedef void (GL_APIENTRYP LTWDEBUG_CALLBACK_PTRPROC)(LTWDEBUG_CALLBACKPROC callback, const void *userParam);
+typedef void (GL_APIENTRYP LTWDEBUG_CONTROLPROC)(GLenum source, GLenum type, GLenum severity,
+        GLsizei count, const GLuint *ids, GLboolean enabled);
+
+static void ltw_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
+                               GLsizei length, const GLchar* message, const void* userParam) {
+    (void)source; (void)severity; (void)userParam; (void)length; (void)id;
+    (void)type; (void)message;
+}
+
+static void init_debug_callback() {
+    LTWDEBUG_CALLBACK_PTRPROC cb = (LTWDEBUG_CALLBACK_PTRPROC)host_eglGetProcAddress("glDebugMessageCallback");
+    if(!cb) return;
+    cb(ltw_debug_callback, NULL);
+    LTWDEBUG_CONTROLPROC ctrl = (LTWDEBUG_CONTROLPROC)host_eglGetProcAddress("glDebugMessageControl");
+    if(ctrl) {
+        ctrl(LTW_DONT_CARE, LTW_DONT_CARE, LTW_DONT_CARE, 0, NULL, GL_FALSE);
+        ctrl(LTW_DONT_CARE, LTW_DEBUG_TYPE_ERROR, LTW_DONT_CARE, 0, NULL, GL_TRUE);
+        ctrl(LTW_DONT_CARE, LTW_DEBUG_TYPE_UNDEF_BEHAV, LTW_DONT_CARE, 0, NULL, GL_TRUE);
+    }
+    es3_functions.glEnable(LTW_DEBUG_OUTPUT_SYNC);
+    es3_functions.glEnable(LTW_DEBUG_OUTPUT);
+}
+
 static void init_incontext(context_t* tw_context) {
     es3_functions.glGetIntegerv(GL_MAX_TEXTURE_SIZE, &tw_context->maxTextureSize);
     es3_functions.glGetIntegerv(GL_MAX_DRAW_BUFFERS, &tw_context->max_drawbuffers);
@@ -264,9 +362,12 @@ static void init_incontext(context_t* tw_context) {
 
     find_esversion(tw_context);
 
+    init_debug_callback();
+
     basevertex_init(tw_context);
     buffer_copier_init(tw_context);
     es3_functions.glGenBuffers(1, &tw_context->multidraw_element_buffer);
+    es3_functions.glGenBuffers(1, &tw_context->quads_scratch_buffer);
 
     // 初始化格式缓存
     memset(tw_context->format_cache, 0, sizeof(tw_context->format_cache));
@@ -293,6 +394,8 @@ static void init_incontext(context_t* tw_context) {
     // 初始化 swizzle 批量更新相关字段
     tw_context->pending_swizzle_count = 0;
     tw_context->swizzle_batch_mode = false;
+
+    fp_init();
     memset(tw_context->pending_swizzle_textures, 0, sizeof(tw_context->pending_swizzle_textures));
 
     // 初始化热路径函数指针缓存

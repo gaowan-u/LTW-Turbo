@@ -4,12 +4,20 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：glMultiDrawArrays/glMultiDrawElements 兼容实现。
+ *
+ * 过滤空绘制调用，逐个分发到单绘制路径（含 QUADS 展开与固定管线接管），
+ * 避免把多绘制直接丢给 GLES（GLES 无对应入口）。
+ */
 #include <proc.h>
 #include <egl.h>
 #include "basevertex.h"
 #include "debug.h"
+#include "quads.h"
 void glMultiDrawArrays( GLenum mode, GLint *first, GLsizei *count, GLsizei primcount )
 {
+    LTW_ENTER("glMultiDrawArrays");
     // 优化：跳过空绘制调用
     if(!current_context || primcount <= 0) return;
 
@@ -26,7 +34,8 @@ void glMultiDrawArrays( GLenum mode, GLint *first, GLsizei *count, GLsizei primc
     if (valid_count == 1) {
         for (int i = 0; i < primcount; i++) {
             if (count[i] > 0) {
-                current_context->fast_gl.glDrawArrays(mode, first[i], count[i]);
+                if(!ltw_quads_draw_arrays(mode, first[i], count[i]))
+                    current_context->fast_gl.glDrawArrays(mode, first[i], count[i]);
                 return;
             }
         }
@@ -35,13 +44,15 @@ void glMultiDrawArrays( GLenum mode, GLint *first, GLsizei *count, GLsizei primc
     // 多个绘制调用：逐个执行（保持原有逻辑）
     for (int i = 0; i < primcount; i++) {
         if (count[i] > 0) {
-            current_context->fast_gl.glDrawArrays(mode, first[i], count[i]);
+            if(!ltw_quads_draw_arrays(mode, first[i], count[i]))
+                current_context->fast_gl.glDrawArrays(mode, first[i], count[i]);
         }
     }
 }
 
 void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void * const *indices, GLsizei primcount )
 {
+    LTW_ENTER("glMultiDrawElements");
     if(!current_context) return;
     if(primcount <= 0) return;
 
@@ -138,7 +149,8 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
 
     // 绑定并绘制
     current_context->fast_gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, current_context->multidraw_element_buffer);
-    current_context->fast_gl.glDrawElements(mode, total, type, (const void*)write_offset);
+    if(!ltw_quads_draw_elements(mode, total, type, (const void*)write_offset))
+        current_context->fast_gl.glDrawElements(mode, total, type, (const void*)write_offset);
 
     // 恢复原始绑定
     if(elementbuffer != 0) {

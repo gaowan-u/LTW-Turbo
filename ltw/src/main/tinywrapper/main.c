@@ -3,6 +3,15 @@
  * Copyright (c) 2025 artDev, SerpentSpirale, CADIndie.
  * For use under LGPL-3.0
  */
+
+/**
+ * 文件功能：桌面 GL → GLES 的核心翻译入口。
+ *
+ * 集中实现 GL 版本/厂商/扩展伪装（glGetString/glGetStringi）、桌面专属
+ * 状态的过滤与吞掉（fixed-function cap、纹理参数白名单）、代理纹理模拟，
+ * 以及 glDrawArrays/glDrawElements 等高频入口的分发：
+ * 显示列表录制 → QUADS 展开 → 固定管线接管 → 宿主机直通。
+ */
 #include <stdio.h>
 #include <dlfcn.h>
 
@@ -21,14 +30,17 @@
 #include "env.h"
 #include "mempool.h"
 #include "debug.h"
+#include "quads.h"
+#include "fixed_pipeline.h"
 
-//GL清空深度缓存使用glClearDepth这个GL的api
+// 桌面 glClearDepth 接收 GLdouble；GLES 只有 glClearDepthf，这里转换后转发
 void glClearDepth(GLdouble depth) {
-    if(!current_context) return;    //判断是否为context_t结构体中成员，否则直接返回
-    es3_functions.glClearDepthf((GLfloat) depth);   //对应ltw\src\main\tinywrapper\es3_functions.h中的GLESFUNC(glClearDepthf,PFNGLCLEARDEPTHFPROC)
+    if(!current_context) return;    // 无当前 GL 上下文（线程局部指针为空）时直接返回
+    // 转发到 GLES 的 glClearDepthf（函数指针来自 es3_functions.h）
+    es3_functions.glClearDepthf((GLfloat) depth);
 }
 
-//GL映射缓冲区
+// 桌面 glMapBuffer：把 GLES 的 glMapBufferRange 包装成桌面语义
 void *glMapBuffer(GLenum target, GLenum access) {
     if(!current_context) return NULL;
 
@@ -63,11 +75,17 @@ void *glMapBuffer(GLenum target, GLenum access) {
             return NULL;
     }
 
+    // 映射写会使 EBO 影子副本失效
+    if(target == GL_ELEMENT_ARRAY_BUFFER && (access_range & GL_MAP_WRITE_BIT)) {
+        GLint eab = 0;
+        es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
+        if(eab != 0) ltw_ebo_shadow_invalidate((GLuint)eab);
+    }
     es3_functions.glGetBufferParameteriv(target, GL_BUFFER_SIZE, &length);
     return es3_functions.glMapBufferRange(target, 0, length, access_range);
 }
 
-//判断是否为代理纹理
+// 是否为代理纹理目标（桌面纹理分配前的“容量探测”纹理）
 INTERNAL int isProxyTexture(GLenum target) {
     switch (target) {
         case GL_PROXY_TEXTURE_1D:
@@ -79,7 +97,7 @@ INTERNAL int isProxyTexture(GLenum target) {
     return 0;   //返回假
 }
 
-//查询纹理在glext.h中的映射
+// 纹理目标对应的“当前绑定查询”枚举（glGetIntegerv 用）
 INTERNAL GLenum get_textarget_query_param(GLenum target) {
     switch (target) {
         case GL_TEXTURE_2D:
@@ -109,7 +127,7 @@ INTERNAL GLenum get_textarget_query_param(GLenum target) {
     }
 }
 
-//此处为一个内联函数，计算纹理级别的尺寸，可以插入到调用它的地方
+// 计算 level 级 mip 的尺寸（右移后最小为 1）
 static int inline nlevel(int size, int level) {
     if(size) {
         size>>=level;   //右移赋值运算符，将size右移level位后赋值给size
@@ -118,7 +136,7 @@ static int inline nlevel(int size, int level) {
     return size;
 }
 
-static bool trigger_texlevelparameter = false;  //纹理级别参数触发器，默认关闭
+static bool trigger_texlevelparameter = false;  // 已提示过“ES 3.1 以下不支持”的开关
 
 //纹理级别参数验证
 static bool check_texlevelparameter() {
@@ -143,12 +161,46 @@ static void proxy_getlevelparameter(GLenum target, GLint level, GLenum pname, GL
     }
 }
 
+// GLES 3.x 中 glGetTexLevelParameter 可查询的 pname（纹理状态 pname 如
+// GL_TEXTURE_WRAP_S/T 不是 level 参数，透传会让驱动报 GL_INVALID_ENUM）。
+static bool is_gles_texlevelparam_pname(GLenum pname) {
+    switch (pname) {
+        case GL_TEXTURE_WIDTH:
+        case GL_TEXTURE_HEIGHT:
+        case GL_TEXTURE_DEPTH:
+        case GL_TEXTURE_INTERNAL_FORMAT:
+        case GL_TEXTURE_RED_SIZE:
+        case GL_TEXTURE_GREEN_SIZE:
+        case GL_TEXTURE_BLUE_SIZE:
+        case GL_TEXTURE_ALPHA_SIZE:
+        case GL_TEXTURE_DEPTH_SIZE:
+        case GL_TEXTURE_STENCIL_SIZE:
+        case GL_TEXTURE_COMPRESSED:
+        case 0x86A0: /* GL_TEXTURE_COMPRESSED_IMAGE_SIZE */
+        case 0x8C3F: /* GL_TEXTURE_SHARED_SIZE */
+        case 0x8C10: /* GL_TEXTURE_RED_TYPE */   case 0x8C11: /* GREEN */
+        case 0x8C12: /* GL_TEXTURE_BLUE_TYPE */  case 0x8C13: /* ALPHA */
+        case 0x8C14: /* GL_TEXTURE_DEPTH_TYPE */
+        case 0x9106: /* GL_TEXTURE_SAMPLES */
+        case 0x9107: /* GL_TEXTURE_FIXED_SAMPLE_LOCATIONS */
+        case 0x919D: /* GL_TEXTURE_BUFFER_SIZE (GLES 3.2) */
+        case 0x919E: /* GL_TEXTURE_BUFFER_OFFSET */
+            return true;
+        default:
+            return false;
+    }
+}
+
 void glGetTexLevelParameterfv(GLenum target, GLint level, GLenum pname, GLfloat *params) {
     if(!current_context) return;
     if(isProxyTexture(target)) {
         GLint param = 0;
         proxy_getlevelparameter(target, level, pname, &param);
         *params = (GLfloat) param;
+        return;
+    }
+    if(!is_gles_texlevelparam_pname(pname)) {
+        *params = 0.0f;
         return;
     }
     if(!check_texlevelparameter()) return;
@@ -159,6 +211,10 @@ void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *p
     if(!current_context) return;
     if (isProxyTexture(target)) {
         proxy_getlevelparameter(target, level, pname, params);
+        return;
+    }
+    if(!is_gles_texlevelparam_pname(pname)) {
+        *params = 0;
         return;
     }
     if(!check_texlevelparameter()) return;
@@ -175,12 +231,24 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
     } else {
         if(data != NULL) swizzle_process_upload(target, &format, &type);
         pick_internalformat(&internalformat, &type, &format, &data);
-        es3_functions.glTexImage2D(target, level, internalformat, width, height, border, format, type, data);
+        GLTRACE_CALL(glTexImage2D, es3_functions.glTexImage2D(target, level, internalformat, width, height, border, format, type, data));
+        // 内部格式可能变化：固定管线纹理格式缓存失效
+        fp_texture_upload_invalidate();
     }
 }
 
 INTERNAL bool filter_params_integer(GLenum target, GLenum pname, GLint param) {
     return true;
+}
+// GLES 没有 GL_CLAMP(0x2900)（桌面 GL 1.x 遗留），老游戏（MC <=1.16）常给
+// WRAP_S/T/R 设 GL_CLAMP，GLES 驱动会报 GL_INVALID_ENUM 且状态不生效。
+// 统一映射为 GL_CLAMP_TO_EDGE，语义最接近，也消除了 0x500 错误的来源。
+INTERNAL GLint sanitize_texparam_value(GLenum pname, GLint param) {
+    if(param == GL_CLAMP &&
+       (pname == GL_TEXTURE_WRAP_S || pname == GL_TEXTURE_WRAP_T || pname == GL_TEXTURE_WRAP_R)) {
+        return GL_CLAMP_TO_EDGE;
+    }
+    return param;
 }
 INTERNAL bool filter_params_float(GLenum target, GLenum pname, GLfloat param) {
     if(pname == GL_TEXTURE_LOD_BIAS) {
@@ -200,6 +268,7 @@ void glTexParameterf( 	GLenum target,
     if(!current_context) return;
     if(!filter_params_integer(target, pname, (GLint) param)) return;
     if(!filter_params_float(target, pname, param)) return;
+    param = (GLfloat)sanitize_texparam_value(pname, (GLint)param);
     es3_functions.glTexParameterf(target, pname, param);
 }
 void glTexParameteri( 	GLenum target,
@@ -208,8 +277,9 @@ void glTexParameteri( 	GLenum target,
     if(!current_context) return;
     if(!filter_params_integer(target, pname, param)) return;
     if(!filter_params_float(target, pname, (GLfloat)param)) return;
+    param = sanitize_texparam_value(pname, param);
     swizzle_process_swizzle_param(target, pname, &param);
-    es3_functions.glTexParameteri(target, pname, param);
+    GLTRACE_CALL(glTexParameteri, es3_functions.glTexParameteri(target, pname, param));
 }
 
 void glTexParameterfv( 	GLenum target,
@@ -218,7 +288,12 @@ void glTexParameterfv( 	GLenum target,
     if(!current_context) return;
     if(!filter_params_integer(target, pname, (GLint)*params)) return;
     if(!filter_params_float(target, pname, *params)) return;
-    es3_functions.glTexParameterfv(target, pname, params);
+    GLfloat sanitized[4];
+    memcpy(sanitized, params, 4 * sizeof(GLfloat));
+    if(pname == GL_TEXTURE_WRAP_S || pname == GL_TEXTURE_WRAP_T || pname == GL_TEXTURE_WRAP_R) {
+        for(int i = 0; i < 4; i++) sanitized[i] = (GLfloat)sanitize_texparam_value(pname, (GLint)sanitized[i]);
+    }
+    es3_functions.glTexParameterfv(target, pname, sanitized);
 }
 void glTexParameteriv( 	GLenum target,
                           GLenum pname,
@@ -226,8 +301,13 @@ void glTexParameteriv( 	GLenum target,
     if(!current_context) return;
     if(!filter_params_integer(target, pname, *params)) return;
     if(!filter_params_float(target, pname, (GLfloat)*params)) return;
-    swizzle_process_swizzle_param(target, pname, params);
-    es3_functions.glTexParameteriv(target, pname, params);
+    GLint sanitized[4];
+    memcpy(sanitized, params, 4 * sizeof(GLint));
+    if(pname == GL_TEXTURE_WRAP_S || pname == GL_TEXTURE_WRAP_T || pname == GL_TEXTURE_WRAP_R) {
+        for(int i = 0; i < 4; i++) sanitized[i] = sanitize_texparam_value(pname, sanitized[i]);
+    }
+    swizzle_process_swizzle_param(target, pname, (const GLenum*)sanitized);
+    es3_functions.glTexParameteriv(target, pname, sanitized);
 }
 static bool trigger_gltexparameteri = false;
 void glTexParameterIiv( 	GLenum target,
@@ -284,6 +364,9 @@ void glBufferStorage(GLenum target,
         flags |= (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
     }
     es3_functions.glBufferStorageEXT(target, size, data, flags);
+    if(target == GL_ELEMENT_ARRAY_BUFFER && data != NULL) {
+        ltw_ebo_shadow_upload(target, size, data, 0, true);
+    }
 }
 
 void *glMapBufferRange( 	GLenum target,
@@ -291,6 +374,12 @@ void *glMapBufferRange( 	GLenum target,
                            GLsizeiptr length,
                            GLbitfield access) {
     if(never_flush_buffers) access &= ~GL_MAP_FLUSH_EXPLICIT_BIT;
+    // 映射写会使影子副本失效（无法跟踪 GPU 写入内容）
+    if(target == GL_ELEMENT_ARRAY_BUFFER && (access & (GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_INVALIDATE_RANGE_BIT))) {
+        GLint eab = 0;
+        es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
+        if(eab != 0) ltw_ebo_shadow_invalidate((GLuint)eab);
+    }
     return es3_functions.glMapBufferRange(target, offset, length, access);
 }
 
@@ -336,10 +425,416 @@ const GLubyte* glGetString(GLenum name) {
 
 bool debug = false;
 
+// Fixed-function pipeline state that GLES 3.x does not support. LWJGL2-era
+// apps (Minecraft <=1.16) toggle these caps every frame, e.g.
+// glEnable(GL_ALPHA_TEST). Forwarding them makes the driver raise
+// GL_INVALID_ENUM; on ES these states are no-ops (fully programmable
+// pipeline), so swallow them. GL_CLIP_PLANE* is intentionally absent:
+// it shares values with the valid GL_CLIP_DISTANCE* caps.
+static bool is_fixed_function_cap(GLenum cap) {
+    switch (cap) {
+        case GL_ALPHA_TEST:
+        case GL_LIGHTING:
+        case GL_LIGHT0: case GL_LIGHT1: case GL_LIGHT2: case GL_LIGHT3:
+        case GL_LIGHT4: case GL_LIGHT5: case GL_LIGHT6: case GL_LIGHT7:
+        case GL_FOG:
+        case GL_COLOR_MATERIAL:
+        case GL_NORMALIZE:
+        case GL_RESCALE_NORMAL:
+        case GL_TEXTURE_1D: case GL_TEXTURE_2D: case GL_TEXTURE_3D:
+        case GL_TEXTURE_CUBE_MAP:
+        case GL_TEXTURE_GEN_S: case GL_TEXTURE_GEN_T:
+        case GL_TEXTURE_GEN_R: case GL_TEXTURE_GEN_Q:
+        case GL_POINT_SMOOTH: case GL_LINE_SMOOTH: case GL_POLYGON_SMOOTH:
+        case GL_POLYGON_OFFSET_POINT: case GL_POLYGON_OFFSET_LINE:
+        // GL_MULTISAMPLE / GL_DEPTH_CLAMP 是桌面专用 cap，ES 上转发只会产生
+        // INVALID_ENUM，且 ES 不支持对应状态（多重采样隐式开启、无深度钳制），
+        // 吞掉与转发效果相同，还能避免错误日志刷屏。
+        case GL_MULTISAMPLE:
+        case 0x864F: /* GL_DEPTH_CLAMP */
+        case GL_VERTEX_ARRAY: case GL_NORMAL_ARRAY: case GL_COLOR_ARRAY:
+        case GL_TEXTURE_COORD_ARRAY: case GL_EDGE_FLAG_ARRAY:
+        case GL_FOG_COORD_ARRAY: case GL_SECONDARY_COLOR_ARRAY:
+        case GL_INDEX_ARRAY:
+            return true;
+        default:
+            return false;
+    }
+}
+
 void glEnable(GLenum cap) {
     if(!current_context) return;
     if(cap == GL_DEBUG_OUTPUT && !debug) return;
+    if(is_fixed_function_cap(cap)) {
+        if(cap == GL_TEXTURE_2D) {
+            fp_set_texture_enabled(true);
+            fp_dl_capture_texture_enable(true);
+        }
+        if(cap == GL_ALPHA_TEST) fp_set_alpha_test(true);
+        return;
+    }
+    // 之前只透传 GL_BLEND，GL_DEPTH_TEST / GL_CULL_FACE / GL_POLYGON_OFFSET_FILL /
+    // GL_SCISSOR_TEST 等全部被吞掉。MC 1.12 画方块破坏裂纹时依赖
+    // glEnable(GL_POLYGON_OFFSET_FILL) + glPolygonOffset(-1,-10) 把裂纹推离
+    // 方块面，否则裂纹与方块面 z-fighting，出现“贴图穿透”闪烁。
     es3_functions.glEnable(cap);
+}
+
+void glDisable(GLenum cap) {
+    if(!current_context) return;
+    if(is_fixed_function_cap(cap)) {
+        if(cap == GL_TEXTURE_2D) {
+            fp_set_texture_enabled(false);
+            fp_dl_capture_texture_enable(false);
+        }
+        if(cap == GL_ALPHA_TEST) fp_set_alpha_test(false);
+        return;
+    }
+    es3_functions.glDisable(cap);
+}
+
+// Pass-through wrappers with double-drain error tracing (LTW_DEBUG trace
+// hunt for the recurring 0x500 INVALID_ENUM).
+void glBindTexture(GLenum target, GLuint texture) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBindTexture, es3_functions.glBindTexture(target, texture));
+    // unit0 绑定用 CPU 维护（免去每次绑定的驱动查询），单通道格式走本地缓存
+    if(target == GL_TEXTURE_2D) fp_notify_texture_bind_tex(texture);
+    // 显示列表编译期间：记录纹理绑定，回放时按录制单元恢复
+    fp_dl_capture_bind_texture(target, texture);
+}
+void glActiveTexture(GLenum texture) {
+    if(!current_context) return;
+    GLTRACE_CALL(glActiveTexture, es3_functions.glActiveTexture(texture));
+    fp_set_active_texture(texture);
+}
+void glActiveTextureARB(GLenum texture) {
+    glActiveTexture(texture);
+}
+void glPixelStorei(GLenum pname, GLint param) {
+    if(!current_context) return;
+    GLTRACE_CALL(glPixelStorei, es3_functions.glPixelStorei(pname, param));
+}
+void glGenerateMipmap(GLenum target) {
+    if(!current_context) return;
+    GLTRACE_CALL(glGenerateMipmap, es3_functions.glGenerateMipmap(target));
+}
+void glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
+    if(!current_context) return;
+    GLTRACE_CALL(glViewport, es3_functions.glViewport(x, y, width, height));
+}
+void glBlendFunc(GLenum sfactor, GLenum dfactor) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBlendFunc, es3_functions.glBlendFunc(sfactor, dfactor));
+}
+void glBlendFuncSeparate(GLenum sfactorRGB, GLenum dfactorRGB, GLenum sfactorAlpha, GLenum dfactorAlpha) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBlendFuncSeparate, es3_functions.glBlendFuncSeparate(sfactorRGB, dfactorRGB, sfactorAlpha, dfactorAlpha));
+}
+void glDepthFunc(GLenum func) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDepthFunc, es3_functions.glDepthFunc(func));
+}
+void glDepthMask(GLboolean flag) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDepthMask, es3_functions.glDepthMask(flag));
+}
+void glColorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha) {
+    if(!current_context) return;
+    GLTRACE_CALL(glColorMask, es3_functions.glColorMask(red, green, blue, alpha));
+}
+void glCullFace(GLenum mode) {
+    if(!current_context) return;
+    GLTRACE_CALL(glCullFace, es3_functions.glCullFace(mode));
+}
+void glStencilFunc(GLenum func, GLint ref, GLuint mask) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilFunc, es3_functions.glStencilFunc(func, ref, mask));
+}
+void glStencilMask(GLuint mask) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilMask, es3_functions.glStencilMask(mask));
+}
+void glLineWidth(GLfloat width) {
+    if(!current_context) return;
+    GLTRACE_CALL(glLineWidth, es3_functions.glLineWidth(width));
+}
+void glHint(GLenum target, GLenum mode) {
+    if(!current_context) return;
+    // GLES 3 只接受 GL_GENERATE_MIPMAP_HINT / GL_FRAGMENT_SHADER_DERIVATIVE_HINT。
+    // MC 1.12 启动时会调 glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST)，
+    // 桌面枚举在 ES 上是非法枚举，直接产生 1280 Invalid enum（即日志里
+    // "@ Pre startup 1280" 的来源），这里把桌面 hint 吞掉。
+    if(target != GL_GENERATE_MIPMAP_HINT && target != GL_FRAGMENT_SHADER_DERIVATIVE_HINT) return;
+    GLTRACE_CALL(glHint, es3_functions.glHint(target, mode));
+}
+void glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum usage) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBufferData, es3_functions.glBufferData(target, size, data, usage));
+    ltw_ebo_shadow_upload(target, size, data, 0, true);
+}
+void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void* data) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBufferSubData, es3_functions.glBufferSubData(target, offset, size, data));
+    ltw_ebo_shadow_upload(target, size, data, offset, false);
+}
+void glDeleteBuffers(GLsizei n, const GLuint* buffers) {
+    if(!current_context) return;
+    for(GLsizei i = 0; i < n; i++) {
+        if(buffers) ltw_ebo_shadow_invalidate(buffers[i]);
+    }
+    es3_functions.glDeleteBuffers(n, buffers);
+}
+void glCompileShader(GLuint shader) {
+    if(!current_context) return;
+    GLTRACE_CALL(glCompileShader, es3_functions.glCompileShader(shader));
+}
+void glUniform1i(GLint location, GLint v0) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform1i, es3_functions.glUniform1i(location, v0));
+}
+void glUniform4f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform4f, es3_functions.glUniform4f(location, v0, v1, v2, v3));
+}
+void glUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniformMatrix4fv, es3_functions.glUniformMatrix4fv(location, count, transpose, value));
+}
+void glStencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilOp, es3_functions.glStencilOp(sfail, dpfail, dppass));
+}
+void glStencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilFuncSeparate, es3_functions.glStencilFuncSeparate(face, func, ref, mask));
+}
+void glStencilOpSeparate(GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilOpSeparate, es3_functions.glStencilOpSeparate(face, sfail, dpfail, dppass));
+}
+void glStencilMaskSeparate(GLenum face, GLuint mask) {
+    if(!current_context) return;
+    GLTRACE_CALL(glStencilMaskSeparate, es3_functions.glStencilMaskSeparate(face, mask));
+}
+void glPolygonOffset(GLfloat factor, GLfloat units) {
+    if(!current_context) return;
+    GLTRACE_CALL(glPolygonOffset, es3_functions.glPolygonOffset(factor, units));
+}
+void glScissor(GLint x, GLint y, GLsizei width, GLsizei height) {
+    if(!current_context) return;
+    GLTRACE_CALL(glScissor, es3_functions.glScissor(x, y, width, height));
+}
+void glClearDepthf(GLclampf d) {
+    if(!current_context) return;
+    GLTRACE_CALL(glClearDepthf, es3_functions.glClearDepthf(d));
+}
+void glClearStencil(GLint s) {
+    if(!current_context) return;
+    GLTRACE_CALL(glClearStencil, es3_functions.glClearStencil(s));
+}
+void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei primcount) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDrawArraysInstanced, es3_functions.glDrawArraysInstanced(mode, first, count, primcount));
+}
+void glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei primcount) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDrawElementsInstanced, es3_functions.glDrawElementsInstanced(mode, count, type, indices, primcount));
+}
+void glVertexAttribDivisor(GLuint index, GLuint divisor) {
+    if(!current_context) return;
+    GLTRACE_CALL(glVertexAttribDivisor, es3_functions.glVertexAttribDivisor(index, divisor));
+}
+void glEnableVertexAttribArray(GLuint index) {
+    if(!current_context) return;
+    GLTRACE_CALL(glEnableVertexAttribArray, es3_functions.glEnableVertexAttribArray(index));
+}
+void glDisableVertexAttribArray(GLuint index) {
+    if(!current_context) return;
+    GLTRACE_CALL(glDisableVertexAttribArray, es3_functions.glDisableVertexAttribArray(index));
+}
+void glUniform2f(GLint location, GLfloat v0, GLfloat v1) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform2f, es3_functions.glUniform2f(location, v0, v1));
+}
+void glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform3f, es3_functions.glUniform3f(location, v0, v1, v2));
+}
+void glUniform2fv(GLint location, GLsizei count, const GLfloat* value) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform2fv, es3_functions.glUniform2fv(location, count, value));
+}
+void glUniform3fv(GLint location, GLsizei count, const GLfloat* value) {
+    if(!current_context) return;
+    GLTRACE_CALL(glUniform3fv, es3_functions.glUniform3fv(location, count, value));
+}
+GLint glGetUniformLocation(GLuint program, const GLchar* name) {
+    GLint ret = -1;
+    if(!current_context) return -1;
+    GLTRACE_CALL(glGetUniformLocation, ret = es3_functions.glGetUniformLocation(program, name));
+    return ret;
+}
+void glTexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const void* pixels) {
+    if(!current_context) return;
+    GLTRACE_CALL(glTexImage3D, es3_functions.glTexImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels));
+}
+void glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void* pixels) {
+    if(!current_context) return;
+    GLTRACE_CALL(glTexSubImage3D, es3_functions.glTexSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels));
+}
+void glCopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border) {
+    if(!current_context) return;
+    GLTRACE_CALL(glCopyTexImage2D, es3_functions.glCopyTexImage2D(target, level, internalformat, x, y, width, height, border));
+    fp_texture_upload_invalidate();
+}
+void glBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) {
+    if(!current_context) return;
+    GLTRACE_CALL(glBlitFramebuffer, es3_functions.glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter));
+}
+void glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices) {
+    if(!current_context) return;
+    if(fp_dl_capture_client_draw(mode, (GLint)start, count, true, type, indices)) return;
+    // 与 glDrawElements 走同一套兼容处理：QUADS 展开 + 无 program 时固定管线。
+    if(ltw_quads_draw_elements(mode, count, type, indices)) return;
+    if(fp_try_draw_elements(mode, count, type, indices)) return;
+    GLTRACE_CALL(glDrawRangeElements, es3_functions.glDrawRangeElements(mode, start, end, count, type, indices));
+}
+void glSampleCoverage(GLfloat value, GLboolean invert) {
+    if(!current_context) return;
+    GLTRACE_CALL(glSampleCoverage, es3_functions.glSampleCoverage(value, invert));
+}
+void glFlush(void) {
+    if(!current_context) return;
+    GLTRACE_CALL(glFlush, es3_functions.glFlush());
+}
+void glFinish(void) {
+    if(!current_context) return;
+    GLTRACE_CALL(glFinish, es3_functions.glFinish());
+}
+
+// GLES 3.x 中 glGetTexParameter 支持查询的 pname。桌面 GL 独有的 pname
+// （GL_TEXTURE_PRIORITY/RESIDENT/GENERATE_MIPMAP/DEPTH_TEXTURE_MODE 等）一旦
+// 透传，GLES 驱动就会报 GL_INVALID_ENUM(0x500)，污染错误队列并触发
+// "stale 0x500" 连锁。不支持的 pname 由调用方返回规范默认值，不透传。
+static bool is_gles_texparam_pname(GLenum pname) {
+    switch (pname) {
+        case GL_TEXTURE_MAG_FILTER:
+        case GL_TEXTURE_MIN_FILTER:
+        case GL_TEXTURE_WRAP_S:
+        case GL_TEXTURE_WRAP_T:
+        case GL_TEXTURE_WRAP_R:
+        case GL_TEXTURE_MIN_LOD:
+        case GL_TEXTURE_MAX_LOD:
+        case GL_TEXTURE_BASE_LEVEL:
+        case GL_TEXTURE_MAX_LEVEL:
+        case GL_TEXTURE_BORDER_COLOR:
+            return true;
+        // 数值常量：GL_TEXTURE_COMPARE_MODE 0x884C / FUNC 0x884D,
+        // GL_TEXTURE_SWIZZLE_R/G/B/A 0x8B42..0x8B45,
+        // GL_TEXTURE_IMMUTABLE_FORMAT 0x912F / IMMUTABLE_LEVELS 0x82DF
+        case 0x884C:
+        case 0x884D:
+        case 0x8B42:
+        case 0x8B43:
+        case 0x8B44:
+        case 0x8B45:
+        case 0x912F:
+        case 0x82DF:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// GLES 3.x 中 glGetTexParameter 接受的目标。桌面遗留目标（GL_TEXTURE_1D
+// 等）透传同样会报 INVALID_ENUM。
+static bool is_gles_texparam_target(GLenum target) {
+    switch (target) {
+        case GL_TEXTURE_2D:
+        case GL_TEXTURE_3D:
+        case GL_TEXTURE_CUBE_MAP:
+        case 0x8C1A: /* GL_TEXTURE_2D_ARRAY */
+        case 0x9009: /* GL_TEXTURE_CUBE_MAP_ARRAY */
+        case 0x9100: /* GL_TEXTURE_2D_MULTISAMPLE */
+        case 0x9102: /* GL_TEXTURE_2D_MULTISAMPLE_ARRAY */
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void texparam_defaults(GLenum pname, GLint* params) {
+    switch (pname) {
+        case GL_TEXTURE_WRAP_S:
+        case GL_TEXTURE_WRAP_T:
+        case GL_TEXTURE_WRAP_R:
+            params[0] = GL_REPEAT;
+            break;
+        case GL_TEXTURE_MIN_FILTER:
+            params[0] = GL_NEAREST_MIPMAP_LINEAR;
+            break;
+        case GL_TEXTURE_MAG_FILTER:
+            params[0] = GL_LINEAR;
+            break;
+        case GL_TEXTURE_MIN_LOD:
+            params[0] = -1000;
+            break;
+        case GL_TEXTURE_MAX_LOD:
+        case GL_TEXTURE_MAX_LEVEL:
+            params[0] = 1000;
+            break;
+        case GL_TEXTURE_BASE_LEVEL:
+        case 0x82DF: /* GL_TEXTURE_IMMUTABLE_LEVELS */
+        case 0x912F: /* GL_TEXTURE_IMMUTABLE_FORMAT */
+            params[0] = 0;
+            break;
+        case 0x884C: /* GL_TEXTURE_COMPARE_MODE */
+            params[0] = GL_NONE;
+            break;
+        case 0x884D: /* GL_TEXTURE_COMPARE_FUNC */
+            params[0] = GL_LEQUAL;
+            break;
+        case 0x8B42: params[0] = GL_RED;   break;
+        case 0x8B43: params[0] = GL_GREEN; break;
+        case 0x8B44: params[0] = GL_BLUE;  break;
+        case 0x8B45: params[0] = GL_ALPHA; break;
+        case GL_TEXTURE_BORDER_COLOR:
+            params[0] = params[1] = params[2] = params[3] = 0;
+            break;
+        default:
+            params[0] = 0;
+    }
+}
+
+void glGetTexParameteriv(GLenum target, GLenum pname, GLint* params) {
+    LTW_ENTER("glGetTexParameteriv");
+    if(!current_context) { LTW_EXIT(); return; }
+    if(!is_gles_texparam_target(target) || !is_gles_texparam_pname(pname)) {
+        // 不透传：驱动不会收到非法枚举，错误队列保持干净
+        texparam_defaults(pname, params);
+        LTW_EXIT();
+        return;
+    }
+    GLTRACE_CALL(glGetTexParameteriv, es3_functions.glGetTexParameteriv(target, pname, params));
+    LTW_EXIT();
+}
+
+void glGetTexParameterfv(GLenum target, GLenum pname, GLfloat* params) {
+    LTW_ENTER("glGetTexParameterfv");
+    if(!current_context) { LTW_EXIT(); return; }
+    if(!is_gles_texparam_target(target) || !is_gles_texparam_pname(pname)) {
+        GLint def[4] = {0};
+        texparam_defaults(pname, def);
+        params[0] = (GLfloat)def[0];
+        params[1] = (GLfloat)def[1];
+        params[2] = (GLfloat)def[2];
+        params[3] = (GLfloat)def[3];
+        LTW_EXIT();
+        return;
+    }
+    GLTRACE_CALL(glGetTexParameterfv, es3_functions.glGetTexParameterfv(target, pname, params));
+    LTW_EXIT();
 }
 
 INTERNAL int get_buffer_index(GLenum buffer) {
@@ -424,12 +919,13 @@ void glBindBufferRange(GLenum target, GLuint index, GLuint buffer, GLintptr offs
 
 void glUseProgram(GLuint program) {
     if(!current_context) return;
-    es3_functions.glUseProgram(program);
+    GLTRACE_CALL(glUseProgram, es3_functions.glUseProgram(program));
     current_context->program = program;
 }
 
 void glGetIntegerv(GLenum pname, GLint* data) {
-    if(!current_context) return;
+    LTW_ENTER("glGetIntegerv");
+    if(!current_context) { LTW_EXIT(); return; }
     switch (pname) {
         case GL_NUM_EXTENSIONS:
             es3_functions.glGetIntegerv(pname, data);
@@ -438,13 +934,16 @@ void glGetIntegerv(GLenum pname, GLint* data) {
             break;
         case GL_MAX_COLOR_ATTACHMENTS:
             *data = MAX_FBTARGETS;
+            LTW_EXIT();
             return;
         case GL_MAX_DRAW_BUFFERS:
             *data = current_context->max_drawbuffers;
             break;
         default:
+            if(fp_get_matrix(pname, (GLfloat*)data)) break;
             es3_functions.glGetIntegerv(pname, data);
     }
+    LTW_EXIT();
 }
 
 void glGetQueryObjectiv( 	GLuint id,
@@ -508,10 +1007,17 @@ void glTexBufferRangeARB(GLenum target, GLenum internalFormat, GLuint buffer, GL
 }
 
 static bool noerror;
+// GL error queue tracing. Was ON by default during the 1280 INVALID_ENUM
+// hunt; the hunt is over, so default OFF (the trace consumed the game's
+// own glGetError results and spammed stale-error messages). Enable with
+// the LTW_GLERR_TRACE env var when hunting regressions again.
+bool glerr_trace = false;
+_Thread_local const char* ltw_last_glfn = NULL;
 
 __attribute((constructor)) void init_noerror() {
     noerror = env_istrue("LIBGL_NOERROR");
     debug = env_istrue("LTW_DEBUG");
+    glerr_trace = env_istrue("LTW_GLERR_TRACE");
     never_flush_buffers = env_istrue_d("LTW_NEVER_FLUSH_BUFFERS", true);
     coherent_dynamic_storage = env_istrue_d("LTW_COHERENT_DYNAMIC_STORAGE", true);
     if(!noerror) LTW_ERROR_PRINTF("LTW will NOT ignore GL errors. This may break mods, consider yourself warned.");
@@ -522,7 +1028,12 @@ __attribute((constructor)) void init_noerror() {
 
 GLenum glGetError() {
     if(noerror) return 0;
-    else return es3_functions.glGetError();
+    GLenum e = es3_functions.glGetError();
+    if(glerr_trace && e != GL_NO_ERROR) {
+        static unsigned int n = 0;
+        if((n++ & 0x3F) == 0) LTW_ERROR_PRINTF("LTW: glGetError -> 0x%x", (unsigned)e);
+    }
+    return e;
 }
 
 void glDebugMessageControl( 	GLenum source,
@@ -544,39 +1055,35 @@ void glTestIntercept(void) {
 // 增强关键函数的日志输出
 void glClear(GLbitfield mask) {
     if(!current_context) return;
-    if(debug) {
-        LTW_DEBUG_PRINTF("LTW INTERCEPT: glClear called with mask=0x%x", mask);
-        LTW_DEBUG_PRINTF("LTW MAPPING: Mapping to es3_functions.glClear");
-    }
-    es3_functions.glClear(mask);
-    if(debug) {
-        LTW_DEBUG_PRINTF("LTW SUCCESS: glClear completed successfully");
-    }
+    GLTRACE_CALL(glClear, es3_functions.glClear(mask));
 }
 
 void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
     if(!current_context) return;
-    if(debug) {
-        LTW_DEBUG_PRINTF("LTW INTERCEPT: glClearColor called with RGBA=(%.2f, %.2f, %.2f, %.2f)", red, green, blue, alpha);
-        LTW_DEBUG_PRINTF("LTW MAPPING: Mapping to es3_functions.glClearColor");
-    }
-    es3_functions.glClearColor(red, green, blue, alpha);
-    if(debug) {
-        LTW_DEBUG_PRINTF("LTW SUCCESS: glClearColor completed successfully");
-    }
+    GLTRACE_CALL(glClearColor, es3_functions.glClearColor(red, green, blue, alpha));
 }
 
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
-    if(!current_context) return;
-    current_context->fast_gl.glDrawArrays(mode, first, count);
+    LTW_ENTER("glDrawArrays");
+    if(!current_context) { LTW_EXIT(); return; }
+    // 显示列表编译期间：录制快照，编译期不真正绘制
+    if(fp_dl_capture_client_draw(mode, first, count, false, 0, NULL)) { LTW_EXIT(); return; }
+    if(ltw_quads_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
+    if(fp_try_draw_arrays(mode, first, count)) { LTW_EXIT(); return; }
+    GLTRACE_CALL(glDrawArrays, current_context->fast_gl.glDrawArrays(mode, first, count));
+    LTW_EXIT();
 }
 
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
-    if(!current_context) return;
-    current_context->fast_gl.glDrawElements(mode, count, type, indices);
+    LTW_ENTER("glDrawElements");
+    if(!current_context) { LTW_EXIT(); return; }
+    if(fp_dl_capture_client_draw(mode, 0, count, true, type, indices)) { LTW_EXIT(); return; }
+    if(ltw_quads_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
+    if(fp_try_draw_elements(mode, count, type, indices)) { LTW_EXIT(); return; }
+    GLTRACE_CALL(glDrawElements, current_context->fast_gl.glDrawElements(mode, count, type, indices));
+    LTW_EXIT();
 }
 
-// 批量更新相关函数 - 用于优化纹理状态切换
 void glLTWBeginBatchUpdate(void) {
     if(!current_context) return;
     swizzle_begin_batch_update();

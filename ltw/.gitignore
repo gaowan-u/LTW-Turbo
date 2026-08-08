@@ -1,1 +1,2 @@
+# 忽略 Gradle 构建产物目录
 /build

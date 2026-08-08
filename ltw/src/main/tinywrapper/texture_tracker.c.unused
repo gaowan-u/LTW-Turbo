@@ -1,6 +1,12 @@
 //
 // Created by maks on 09.03.2024.
 //
+
+/**
+ * 文件功能：（未启用）纹理跟踪参考实现。
+ *
+ * 早期代理纹理/格式跟踪代码，当前未被构建脚本收录，保留作参考。
+ */
 #include "egl.h"
 #include "proc.h"
 #include "glformats.h"

@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：纹理 swizzle 状态跟踪与补偿。
+ *
+ * 记录每个纹理的 swizzle 设置，处理 BGRA 上传与端序差异；支持
+ * glLTWBeginBatchUpdate/EndBatchUpdate 批量应用，减少每帧状态抖动。
+ */
 #include "proc.h"
 #include "egl.h"
 #include "mempool.h"
@@ -47,6 +53,16 @@ static texture_swizzle_track_t* get_swizzle_track(GLenum target) {
         current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_G, (GLint*)&track->original_swizzle[1]);
         current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_B, (GLint*)&track->original_swizzle[2]);
         current_context->fast_gl.glGetTexParameteriv(target, GL_TEXTURE_SWIZZLE_A, (GLint*)&track->original_swizzle[3]);
+        // 部分驱动（Turnip/Zink 等）在纹理尚未上传数据时对 swizzle 查询
+        // 返回全 0，而不是默认的 R/G/B/A。全 0 会让后续 BGRA 补偿把
+        // 字形纹理的采样 swizzle 设成 ZERO，文字变成全透明/黑块。
+        if(track->original_swizzle[0] == 0 && track->original_swizzle[1] == 0 &&
+           track->original_swizzle[2] == 0 && track->original_swizzle[3] == 0) {
+            track->original_swizzle[0] = GL_RED;
+            track->original_swizzle[1] = GL_GREEN;
+            track->original_swizzle[2] = GL_BLUE;
+            track->original_swizzle[3] = GL_ALPHA;
+        }
         // 初始化applied_swizzle和pending_swizzle为原始swizzle值
         memcpy(track->applied_swizzle, track->original_swizzle, sizeof(track->applied_swizzle));
         memcpy(track->pending_swizzle, track->original_swizzle, sizeof(track->pending_swizzle));
@@ -57,6 +73,29 @@ static texture_swizzle_track_t* get_swizzle_track(GLenum target) {
         unordered_map_put(current_context->texture_swztrack_map, (void*)texture, track);
     }
     return track;
+}
+
+// 把纹理的 swizzle 强制复位成默认 R/G/B/A，并清掉 BGRA/字节序补偿标记。
+// 当 LTW 选择在 CPU 侧完成 BGRA->RGBA 转换时调用，避免驱动侧 swizzle
+// 状态（部分驱动查询/设置行为异常）二次影响字形纹理采样。
+INTERNAL void swizzle_reset_texture(GLenum target) {
+    if(!current_context) return;
+    texture_swizzle_track_t* track = get_swizzle_track(target);
+    if(!track) return;
+
+    track->original_swizzle[0] = GL_RED;
+    track->original_swizzle[1] = GL_GREEN;
+    track->original_swizzle[2] = GL_BLUE;
+    track->original_swizzle[3] = GL_ALPHA;
+    track->goofy_byte_order = GL_FALSE;
+    track->upload_bgra = GL_FALSE;
+    memcpy(track->applied_swizzle, track->original_swizzle, sizeof(track->applied_swizzle));
+    memcpy(track->pending_swizzle, track->original_swizzle, sizeof(track->pending_swizzle));
+
+    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, GL_RED);
+    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_G, GL_GREEN);
+    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, GL_BLUE);
+    es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_A, GL_ALPHA);
 }
 
 static void apply_swizzles(GLenum target, texture_swizzle_track_t* track) {
@@ -107,12 +146,21 @@ static void apply_swizzles(GLenum target, texture_swizzle_track_t* track) {
 
 INTERNAL void swizzle_process_upload(GLenum target, GLenum* format, GLenum* type) {
     texture_swizzle_track_t* track = get_swizzle_track(target);
-    if(track == NULL) return;
     bool apply_upload_bgra = false;
     bool apply_goofy_order = false;
     if((*format) == GL_BGRA_EXT) {
         apply_upload_bgra = true;
         *format = GL_RGBA;
+    }
+    // 桌面遗留的单通道/双通道格式：GLES 3 只接受对应的 RED/RG 上传格式。
+    // GL_ALPHA 是 MC 1.12 及更早版本字形纹理的另一种常见路径（glformats.c
+    // 已把 internalformat 映射为 GL_R8），这里必须同步转换 SubImage。
+    if((*format) == GL_ALPHA) {
+        *format = GL_RED;
+    } else if((*format) == GL_LUMINANCE) {
+        *format = GL_RED;
+    } else if((*format) == GL_LUMINANCE_ALPHA) {
+        *format = GL_RG;
     }
     if((*type) == 0x8035) {
         apply_goofy_order = true;
@@ -121,6 +169,9 @@ INTERNAL void swizzle_process_upload(GLenum target, GLenum* format, GLenum* type
     if((*type) == 0x8367) {
         *type = GL_UNSIGNED_BYTE;
     }
+    // 拿不到跟踪记录时也必须完成上面的格式/类型转换，否则 GLES 驱动会收到
+    // GL_BGRA/GL_ALPHA 等桌面格式导致上传失败，纹理保持白色/未初始化。
+    if(track == NULL) return;
     if(apply_goofy_order != track->goofy_byte_order || apply_upload_bgra != track->upload_bgra) {
         track->goofy_byte_order = apply_goofy_order;
         track->upload_bgra = apply_upload_bgra;

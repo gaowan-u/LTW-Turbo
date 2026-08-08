@@ -4,6 +4,12 @@
  * For use under LGPL-3.0
  */
 
+/**
+ * 文件功能：GLES 扩展函数指针补充。
+ *
+ * 手动按需追加的 GLESFUNC 列表（间接绘制、basevertex、buffer storage
+ * 等），与 es3_functions.h 一样被 proc.h/proc.c 展开；解析失败不报错。
+ */
 // Added manually as needed
 GLESFUNC(glDrawElementsIndirect,PFNGLDRAWELEMENTSINDIRECTPROC)
 GLESFUNC(glMultiDrawArraysEXT,PFNGLMULTIDRAWARRAYSEXTPROC)

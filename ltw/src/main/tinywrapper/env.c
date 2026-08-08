@@ -1,6 +1,13 @@
 //
 // Created by maks on 12.07.2025.
 //
+
+/**
+ * 文件功能：环境变量与设备信息读取。
+ *
+ * 读取 LTW_* / LIBGL_* 等环境开关（'1' 为真），并检测设备总内存
+ * （/proc/meminfo），用于决定 multidraw 等缓冲的大小策略。
+ */
 #include "env.h"
 #include <stdlib.h>
 #include "libraryinternal.h"
