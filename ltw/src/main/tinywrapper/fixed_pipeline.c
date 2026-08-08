@@ -1311,7 +1311,27 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     GLint eab = 0;
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
     if(!fp_bind_default_program()) return false;
-    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
+    if(eab == 0) {
+        // GLES 禁止客户端索引指针（桌面 GL 1.x 允许）：无 EBO 时直接把
+        // CPU 索引上传到内部 scratch EBO，否则 glDrawElements 会产生
+        // GL_INVALID_OPERATION（MC 帧末 “Post render 1282” 的来源之一）。
+        if(indices && count > 0 &&
+           (type == GL_UNSIGNED_BYTE || type == GL_UNSIGNED_SHORT || type == GL_UNSIGNED_INT)) {
+            GLsizeiptr isize = (GLsizeiptr)count * (GLsizeiptr)fp_type_bytes(type);
+            if(fp_index_ebo != 0) {
+                es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, fp_index_ebo);
+                if(isize > fp_index_ebo_cap) {
+                    es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, isize, indices, GL_STREAM_DRAW);
+                    fp_index_ebo_cap = isize;
+                } else {
+                    es3_functions.glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, isize, indices);
+                }
+                indices = NULL;
+            }
+        }
+    } else {
+        es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
+    }
     fp_prepare_client_arrays(count);
     es3_functions.glDrawElements(mode, count, type, indices);
     fp_unbind_default_program();
@@ -2132,44 +2152,63 @@ static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
     }
     if(l->merge.draw_count <= 0 || !l->merge.vao || !l->merge.ebo) return false;
 
-    // MathCode: 1282 排查（2026-08-08）。此前合并绘制刷屏
-    // “merged display list draw err 0x502”（即 MC 帧末 Post render 1282）。
-    // 根因是 dl_current_vao 只是内部跟踪值，fp_flush_immediate /
-    // fp_unbind_default_program 等路径绑定/解绑 VAO 时并不更新它；
-    // 若合并路径按“跟踪值相同”跳过 VAO 绑定，就会用应用侧 VAO
-    // （可能无 ELEMENT_ARRAY_BUFFER）执行 glDrawElements →
-    // GL_INVALID_OPERATION，并画错 attribute（贴图错乱）。
-    // 这里每次绘制前强制绑定自己的 VAO + EBO，不再信任可能过期的跟踪值；
-    // 若 GL 对象已失效（列表重建/上下文重建后）则丢弃缓存走逐 op 回退。
-    if(es3_functions.glIsVertexArray(l->merge.vao) != GL_TRUE ||
-       es3_functions.glIsBuffer(l->merge.ebo) != GL_TRUE ||
-       es3_functions.glIsBuffer(l->merge.vbo) != GL_TRUE) {
-        LTW_ERROR_PRINTF("LTW: merged display list cache invalid (vao=%u vbo=%u ebo=%u), fallback",
-                         l->merge.vao, l->merge.vbo, l->merge.ebo);
-        fp_dl_free_merged(l);
-        return false;
-    }
-
+    // MathCode: 1282 排查（2026-08-08 第二轮）。合并路径每次绘制前强制
+    // 绑定自己的 VAO + EBO（不再信任可能过期的 dl_current_vao 跟踪值）；
+    // 下面是双排空分步探针：先读残留错误再执行目标调用，区分“这一步本身
+    // 产生 0x502”和“吞到别处遗留的 1282”，日志里两者分开打印。
     fp_client_color_active = l->merge.use_color;
     if(dl_replay_dirty || l->merge.use_color != dl_last_uuse_color) {
         fp_set_default_uniforms();
+        GLenum uni_err = es3_functions.glGetError();
+        if(uni_err != GL_NO_ERROR) {
+            LTW_ERROR_PRINTF("LTW: merged display list uniforms err 0x%x (count=%d)",
+                             uni_err, l->merge.draw_count);
+        }
         dl_replay_dirty = false;
         dl_last_uuse_color = l->merge.use_color;
     }
 
+    GLenum bind_stale = es3_functions.glGetError();
     es3_functions.glBindVertexArray(l->merge.vao);
     dl_current_vao = l->merge.vao;
-    GLenum vao_err = es3_functions.glGetError();
-    if(vao_err != GL_NO_ERROR) {
-        LTW_ERROR_PRINTF("LTW: merged display list VAO bind err 0x%x (vao=%u)", vao_err, l->merge.vao);
+    GLenum bind_err = es3_functions.glGetError();
+    if(bind_stale != GL_NO_ERROR) {
+        LTW_ERROR_PRINTF("LTW: merged display list stale err 0x%x before VAO bind (count=%d)",
+                         bind_stale, l->merge.draw_count);
     }
+    if(bind_err != GL_NO_ERROR) {
+        GLint cur_vao = 0;
+        es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &cur_vao);
+        LTW_ERROR_PRINTF("LTW: merged display list VAO bind err 0x%x (vao=%u isVAO=%u curVAO=%d)",
+                         bind_err, l->merge.vao,
+                         (unsigned)es3_functions.glIsVertexArray(l->merge.vao), cur_vao);
+        // 绑定失败说明合并缓存已失效（上下文重建/对象被删）：丢弃缓存并
+        // 永久回退逐 op 路径，避免每帧重建重试刷屏。
+        fp_dl_free_merged(l);
+        l->merge.attempted = true;
+        return false;
+    }
+
+    GLenum ebo_stale = es3_functions.glGetError();
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, l->merge.ebo);
     GLenum ebo_err = es3_functions.glGetError();
-    if(ebo_err != GL_NO_ERROR) {
-        LTW_ERROR_PRINTF("LTW: merged display list EBO bind err 0x%x (ebo=%u)", ebo_err, l->merge.ebo);
+    if(ebo_stale != GL_NO_ERROR) {
+        LTW_ERROR_PRINTF("LTW: merged display list stale err 0x%x before EBO bind (count=%d)",
+                         ebo_stale, l->merge.draw_count);
     }
+    if(ebo_err != GL_NO_ERROR) {
+        LTW_ERROR_PRINTF("LTW: merged display list EBO bind err 0x%x (ebo=%u isBuf=%u)",
+                         ebo_err, l->merge.ebo,
+                         (unsigned)es3_functions.glIsBuffer(l->merge.ebo));
+    }
+
+    GLenum draw_stale = es3_functions.glGetError();
     es3_functions.glDrawElements(GL_TRIANGLES, l->merge.draw_count, GL_UNSIGNED_INT, NULL);
     GLenum draw_err = es3_functions.glGetError();
+    if(draw_stale != GL_NO_ERROR) {
+        LTW_ERROR_PRINTF("LTW: merged display list stale err 0x%x before draw (count=%d)",
+                         draw_stale, l->merge.draw_count);
+    }
     if(draw_err != GL_NO_ERROR) {
         LTW_ERROR_PRINTF("LTW: merged display list draw err 0x%x (count=%d vao=%u vbo=%u ebo=%u)",
                          draw_err, l->merge.draw_count, l->merge.vao, l->merge.vbo, l->merge.ebo);
