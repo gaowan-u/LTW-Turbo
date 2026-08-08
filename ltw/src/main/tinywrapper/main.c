@@ -435,6 +435,11 @@ static bool is_fixed_function_cap(GLenum cap) {
         case GL_TEXTURE_GEN_R: case GL_TEXTURE_GEN_Q:
         case GL_POINT_SMOOTH: case GL_LINE_SMOOTH: case GL_POLYGON_SMOOTH:
         case GL_POLYGON_OFFSET_POINT: case GL_POLYGON_OFFSET_LINE:
+        // GL_MULTISAMPLE / GL_DEPTH_CLAMP 是桌面专用 cap，ES 上转发只会产生
+        // INVALID_ENUM，且 ES 不支持对应状态（多重采样隐式开启、无深度钳制），
+        // 吞掉与转发效果相同，还能避免错误日志刷屏。
+        case GL_MULTISAMPLE:
+        case 0x864F: /* GL_DEPTH_CLAMP */
         case GL_VERTEX_ARRAY: case GL_NORMAL_ARRAY: case GL_COLOR_ARRAY:
         case GL_TEXTURE_COORD_ARRAY: case GL_EDGE_FLAG_ARRAY:
         case GL_FOG_COORD_ARRAY: case GL_SECONDARY_COLOR_ARRAY:

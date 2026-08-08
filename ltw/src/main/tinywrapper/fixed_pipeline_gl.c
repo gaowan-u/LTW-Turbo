@@ -284,14 +284,38 @@ void glGetFloatv(GLenum pname, GLfloat* params) {
         es3_functions.glGetFloatv(pname, params);
     }
 }
+// glGetDoublev 每次写入的元素个数：矩阵 16，范围类 2，向量类 4，其余按标量。
+// 不能对非矩阵查询固定写 16 个 double，会越界写坏调用方缓冲区。
+static int fp_doublev_count(GLenum pname) {
+    switch(pname) {
+        case GL_DEPTH_RANGE:
+        case GL_ALIASED_POINT_SIZE_RANGE:
+        case GL_ALIASED_LINE_WIDTH_RANGE:
+        case GL_SMOOTH_POINT_SIZE_RANGE:
+        case GL_SMOOTH_LINE_WIDTH_RANGE:
+        case GL_LINE_WIDTH_RANGE:
+        case GL_POINT_SIZE_RANGE:
+            return 2;
+        case GL_BLEND_COLOR:
+        case GL_COLOR_CLEAR_VALUE:
+        case GL_VIEWPORT:
+        case GL_SCISSOR_BOX:
+            return 4;
+        default:
+            return 1;
+    }
+}
 void glGetDoublev(GLenum pname, GLdouble* params) {
     if(!current_context || !params) return;
     GLfloat tmp[FP_MATRIX_SIZE];
-    if(!fp_get_matrix(pname, tmp)) {
+    bool is_matrix = fp_get_matrix(pname, tmp);
+    if(!is_matrix) {
         es3_functions.glGetFloatv(pname, tmp);
     }
     // 之前直接把 float 位模式写进 double 缓冲区，值全是垃圾；必须逐元素转换。
-    for(int i = 0; i < FP_MATRIX_SIZE; i++) params[i] = (GLdouble)tmp[i];
+    // 同时按查询类型写正确数量的元素，避免固定写 16 个 double 越界。
+    int count = is_matrix ? FP_MATRIX_SIZE : fp_doublev_count(pname);
+    for(int i = 0; i < count; i++) params[i] = (GLdouble)tmp[i];
 }
 void glGetBooleanv(GLenum pname, GLboolean* params) {
     if(!current_context) return;

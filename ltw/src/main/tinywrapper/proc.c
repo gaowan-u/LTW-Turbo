@@ -116,12 +116,5 @@ fallback:
             }
         }
     }
-    if(function == NULL && procname[0] == 'g' && procname[1] == 'l') {
-        // 诊断：列出仍然解析不到的 GL 函数，用于定位 "No context is current
-        // or a function that is not available in the current context was called"
-        // 刷屏的具体来源。
-        fprintf(stderr, "[LTW MISS] unresolved GL function: %s\n", procname);
-        fflush(stderr);
-    }
     return function;
 }

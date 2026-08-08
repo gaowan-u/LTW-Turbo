@@ -153,7 +153,6 @@ static bool fp_client_normal_enabled = false;
 
 // 纹理状态
 static bool fp_texture_enabled = false;
-static bool fp_texture_bound = false;
 static GLuint fp_bound_texture = 0;
 
 // 前向声明
@@ -459,7 +458,6 @@ void fp_init(void) {
     fp_client_active_texture = GL_TEXTURE0;
     fp_active_texture = GL_TEXTURE0;
     fp_texture_enabled = false;
-    fp_texture_bound = false;
     fp_bound_texture = 0;
 }
 
@@ -666,8 +664,7 @@ void fp_array_element(GLint i) {
 void fp_set_texture_enabled(bool enabled) { fp_texture_enabled = enabled; }
 void fp_set_active_texture(GLuint unit) {
     fp_active_texture = unit;
-    if(unit == 0) {
-        fp_texture_bound = true;
+    if(unit == GL_TEXTURE0) {
         fp_refresh_bound_texture();
     }
 }
