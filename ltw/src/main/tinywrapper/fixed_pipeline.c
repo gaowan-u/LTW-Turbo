@@ -637,7 +637,7 @@ static void fp_flush_immediate(void) {
     es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
                                         (const void*)(7 * sizeof(GLfloat)));
 
-    es3_functions.glDrawArrays(mode, 0, count);
+    GLTRACE_CALL(glDrawArrays_fp_immediate, es3_functions.glDrawArrays(mode, 0, count));
 
     // 恢复状态
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
@@ -1063,7 +1063,9 @@ static bool fp_texfmt_resolve(GLuint tex) {
     bool single = false;
     if(fp_texfmt_lookup(tex, &single)) return single;
     GLint fmt = 0;
-    es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
+    GLTRACE_CALL(glGetTexLevelParameteriv_texfmt,
+                 es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0,
+                                                        GL_TEXTURE_INTERNAL_FORMAT, &fmt));
     single = (fmt == GL_R8 || fmt == GL_RED || fmt == GL_R16F || fmt == GL_R32F);
     fp_texfmt_store(tex, single);
     return single;
@@ -1186,7 +1188,9 @@ static void fp_upload_client_arrays(GLsizei count) {
 
     // 一次上传整个交错数组
     glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
-    es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count, fp_client_vertex_ptr, GL_STREAM_DRAW);
+    GLTRACE_CALL(glBufferData_fp_client,
+                 es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count,
+                                            fp_client_vertex_ptr, GL_STREAM_DRAW));
 
     // 位置 attribute：offset 0
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
@@ -1297,7 +1301,7 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(current_context->program != 0) return false;
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
-    es3_functions.glDrawArrays(mode, first, count);
+    GLTRACE_CALL(glDrawArrays_fp_try, es3_functions.glDrawArrays(mode, first, count));
     fp_unbind_default_program();
     return true;
 }
@@ -1333,7 +1337,8 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
     }
     fp_prepare_client_arrays(count);
-    es3_functions.glDrawElements(mode, count, type, indices);
+    GLTRACE_CALL(glDrawElements_fp_try,
+                 es3_functions.glDrawElements(mode, count, type, indices));
     fp_unbind_default_program();
     return true;
 }
@@ -1906,9 +1911,12 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
         dl_current_vao = op->cache_vao;
     }
     if(op->cache_indexed) {
-        es3_functions.glDrawElements(op->cache_mode, op->cache_count, op->cache_itype, NULL);
+        GLTRACE_CALL(glDrawElements_dl_cached,
+                     es3_functions.glDrawElements(op->cache_mode, op->cache_count,
+                                                  op->cache_itype, NULL));
     } else {
-        es3_functions.glDrawArrays(op->cache_mode, op->cache_first, op->cache_count);
+        GLTRACE_CALL(glDrawArrays_dl_cached,
+                     es3_functions.glDrawArrays(op->cache_mode, op->cache_first, op->cache_count));
     }
     // MathCode: 不再每 op 切回 fp_vao；列表结束/遇到非缓存路径时再恢复，
     // 生物密集场景每个缓存 op 省一次 VAO 绑定。
