@@ -20,6 +20,7 @@
 #include "GL/gl.h"
 #include "fixed_pipeline.h"
 #include "egl.h"
+#include "env.h"
 #include "debug.h"
 
 // ---- 内部常量 ----
@@ -114,6 +115,19 @@ typedef struct {
     GLuint list;
 } dl_call_list_payload_t;
 
+// MathCode: 实验性“整表合并”缓存。把同一个显示列表里格式一致、无状态
+// 插入的 CLIENT_DRAW op 合并进一个大 VBO/EBO，回放时一次 glDrawElements。
+typedef struct {
+    GLuint vao;
+    GLuint vbo;
+    GLuint ebo;
+    GLsizei draw_count;    // 合并后的三角形索引总数
+    bool use_color;        // 合并 op 的 uUseColor（格式一致才允许合并）
+    bool valid;            // 缓存已建立且属于当前 context
+    bool attempted;        // 已尝试过合并（失败则回退旧路径，避免每帧重试）
+    const void* ctx;       // 建立缓存的 context_t*
+} dl_merge_cache_t;
+
 // 列表存储
 typedef struct {
     uint32_t type;
@@ -146,6 +160,7 @@ typedef struct {
     uint32_t op_count;
     uint32_t op_cap;
     dl_op_entry_t* ops;
+    dl_merge_cache_t merge;   // 整表合并缓存（实验性，LTW_DL_MERGE）
     size_t bytes;          // 该列表数据总字节
 } fp_dl_list_t;
 
@@ -176,6 +191,7 @@ static bool dl_replay_dirty = true;      // 纹理等状态变化后，绘制前
 static bool dl_last_uuse_color = false;  // 上一次缓存绘制实际设置的 uUseColor
 static GLuint dl_current_vao = 0;        // MathCode: 批量回放期间当前绑定的 VAO，
                                          // 连续缓存 op 之间不再切回 fp_vao
+static bool dl_merge_enabled = true;     // MathCode: 实验性整表合并开关（LTW_DL_MERGE）
 static GLint dl_saved_vao = 0;
 static GLint dl_saved_program = 0;
 static GLint dl_saved_abo = 0;
@@ -640,6 +656,7 @@ static void fp_flush_immediate(void) {
 void fp_init(void) {
     // 上下文重建时（FCL 偶尔会重建 EGL context），GL 对象是 context 私有的，
     // 必须重置句柄并让 fp_ensure_program 在新 context 里重建。
+    dl_merge_enabled = env_istrue_d("LTW_DL_MERGE", true);
     fp_init_done = false;
     fp_program = 0;
     fp_mvp_loc = fp_tex_loc = fp_usetex_loc = fp_usecolor_loc = -1;
@@ -1859,6 +1876,269 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
     // 生物密集场景每个缓存 op 省一次 VAO 绑定。
 }
 
+// ---- 实验性整表合并（LTW_DL_MERGE）----
+// 只在“整个列表全部是可缓存的 CLIENT_DRAW op、且顶点格式完全一致、中间
+// 没有任何纹理/开关/嵌套/即时模式 op”时启用。满足条件就把所有顶点拼进
+// 一个大 VBO、索引拼进一个大 EBO，回放一次 glDrawElements；不满足就完全
+// 走原来的每 op 缓存路径。
+static bool fp_dl_merge_mode_supported(GLenum mode) {
+    return mode == GL_QUADS || mode == GL_TRIANGLES;
+}
+
+static bool fp_dl_merge_op_cacheable(const dl_op_entry_t* op, const dl_client_draw_payload_t* p) {
+    if(!op || !p || op->type != DL_OP_CLIENT_DRAW || op->size < sizeof(*p)) return false;
+    if(p->snap.vertex_abo != 0 || p->snap.texcoord_abo != 0 || p->snap.color_abo != 0) return false;
+    if(p->indices_ebo != 0 || p->vertex_len == 0 || p->count <= 0 || p->first != 0) return false;
+    if((size_t)p->vertex_off + (size_t)p->vertex_len > (size_t)op->size) return false;
+    if(p->indexed) {
+        if(p->indices_len == 0 || (size_t)p->indices_off + (size_t)p->indices_len > (size_t)op->size) return false;
+        if(p->itype != GL_UNSIGNED_BYTE && p->itype != GL_UNSIGNED_SHORT && p->itype != GL_UNSIGNED_INT) return false;
+        if((size_t)p->count * fp_type_bytes(p->itype) > (size_t)p->indices_len) return false;
+    }
+    return true;
+}
+
+static bool fp_dl_merge_snapshots_compatible(const fp_dl_client_snapshot_t* a,
+                                             const fp_dl_client_snapshot_t* b) {
+    return a->vertex_enabled == b->vertex_enabled &&
+           a->vertex_size == b->vertex_size &&
+           a->vertex_type == b->vertex_type &&
+           a->vertex_stride == b->vertex_stride &&
+           a->texcoord_enabled == b->texcoord_enabled &&
+           a->texcoord_size == b->texcoord_size &&
+           a->texcoord_type == b->texcoord_type &&
+           a->texcoord_stride == b->texcoord_stride &&
+           a->texcoord_off == b->texcoord_off &&
+           a->color_enabled == b->color_enabled &&
+           a->color_size == b->color_size &&
+           a->color_type == b->color_type &&
+           a->color_stride == b->color_stride &&
+           a->color_off == b->color_off &&
+           a->normal_enabled == b->normal_enabled &&
+           a->normal_type == b->normal_type &&
+           a->normal_stride == b->normal_stride &&
+           a->normal_off == b->normal_off;
+}
+
+static bool fp_dl_merge_use_color(const fp_dl_client_snapshot_t* s, size_t vsize) {
+    return s->color_enabled && s->color_size > 0 && s->color_off >= 0 &&
+           vsize != 0 && (size_t)s->color_off < vsize;
+}
+
+static bool fp_dl_build_merged_cache(fp_dl_list_t* l) {
+    if(!l || !current_context) return false;
+    l->merge.attempted = true;
+    if(l->op_count < 2) return false;
+
+    const fp_dl_client_snapshot_t* first_snap = NULL;
+    size_t vsize = 0;
+    size_t total_vertices = 0;
+    size_t total_vertex_bytes = 0;
+    size_t total_indices = 0;
+
+    // 第一遍：校验整表可合并
+    for(uint32_t i = 0; i < l->op_count; i++) {
+        const dl_op_entry_t* op = &l->ops[i];
+        const dl_client_draw_payload_t* p = (const dl_client_draw_payload_t*)op->data;
+        if(!fp_dl_merge_op_cacheable(op, p)) return false;
+        if(!fp_dl_merge_mode_supported(p->mode)) return false;
+        size_t tsize = fp_type_bytes(p->snap.vertex_type);
+        size_t ovsize = p->snap.vertex_stride ? (size_t)p->snap.vertex_stride
+                                              : (size_t)p->snap.vertex_size * tsize;
+        if(ovsize == 0) return false;
+        if(i == 0) {
+            first_snap = &p->snap;
+            vsize = ovsize;
+        } else if(!fp_dl_merge_snapshots_compatible(first_snap, &p->snap)) {
+            return false;
+        }
+        size_t verts = (size_t)p->count;
+        if(verts > FP_MAX_VERTICES || total_vertices + verts > FP_MAX_VERTICES) return false;
+        if((size_t)p->vertex_len != verts * ovsize) return false;
+        if(p->mode == GL_QUADS) {
+            if(p->count % 4 != 0) return false;
+            total_indices += (verts / 4) * 6;
+        } else {
+            // MathCode: 三角形列表必须整组对齐，否则跨 op 拼接会把上一条
+            // 多余的顶点和下一条顶点凑成错误三角形。
+            if(p->count % 3 != 0) return false;
+            total_indices += verts;
+        }
+        if(p->indexed) {
+            const uint8_t* src = op->data + p->indices_off;
+            for(GLsizei k = 0; k < p->count; k++) {
+                if(fp_dl_read_idx(src, p->itype, k) >= (uint32_t)p->count) return false;
+            }
+        }
+        total_vertices += verts;
+        total_vertex_bytes += p->vertex_len;
+    }
+    if(total_vertices == 0 || total_indices == 0 || total_indices > 1024u * 1024u) return false;
+
+    uint8_t* vdata = (uint8_t*)malloc(total_vertex_bytes);
+    uint32_t* idata = (uint32_t*)malloc(total_indices * sizeof(uint32_t));
+    if(!vdata || !idata) {
+        free(vdata);
+        free(idata);
+        return false;
+    }
+
+    size_t v_out = 0;
+    size_t i_out = 0;
+    GLsizei vbase = 0;
+    for(uint32_t i = 0; i < l->op_count; i++) {
+        const dl_op_entry_t* op = &l->ops[i];
+        const dl_client_draw_payload_t* p = (const dl_client_draw_payload_t*)op->data;
+        memcpy(vdata + v_out, op->data + p->vertex_off, p->vertex_len);
+        if(p->indexed) {
+            const uint8_t* src = op->data + p->indices_off;
+            if(p->mode == GL_QUADS) {
+                for(GLsizei q = 0; q < p->count; q += 4) {
+                    uint32_t a = fp_dl_read_idx(src, p->itype, q + 0);
+                    uint32_t b = fp_dl_read_idx(src, p->itype, q + 1);
+                    uint32_t c = fp_dl_read_idx(src, p->itype, q + 2);
+                    uint32_t d = fp_dl_read_idx(src, p->itype, q + 3);
+                    idata[i_out++] = (uint32_t)vbase + a;
+                    idata[i_out++] = (uint32_t)vbase + b;
+                    idata[i_out++] = (uint32_t)vbase + c;
+                    idata[i_out++] = (uint32_t)vbase + a;
+                    idata[i_out++] = (uint32_t)vbase + c;
+                    idata[i_out++] = (uint32_t)vbase + d;
+                }
+            } else {
+                for(GLsizei k = 0; k < p->count; k++) {
+                    idata[i_out++] = (uint32_t)vbase + fp_dl_read_idx(src, p->itype, k);
+                }
+            }
+        } else if(p->mode == GL_QUADS) {
+            for(GLsizei q = 0; q < p->count; q += 4) {
+                uint32_t a = (uint32_t)vbase + q + 0;
+                uint32_t b = (uint32_t)vbase + q + 1;
+                uint32_t c = (uint32_t)vbase + q + 2;
+                uint32_t d = (uint32_t)vbase + q + 3;
+                idata[i_out++] = a;
+                idata[i_out++] = b;
+                idata[i_out++] = c;
+                idata[i_out++] = a;
+                idata[i_out++] = c;
+                idata[i_out++] = d;
+            }
+        } else {
+            for(GLsizei k = 0; k < p->count; k++) {
+                idata[i_out++] = (uint32_t)vbase + (uint32_t)k;
+            }
+        }
+        v_out += p->vertex_len;
+        vbase += p->count;
+    }
+    if(i_out != total_indices) {
+        free(vdata);
+        free(idata);
+        return false;
+    }
+
+    GLuint vao = 0, vbo = 0, ebo = 0;
+    es3_functions.glGenVertexArrays(1, &vao);
+    if(vao == 0) goto fail;
+    es3_functions.glGenBuffers(1, &vbo);
+    if(vbo == 0) goto fail;
+    es3_functions.glGenBuffers(1, &ebo);
+    if(ebo == 0) goto fail;
+
+    es3_functions.glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)total_vertex_bytes, vdata, GL_STATIC_DRAW);
+
+    es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+    es3_functions.glVertexAttribPointer(FP_ATTR_POS, first_snap->vertex_size, first_snap->vertex_type,
+                                        GL_FALSE, first_snap->vertex_stride, NULL);
+    if(first_snap->texcoord_enabled && first_snap->texcoord_size > 0 &&
+       first_snap->texcoord_off >= 0 && (size_t)first_snap->texcoord_off < vsize) {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+        es3_functions.glVertexAttribPointer(FP_ATTR_UV, first_snap->texcoord_size, first_snap->texcoord_type,
+                                            GL_FALSE, first_snap->vertex_stride,
+                                            (const void*)(intptr_t)first_snap->texcoord_off);
+    } else {
+        es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+    }
+    if(first_snap->color_enabled && first_snap->color_size > 0 &&
+       first_snap->color_off >= 0 && (size_t)first_snap->color_off < vsize) {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+        es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, first_snap->color_size, first_snap->color_type,
+                                            GL_TRUE, first_snap->vertex_stride,
+                                            (const void*)(intptr_t)first_snap->color_off);
+    } else {
+        es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+    }
+
+    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(total_indices * sizeof(uint32_t)),
+                               idata, GL_STATIC_DRAW);
+
+    free(vdata);
+    free(idata);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
+    es3_functions.glBindVertexArray(0);
+    dl_current_vao = 0;
+
+    l->merge.vao = vao;
+    l->merge.vbo = vbo;
+    l->merge.ebo = ebo;
+    l->merge.draw_count = (GLsizei)total_indices;
+    l->merge.use_color = fp_dl_merge_use_color(first_snap, vsize);
+    l->merge.valid = true;
+    l->merge.ctx = current_context;
+    return true;
+
+fail:
+    if(ebo) es3_functions.glDeleteBuffers(1, &ebo);
+    if(vbo) es3_functions.glDeleteBuffers(1, &vbo);
+    if(vao) es3_functions.glDeleteVertexArrays(1, &vao);
+    free(vdata);
+    free(idata);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
+    es3_functions.glBindVertexArray(0);
+    dl_current_vao = 0;
+    return false;
+}
+
+static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
+    if(!l || !current_context || !dl_merge_enabled) return false;
+    if(!l->merge.valid || l->merge.ctx != current_context) {
+        if(l->merge.attempted) return false;
+        if(!fp_dl_build_merged_cache(l)) return false;
+    }
+    if(l->merge.draw_count <= 0 || !l->merge.vao) return false;
+    fp_client_color_active = l->merge.use_color;
+    if(dl_replay_dirty || l->merge.use_color != dl_last_uuse_color) {
+        fp_set_default_uniforms();
+        dl_replay_dirty = false;
+        dl_last_uuse_color = l->merge.use_color;
+    }
+    if(dl_current_vao != l->merge.vao) {
+        es3_functions.glBindVertexArray(l->merge.vao);
+        dl_current_vao = l->merge.vao;
+    }
+    es3_functions.glDrawElements(GL_TRIANGLES, l->merge.draw_count, GL_UNSIGNED_INT, NULL);
+    return true;
+}
+
+static void fp_dl_free_merged(fp_dl_list_t* l) {
+    if(!l) return;
+    if(l->merge.vao) {
+        GLint bound_vao = 0;
+        es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
+        if((GLuint)bound_vao == l->merge.vao) es3_functions.glBindVertexArray(0);
+        if(l->merge.ebo) es3_functions.glDeleteBuffers(1, &l->merge.ebo);
+        if(l->merge.vbo) es3_functions.glDeleteBuffers(1, &l->merge.vbo);
+        es3_functions.glDeleteVertexArrays(1, &l->merge.vao);
+    }
+    l->merge.vao = l->merge.vbo = l->merge.ebo = 0;
+    l->merge.valid = false;
+    l->merge.attempted = false;
+    l->merge.ctx = NULL;
+}
+
 // 释放 op 的回放缓存 GL 对象。缓存句柄非 0 时一定属于当前 context
 // （context 重建时 fp_dl_reset_caches 已清零），且调用方保证存在当前
 // context（glDeleteLists 等入口均检查 current_context）。
@@ -1891,6 +2171,11 @@ static void fp_dl_reset_caches(void) {
             op->cache_valid = 0;
             op->cache_ctx = NULL;
         }
+        l->merge.vao = l->merge.vbo = l->merge.ebo = 0;
+        l->merge.draw_count = 0;
+        l->merge.valid = false;
+        l->merge.attempted = false;
+        l->merge.ctx = NULL;
     }
 }
 
@@ -1988,6 +2273,7 @@ static fp_dl_list_t* dl_get_or_create(uint32_t id) {
 
 static void dl_clear_ops(fp_dl_list_t* l) {
     if(!l) return;
+    fp_dl_free_merged(l);
     for(uint32_t i = 0; i < l->op_count; i++) {
         fp_dl_free_cache(&l->ops[i]);
         if(l->ops[i].data) free(l->ops[i].data);
@@ -2219,14 +2505,20 @@ static void dl_execute_list(GLuint list) {
 
     dl_exec_chain[dl_exec_depth++] = list;
     l->exec_count++;
-    for(uint32_t i = 0; i < l->op_count; i++) {
-        dl_op_entry_t* op = &l->ops[i];
-        if(op->type == DL_OP_CALL_LIST) {
-            GLuint sub = 0;
-            if(op->size >= sizeof(sub)) memcpy(&sub, op->data, sizeof(sub));
-            dl_execute_list(sub);
-        } else {
-            fp_dl_execute_op(op);
+    // MathCode: 实验性整表合并。整表可合并时一次 glDrawElements 画完，
+    // 跳过逐 op 回放；不可合并/未开启时走原有路径。
+    if(dl_replay_active && fp_dl_try_play_merged(l)) {
+        // 合并绘制已覆盖整个列表
+    } else {
+        for(uint32_t i = 0; i < l->op_count; i++) {
+            dl_op_entry_t* op = &l->ops[i];
+            if(op->type == DL_OP_CALL_LIST) {
+                GLuint sub = 0;
+                if(op->size >= sizeof(sub)) memcpy(&sub, op->data, sizeof(sub));
+                dl_execute_list(sub);
+            } else {
+                fp_dl_execute_op(op);
+            }
         }
     }
     l->exec_count--;
