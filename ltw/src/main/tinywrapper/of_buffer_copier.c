@@ -76,6 +76,10 @@ static bool bgra_rev_readback(GLint x, GLint y, GLsizei w, GLsizei h, void* data
         return false;
     }
     es3_functions.glReadPixels(x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
+    GLenum read_err = es3_functions.glGetError();
+    if(read_err != GL_NO_ERROR) {
+        LTW_ERROR_PRINTF("LTW: BGRA+REV glReadPixels err 0x%x (w=%d h=%d)", read_err, w, h);
+    }
     unsigned char* out = (unsigned char*)data;
     for(size_t i = 0; i < (size_t)w * (size_t)h; ++i) {
         out[i * 4 + 0] = tmp[i * 4 + 2];
@@ -121,6 +125,10 @@ void glGetTexImage( 	GLenum target,
     if(texture != 0) {
         es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &w);
         es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_HEIGHT, &h);
+        GLenum query_err = es3_functions.glGetError();
+        if(query_err != GL_NO_ERROR) {
+            LTW_ERROR_PRINTF("LTW: glGetTexImage level query err 0x%x (tex=%u)", query_err, texture);
+        }
     } else {
         // MathCode: 当前没绑纹理时 glGetTexLevelParameteriv 可能产生
         // GL_INVALID_OPERATION（MC 帧末 “Post render” 的 1282）。

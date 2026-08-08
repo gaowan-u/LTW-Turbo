@@ -2126,7 +2126,14 @@ static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
         es3_functions.glBindVertexArray(l->merge.vao);
         dl_current_vao = l->merge.vao;
     }
+    if(l->merge.ebo) {
+        es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, l->merge.ebo);
+    }
     es3_functions.glDrawElements(GL_TRIANGLES, l->merge.draw_count, GL_UNSIGNED_INT, NULL);
+    GLenum draw_err = es3_functions.glGetError();
+    if(draw_err != GL_NO_ERROR) {
+        LTW_ERROR_PRINTF("LTW: merged display list draw err 0x%x (count=%d)", draw_err, l->merge.draw_count);
+    }
     return true;
 }
 
