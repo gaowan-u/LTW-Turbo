@@ -1007,17 +1007,16 @@ void glTexBufferRangeARB(GLenum target, GLenum internalFormat, GLuint buffer, GL
 }
 
 static bool noerror;
-// GL error queue tracing. Was ON by default during the 1280 INVALID_ENUM
-// hunt; the hunt is over, so default OFF (the trace consumed the game's
-// own glGetError results and spammed stale-error messages). Enable with
-// the LTW_GLERR_TRACE env var when hunting regressions again.
-bool glerr_trace = false;
+// GL error queue tracing. MathCode: 2026-08-08 排查 Post render 1282 期间
+// 默认开启（启动器无法注入环境变量时也能出日志），用 LTW_GLERR_TRACE=0
+// 可关闭；定位完成后把默认值改回 false。
+bool glerr_trace = true;
 _Thread_local const char* ltw_last_glfn = NULL;
 
 __attribute((constructor)) void init_noerror() {
     noerror = env_istrue("LIBGL_NOERROR");
     debug = env_istrue("LTW_DEBUG");
-    glerr_trace = env_istrue("LTW_GLERR_TRACE");
+    glerr_trace = env_istrue_d("LTW_GLERR_TRACE", true);
     never_flush_buffers = env_istrue_d("LTW_NEVER_FLUSH_BUFFERS", true);
     coherent_dynamic_storage = env_istrue_d("LTW_COHERENT_DYNAMIC_STORAGE", true);
     if(!noerror) LTW_ERROR_PRINTF("LTW will NOT ignore GL errors. This may break mods, consider yourself warned.");
