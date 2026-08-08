@@ -185,6 +185,7 @@ static void dl_execute_list(GLuint list);
 static void fp_dl_reset_caches(void);
 
 // ---- 默认 shader ----
+// MathCode: 默认 shader 增加受伤红闪模拟（uLightTint/uLightColor，2026-08）
 static const char* fp_vertex_shader_src =
     "#version 300 es\n"
     "layout(location=0) in vec4 aPos;\n"
@@ -211,6 +212,8 @@ static const char* fp_fragment_shader_src =
     "uniform bool uSingle;\n"
     "uniform int uAlphaFunc;\n"
     "uniform float uAlphaRef;\n"
+    "uniform bool uLightTint;\n"
+    "uniform vec4 uLightColor;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
     "    vec4 c = vec4(1.0);\n"
@@ -221,6 +224,7 @@ static const char* fp_fragment_shader_src =
     "    }\n"
     "    vec4 vc = uUseColor ? vColor : uColor;\n"
     "    vec4 fc = c * vc;\n"
+    "    if(uLightTint) fc.rgb = mix(fc.rgb, uLightColor.rgb, uLightColor.a);\n"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
     "    else if(uAlphaFunc == 1) atpass = fc.a < uAlphaRef;\n"
@@ -243,6 +247,8 @@ static GLint fp_color_loc = -1;
 static GLint fp_alphafunc_loc = -1;
 static GLint fp_alpharef_loc = -1;
 static GLint fp_single_loc = -1;
+static GLint fp_lighttint_loc = -1;
+static GLint fp_lightcolor_loc = -1;
 static GLuint fp_vbo = 0;
 static GLuint fp_vbo_pos = 0;
 static GLuint fp_vbo_color = 0;
@@ -311,6 +317,25 @@ static bool fp_client_normal_enabled = false;
 // 纹理状态
 static bool fp_texture_enabled = false;
 static GLuint fp_bound_texture = 0;
+
+// MathCode: 纹理环境状态模拟（2026-08 新增，修复生物受伤红闪）
+// 桌面 GL_TEXTURE_ENV：GLES 3.x 没有 glTexEnv/纹理
+// 合并。MC 1.12 用单元1（光照贴图）的 GL_COMBINE/GL_INTERPOLATE +
+// GL_TEXTURE_ENV_COLOR 实现受伤红闪（env color = (1,0,0,0.3)）与亮度调整。
+// 这里只跟踪固定管线实际用到的单元（0=主纹理 1=光照贴图 2=亮度纹理），
+// 默认 shader 在绘制时按需应用。
+#define FP_TEXENV_UNITS 3
+typedef struct {
+    GLint env_mode;      // GL_TEXTURE_ENV_MODE（默认 GL_MODULATE）
+    GLint combine_rgb;   // GL_COMBINE_RGB
+    GLint src0_rgb;      // GL_SOURCE0_RGB
+    GLint src2_rgb;      // GL_SOURCE2_RGB（插值因子来源）
+    GLint operand2_rgb;  // GL_OPERAND2_RGB
+    GLfloat color[4];    // GL_TEXTURE_ENV_COLOR
+} fp_texenv_unit_t;
+static fp_texenv_unit_t fp_texenv_state[FP_TEXENV_UNITS];
+// unit1 是否处于“常量色插值”合并模式（受伤红闪/亮度色的生效条件）
+static bool fp_light_tint = false;
 
 // 单通道纹理格式缓存：GL_TEXTURE_INTERNAL_FORMAT 在纹理分配后不会变化，
 // 没必要每次 glBindTexture/绘制都向驱动查询。直接映射槽 + 世代号，
@@ -494,6 +519,8 @@ static void fp_ensure_program(void) {
     fp_alpharef_loc = es3_functions.glGetUniformLocation(prog, "uAlphaRef");
     fp_single_loc = es3_functions.glGetUniformLocation(prog, "uSingle");
     fp_color_loc = es3_functions.glGetUniformLocation(prog, "uColor");
+    fp_lighttint_loc = es3_functions.glGetUniformLocation(prog, "uLightTint");
+    fp_lightcolor_loc = es3_functions.glGetUniformLocation(prog, "uLightColor");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
     es3_functions.glGenBuffers(1, &fp_vbo_pos);
@@ -610,6 +637,7 @@ void fp_init(void) {
     fp_init_done = false;
     fp_program = 0;
     fp_mvp_loc = fp_tex_loc = fp_usetex_loc = fp_usecolor_loc = -1;
+    fp_lighttint_loc = fp_lightcolor_loc = -1;
     fp_color_loc = fp_alphafunc_loc = fp_alpharef_loc = fp_single_loc = -1;
     fp_vbo = fp_vbo_pos = fp_vbo_color = fp_vbo_uv = fp_vao = 0;
     fp_index_ebo = 0;
@@ -636,6 +664,16 @@ void fp_init(void) {
     fp_active_texture = GL_TEXTURE0;
     fp_texture_enabled = false;
     fp_bound_texture = 0;
+    for(int i = 0; i < FP_TEXENV_UNITS; i++) {
+        fp_texenv_state[i].env_mode = GL_MODULATE;
+        fp_texenv_state[i].combine_rgb = GL_MODULATE;
+        fp_texenv_state[i].src0_rgb = GL_TEXTURE;
+        fp_texenv_state[i].src2_rgb = GL_CONSTANT;
+        fp_texenv_state[i].operand2_rgb = GL_SRC_ALPHA;
+        fp_texenv_state[i].color[0] = fp_texenv_state[i].color[1] = 1.0f;
+        fp_texenv_state[i].color[2] = fp_texenv_state[i].color[3] = 1.0f;
+    }
+    fp_light_tint = false;
 
     // 显示列表 CPU 快照保留，但 GL 对象句柄随旧 context 失效，清零后惰性重建
     fp_dl_reset_caches();
@@ -875,6 +913,61 @@ void fp_set_active_texture(GLuint unit) {
     }
 }
 
+static int fp_texenv_unit_index(GLenum unit) {
+    switch(unit) {
+        case GL_TEXTURE0: return 0;
+        case GL_TEXTURE1: return 1;
+        case GL_TEXTURE2: return 2;
+        default: return -1;
+    }
+}
+
+// MathCode: 只有 unit1（光照贴图）的“GL_INTERPOLATE + 常量色 + SRC_ALPHA 因子”组合
+// 才是受伤红闪/亮度色，推导成 shader 能用的开关。
+static void fp_texenv_recompute(void) {
+    const fp_texenv_unit_t* u = &fp_texenv_state[1];
+    fp_light_tint = (u->env_mode == GL_COMBINE &&
+                     u->combine_rgb == GL_INTERPOLATE &&
+                     u->src0_rgb == GL_CONSTANT &&
+                     u->src2_rgb == GL_CONSTANT &&
+                     u->operand2_rgb == GL_SRC_ALPHA);
+}
+
+// MathCode: 桌面 glTexEnv* 状态入口（GLES 无对应物，固定管线内部模拟）
+void fp_texenv(GLenum target, GLenum pname, const GLfloat* fparams, const GLint* iparams, bool is_int) {
+    if(!current_context || target != GL_TEXTURE_ENV) return;
+    int idx = fp_texenv_unit_index(fp_active_texture);
+    if(idx < 0 || idx >= FP_TEXENV_UNITS) return;
+    fp_texenv_unit_t* u = &fp_texenv_state[idx];
+    switch(pname) {
+        case GL_TEXTURE_ENV_MODE:
+            u->env_mode = is_int ? *iparams : (GLint)*fparams;
+            break;
+        case GL_TEXTURE_ENV_COLOR:
+            if(is_int) {
+                for(int i = 0; i < 4; i++) u->color[i] = (GLfloat)iparams[i];
+            } else {
+                for(int i = 0; i < 4; i++) u->color[i] = fparams[i];
+            }
+            break;
+        case GL_COMBINE_RGB:
+            u->combine_rgb = is_int ? *iparams : (GLint)*fparams;
+            break;
+        case GL_SOURCE0_RGB:
+            u->src0_rgb = is_int ? *iparams : (GLint)*fparams;
+            break;
+        case GL_SOURCE2_RGB:
+            u->src2_rgb = is_int ? *iparams : (GLint)*fparams;
+            break;
+        case GL_OPERAND2_RGB:
+            u->operand2_rgb = is_int ? *iparams : (GLint)*fparams;
+            break;
+        default:
+            break;
+    }
+    if(idx == 1) fp_texenv_recompute();
+}
+
 void fp_notify_texture_bind(void) {
     if(fp_active_texture == GL_TEXTURE0) fp_refresh_bound_texture();
 }
@@ -957,19 +1050,25 @@ void fp_texture_upload_invalidate(void) {
     if(fp_texfmt_epoch == 0) fp_texfmt_epoch = 1;
 }
 
-// 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 由绑定纹理决定：
-// GLES 纹理始终启用，绑定过纹理就采样，否则用顶点色。
+// 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 同时受“绑定纹理”
+// 与 GL_TEXTURE_2D 启用状态控制：桌面固定管线里 glDisable(GL_TEXTURE_2D)
+// 后即使有绑定纹理也不采样（MC 1.12 物品提示黑框、文字下划线走无纹理
+// POSITION_COLOR 矩形，之前忽略启用状态导致采样到上一个绑定的纹理）。
+// MathCode: 黑框修复——纹理采样必须同时满足“绑定了纹理”和
+// “GL_TEXTURE_2D 已启用”（桌面固定管线语义）。
 static void fp_set_default_uniforms(void) {
     GLfloat mvp[FP_MATRIX_SIZE];
     fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
                fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
     if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
     if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
-    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, fp_bound_texture ? 1 : 0);
+    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, (fp_bound_texture != 0 && fp_texture_enabled) ? 1 : 0);
     // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
     if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
     if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
     if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
+    if(fp_lighttint_loc >= 0) es3_functions.glUniform1i(fp_lighttint_loc, fp_light_tint ? 1 : 0);
+    if(fp_lightcolor_loc >= 0) es3_functions.glUniform4fv(fp_lightcolor_loc, 1, fp_texenv_state[1].color);
     // shader 里用 0..7 表示 GL_NEVER..GL_ALWAYS，不能直接传原始 GLenum
     // （例如 GL_GREATER=516），否则所有分支都匹配不上、alpha test 失效。
     GLint alpha_mode = 7;
