@@ -411,7 +411,7 @@ static void fp_set_default_uniforms(void);
 static void fp_refresh_bound_texture(void);
 static void fp_batch_begin(void);
 static bool fp_batch_state_matches(GLenum mode);
-static void fp_flush_batch_immediate(void);
+void fp_flush_batch_immediate(void);
 
 // ---- 内部工具 ----
 static void fp_mat_mul(GLfloat* out, const GLfloat* a, const GLfloat* b) {
