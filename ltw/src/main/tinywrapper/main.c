@@ -14,6 +14,7 @@
  */
 #include <stdio.h>
 #include <dlfcn.h>
+#include <pthread.h>
 
 #include <stdbool.h>
 #include "GL/gl.h"
@@ -588,6 +589,29 @@ void glDeleteBuffers(GLsizei n, const GLuint* buffers) {
     }
     es3_functions.glDeleteBuffers(n, buffers);
 }
+// MathCode: [DBG-mctx] 诊断探针（定位后随探针一起移除）：
+// 拦截应用侧 VAO 生命周期，确认 fp_vao=1 是否被应用误删/误用。
+void glGenVertexArrays(GLsizei n, GLuint* arrays) {
+    es3_functions.glGenVertexArrays(n, arrays);
+    if(arrays && n > 0) {
+        printf("[DBG-mctx] app glGenVertexArrays n=%d id0=%u ctx=%p thread=%lx\n",
+               n, arrays[0], (void*)current_context, (unsigned long)pthread_self());
+    }
+}
+void glDeleteVertexArrays(GLsizei n, const GLuint* arrays) {
+    if(arrays && n > 0) {
+        printf("[DBG-mctx] app glDeleteVertexArrays n=%d id0=%u ctx=%p thread=%lx\n",
+               n, arrays[0], (void*)current_context, (unsigned long)pthread_self());
+    }
+    es3_functions.glDeleteVertexArrays(n, arrays);
+}
+void glBindVertexArray(GLuint array) {
+    if(array == 1) {
+        printf("[DBG-mctx] app glBindVertexArray(1) ctx=%p thread=%lx\n",
+               (void*)current_context, (unsigned long)pthread_self());
+    }
+    es3_functions.glBindVertexArray(array);
+}
 void glCompileShader(GLuint shader) {
     if(!current_context) return;
     GLTRACE_CALL(glCompileShader, es3_functions.glCompileShader(shader));
@@ -1017,6 +1041,7 @@ bool glerr_trace = true;
 _Thread_local const char* ltw_last_glfn = NULL;
 
 __attribute((constructor)) void init_noerror() {
+    printf("[DBG-mctx] diagnostic build v3\n");
     noerror = env_istrue("LIBGL_NOERROR");
     debug = env_istrue("LTW_DEBUG");
     glerr_trace = env_istrue_d("LTW_GLERR_TRACE", true);
