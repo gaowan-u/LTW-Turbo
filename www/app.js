@@ -126,7 +126,7 @@ async function syncSharedConfig(silent){
 }
 const ACCENTS=['#f08c2e','#2e7cf6','#34c77b','#8b5cf6'];
 const PLANS=['兼容','性能'];
-const VERSION='0.1.0-dev';
+const VERSION='1.0.3-preview.1';
 let APP_VERSION=VERSION;
 async function loadVersion(){
   try{
