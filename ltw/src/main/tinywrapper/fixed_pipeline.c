@@ -2479,6 +2479,12 @@ bool dl_capture_op(uint32_t type, const void* data, uint32_t size) {
         }
         l->ops = no;
         l->op_cap = ncap;
+        // MathCode: 扩容新增的条目必须先清零。cache_vao/cache_vbo/cache_ebo
+        // 等回放缓存字段此前未初始化，dl_clear_ops 清理列表时会把垃圾句柄
+        // 当有效 VAO 删除，曾误删内部私有 fp_vao(1)，导致此后每次绑定
+        // fp_vao 都生成 GL_INVALID_OPERATION(0x502)，并连锁刷出数万行
+        // "stale 0x502"（Post render 1282 的根因）。
+        memset(&l->ops[l->op_count], 0, sizeof(dl_op_entry_t));
     }
     uint8_t* buf = NULL;
     if(size > 0) {
