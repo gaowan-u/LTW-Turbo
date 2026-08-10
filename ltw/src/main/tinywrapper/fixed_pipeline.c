@@ -282,8 +282,6 @@ static GLuint fp_saved_vao = 0;
 // 内部所有 VAO 绑定走 fp_gl_bind_vao()，应用侧绑定经 glBindVertexArray
 // 包装器通知 fp_set_bound_vao()。
 static GLuint fp_app_vao = 0;
-// fp_vao 上的 attribute 是否已配置过（GLES 的 VAO 状态持久，只需配置一次）
-static bool fp_vao_attrs_ready = false;
 // GL_PRIMITIVE_RESTART_FIXED_INDEX 是否已启用（CPU 跟踪，替代 glIsEnabled 查询）
 static bool fp_restart_enabled = false;
 static bool fp_init_done = false;
@@ -712,7 +710,7 @@ static void fp_flush_immediate(void) {
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
-    if(!fp_vao_attrs_ready) {
+    {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
@@ -721,7 +719,6 @@ static void fp_flush_immediate(void) {
                                             (const void*)(3 * sizeof(GLfloat)));
         es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
                                             (const void*)(7 * sizeof(GLfloat)));
-        fp_vao_attrs_ready = true;
     }
 
     if(fp_submit_indexed && fp_submit_indices && fp_submit_index_count > 0) {
@@ -972,7 +969,6 @@ void fp_init(void) {
     fp_batch_ebo = 0;
     fp_saved_vao = 0;
     fp_app_vao = 0;
-    fp_vao_attrs_ready = false;
     fp_restart_enabled = false;
     fp_uniforms_initialized = false;
     for(int m = 0; m < FP_MATRIX_COUNT; m++) {

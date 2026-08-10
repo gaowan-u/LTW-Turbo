@@ -157,9 +157,12 @@ F3 从 120 FPS 掉到 ~86 FPS。第二轮把单次提交从 ~30 次 GL 调用压
   去掉每次提交的 `glGetIntegerv(GL_VERTEX_ARRAY_BINDING)`；
 - `GL_PRIMITIVE_RESTART_FIXED_INDEX` 状态用 CPU 标志跟踪，
   去掉每次提交的 `glIsEnabled`；
-- `fp_vao` 上的 attribute 只配置一次（GLES VAO 状态持久）；
 - 默认 shader uniform 加缓存，值没变就不重传（F3 整屏状态相同，
   30 次提交里只有第一次真正设 uniform）。
+
+> 注意：`fp_vao` 上的 attribute “只配置一次”的优化已回退——同一 VAO 会被
+> 客户端数组（Tessellator）和显示列表路径改写属性指针，缓存跳过重设会让
+> 主菜单字体用错布局（乱码/漂移）。属性重设保留为每次提交。
 
 ## 注意事项
 
