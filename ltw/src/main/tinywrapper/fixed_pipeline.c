@@ -411,7 +411,7 @@ static void fp_set_default_uniforms(void);
 static void fp_refresh_bound_texture(void);
 static void fp_batch_begin(void);
 static bool fp_batch_state_matches(GLenum mode);
-void fp_flush_batch_immediate(void);
+void fp_flush_immediate_batch(void);
 
 // ---- 内部工具 ----
 static void fp_mat_mul(GLfloat* out, const GLfloat* a, const GLfloat* b) {
@@ -505,7 +505,7 @@ static void fp_immediate_push(GLfloat x, GLfloat y, GLfloat z) {
                               ? (GLsizei)((GLsizei)(FP_MAX_VERTICES / 6) * 4)
                               : FP_MAX_VERTICES;
     if(fp_batch_active && fp_immediate_count >= batch_limit) {
-        fp_flush_batch_immediate();
+        fp_flush_immediate_batch();
         fp_batch_begin();
         // 当前这段 glBegin/glEnd 跨了批次边界，新批次的第一个顶点偏移是 0
         if(fp_batch_prim_cap == 0) {
@@ -778,7 +778,7 @@ static bool fp_batch_state_matches(GLenum mode) {
 
 // 一次性提交当前批次。应用侧任何可能改变绘制顺序/目标/状态的入口
 // （glDrawArrays、glClear、glReadPixels、eglSwapBuffers 等）都必须先调用。
-void fp_flush_batch_immediate(void) {
+void fp_flush_immediate_batch(void) {
     if(!fp_batch_active) return;
     if(fp_immediate_count == 0) {
         // 空批次：直接作废，避免旧状态快照被后续不同状态的图元沿用
@@ -1074,7 +1074,7 @@ void fp_begin(GLenum mode) {
     if(!fp_bound_texture_valid) fp_refresh_bound_texture();
     // 状态变了就先把上一批提交，再以当前状态开新批
     if(fp_batch_active && (!fp_batch_state_matches(mode) || !fp_batch_can_append(mode))) {
-        fp_flush_batch_immediate();
+        fp_flush_immediate_batch();
     }
     fp_immediate_mode = mode;
     fp_immediate_active = true;
