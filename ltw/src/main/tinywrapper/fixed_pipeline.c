@@ -558,47 +558,6 @@ static void fp_ensure_program(void) {
 }
 
 // 提交即时模式顶点
-// MathCode: 1282 排查——内部 glUseProgram(fp_program) 是原生调用，不在
-// GLTRACE_CALL 覆盖内；fp_set_default_uniforms 探针在它之后立刻读到 stale
-// 0x502，两者之间没有别的调用。给三处内部绑定加同样的双排空探针，并查询
-// glIsProgram 确认句柄是否已失效（被删/未链接/跨上下文）。
-static void fp_trace_use_program(const char* site, GLuint prog) {
-    if(!glerr_trace) { es3_functions.glUseProgram(prog); return; }
-    static unsigned int _fp_up_n = 0;
-    if((++_fp_up_n & 0xF) == 0) {
-        GLenum _s = es3_functions.glGetError();
-        es3_functions.glUseProgram(prog);
-        GLenum _f = es3_functions.glGetError();
-        if(_s != GL_NO_ERROR)
-            printf("[LTW ERROR] stale 0x%x before fp glUseProgram (%s)\n", (unsigned)_s, site);
-        if(_f != GL_NO_ERROR)
-            printf("[LTW ERROR] fp glUseProgram produced 0x%x (%s, prog=%u isProgram=%u)\n",
-                   (unsigned)_f, site, prog, (unsigned)es3_functions.glIsProgram(prog));
-        return;
-    }
-    es3_functions.glUseProgram(prog);
-}
-
-// MathCode: 1282 排查——fp 路径的原生 glBindVertexArray(fp_vao) 同样未被
-// 追踪，且恰好位于探针读到 stale 之前。若 fp_vao 句柄失效（上下文重建/
-// 被删），每次绑定都会生成 GL_INVALID_OPERATION(0x502)。
-static void fp_trace_bind_vao(const char* site, GLuint vao) {
-    if(!glerr_trace) { es3_functions.glBindVertexArray(vao); return; }
-    static unsigned int _fp_vao_n = 0;
-    if((++_fp_vao_n & 0xF) == 0) {
-        GLenum _s = es3_functions.glGetError();
-        es3_functions.glBindVertexArray(vao);
-        GLenum _f = es3_functions.glGetError();
-        if(_s != GL_NO_ERROR)
-            printf("[LTW ERROR] stale 0x%x before fp glBindVertexArray (%s)\n", (unsigned)_s, site);
-        if(_f != GL_NO_ERROR)
-            printf("[LTW ERROR] fp glBindVertexArray produced 0x%x (%s, vao=%u isVAO=%u)\n",
-                   (unsigned)_f, site, vao, (unsigned)es3_functions.glIsVertexArray(vao));
-        return;
-    }
-    es3_functions.glBindVertexArray(vao);
-}
-
 static void fp_flush_immediate(void) {
     if(!fp_immediate_active || fp_immediate_count == 0) return;
     fp_ensure_program();
@@ -665,11 +624,11 @@ static void fp_flush_immediate(void) {
     }
 
     // 绑定默认 program + 属性（使用私有 VAO，避免污染应用绑定的 VAO）
-    fp_trace_bind_vao("fp_flush_immediate", fp_vao);
-    fp_trace_use_program("fp_flush_immediate", fp_program);
+    es3_functions.glBindVertexArray(fp_vao);
+    es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
-    GLTRACE_CALL(fp_attrib_setup_immediate, {
+    {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
@@ -678,9 +637,9 @@ static void fp_flush_immediate(void) {
                                             (const void*)(3 * sizeof(GLfloat)));
         es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
                                             (const void*)(7 * sizeof(GLfloat)));
-    });
+    }
 
-    GLTRACE_CALL(glDrawArrays_fp_immediate, es3_functions.glDrawArrays(mode, 0, count));
+    es3_functions.glDrawArrays(mode, 0, count);
 
     // 恢复状态
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
@@ -1106,9 +1065,8 @@ static bool fp_texfmt_resolve(GLuint tex) {
     bool single = false;
     if(fp_texfmt_lookup(tex, &single)) return single;
     GLint fmt = 0;
-    GLTRACE_CALL(glGetTexLevelParameteriv_texfmt,
-                 es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0,
-                                                        GL_TEXTURE_INTERNAL_FORMAT, &fmt));
+    es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0,
+                                           GL_TEXTURE_INTERNAL_FORMAT, &fmt);
     single = (fmt == GL_R8 || fmt == GL_RED || fmt == GL_R16F || fmt == GL_R32F);
     fp_texfmt_store(tex, single);
     return single;
@@ -1152,41 +1110,36 @@ void fp_texture_upload_invalidate(void) {
 // MathCode: 黑框修复——纹理采样必须同时满足“绑定了纹理”和
 // “GL_TEXTURE_2D 已启用”（桌面固定管线语义）。
 static void fp_set_default_uniforms(void) {
-    // MathCode: 1282 排查——glUniform* 在“当前 program 不是预期 program”
-    // 或 program=0 时会生成 GL_INVALID_OPERATION(0x502)。用双排空包住整个
-    // 函数，下一次日志直接给出 uniform 是否产生错误。
-    GLTRACE_CALL(fp_set_default_uniforms, {
-        GLfloat mvp[FP_MATRIX_SIZE];
-        fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
-                   fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
-        if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
-        if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
-        if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, (fp_bound_texture != 0 && fp_texture_enabled[0]) ? 1 : 0);
-        // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
-        if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
-        if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
-        if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
-        if(fp_lighttint_loc >= 0) es3_functions.glUniform1i(fp_lighttint_loc, fp_light_tint ? 1 : 0);
-        if(fp_lightcolor_loc >= 0) es3_functions.glUniform4fv(fp_lightcolor_loc, 1, fp_texenv_state[1].color);
-        // shader 里用 0..7 表示 GL_NEVER..GL_ALWAYS，不能直接传原始 GLenum
-        // （例如 GL_GREATER=516），否则所有分支都匹配不上、alpha test 失效。
-        GLint alpha_mode = 7;
-        if(fp_alpha_test) {
-            switch(fp_alpha_test_func) {
-                case GL_NEVER:    alpha_mode = 0; break;
-                case GL_LESS:     alpha_mode = 1; break;
-                case GL_EQUAL:    alpha_mode = 2; break;
-                case GL_LEQUAL:   alpha_mode = 3; break;
-                case GL_GREATER:  alpha_mode = 4; break;
-                case GL_NOTEQUAL: alpha_mode = 5; break;
-                case GL_GEQUAL:   alpha_mode = 6; break;
-                case GL_ALWAYS:   alpha_mode = 7; break;
-                default:          alpha_mode = 7; break;
-            }
+    GLfloat mvp[FP_MATRIX_SIZE];
+    fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
+               fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
+    if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
+    if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
+    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, (fp_bound_texture != 0 && fp_texture_enabled[0]) ? 1 : 0);
+    // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
+    if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
+    if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
+    if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
+    if(fp_lighttint_loc >= 0) es3_functions.glUniform1i(fp_lighttint_loc, fp_light_tint ? 1 : 0);
+    if(fp_lightcolor_loc >= 0) es3_functions.glUniform4fv(fp_lightcolor_loc, 1, fp_texenv_state[1].color);
+    // shader 里用 0..7 表示 GL_NEVER..GL_ALWAYS，不能直接传原始 GLenum
+    // （例如 GL_GREATER=516），否则所有分支都匹配不上、alpha test 失效。
+    GLint alpha_mode = 7;
+    if(fp_alpha_test) {
+        switch(fp_alpha_test_func) {
+            case GL_NEVER:    alpha_mode = 0; break;
+            case GL_LESS:     alpha_mode = 1; break;
+            case GL_EQUAL:    alpha_mode = 2; break;
+            case GL_LEQUAL:   alpha_mode = 3; break;
+            case GL_GREATER:  alpha_mode = 4; break;
+            case GL_NOTEQUAL: alpha_mode = 5; break;
+            case GL_GEQUAL:   alpha_mode = 6; break;
+            case GL_ALWAYS:   alpha_mode = 7; break;
+            default:          alpha_mode = 7; break;
         }
-        if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, alpha_mode);
-        if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
-    });
+    }
+    if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, alpha_mode);
+    if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
 }
 
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
@@ -1196,13 +1149,13 @@ bool fp_bind_default_program(void) {
     fp_ensure_program();
     if(!fp_program) return false;
     fp_refresh_bound_texture();
-    fp_trace_use_program("fp_bind_default_program", fp_program);
+    es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
 
     // 使用私有 VAO，避免污染应用绑定的 VAO 的 attribute 状态
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, (GLint*)&fp_saved_vao);
-    if(fp_vao) fp_trace_bind_vao("fp_bind_default_program", fp_vao);
+    if(fp_vao) es3_functions.glBindVertexArray(fp_vao);
     return true;
 }
 
@@ -1236,12 +1189,11 @@ static void fp_upload_client_arrays(GLsizei count) {
 
     // 一次上传整个交错数组
     glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
-    GLTRACE_CALL(glBufferData_fp_client,
-                 es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count,
-                                            fp_client_vertex_ptr, GL_STREAM_DRAW));
+    es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count,
+                               fp_client_vertex_ptr, GL_STREAM_DRAW);
 
     // 位置 attribute：offset 0
-    GLTRACE_CALL(fp_attrib_setup_client, {
+    {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
         es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
                                             GL_FALSE, fp_client_vertex_stride, NULL);
@@ -1274,7 +1226,7 @@ static void fp_upload_client_arrays(GLsizei count) {
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
-    });
+    }
 
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
 }
@@ -1351,7 +1303,7 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(current_context->program != 0) return false;
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
-    GLTRACE_CALL(glDrawArrays_fp_try, es3_functions.glDrawArrays(mode, first, count));
+    es3_functions.glDrawArrays(mode, first, count);
     fp_unbind_default_program();
     return true;
 }
@@ -1387,8 +1339,7 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
     }
     fp_prepare_client_arrays(count);
-    GLTRACE_CALL(glDrawElements_fp_try,
-                 es3_functions.glDrawElements(mode, count, type, indices));
+    es3_functions.glDrawElements(mode, count, type, indices);
     fp_unbind_default_program();
     return true;
 }
@@ -1734,9 +1685,9 @@ static bool fp_begin_dl_replay(void) {
     dl_saved_bound_tex = (GLint)fp_bound_texture;
     dl_saved_texture_valid = (fp_bound_texture != 0);
 
-    fp_trace_use_program("fp_begin_dl_replay", fp_program);
+    es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
-    fp_trace_bind_vao("fp_begin_dl_replay", fp_vao);
+    es3_functions.glBindVertexArray(fp_vao);
     dl_current_vao = fp_vao;
     dl_replay_dirty = true;
     dl_last_uuse_color = !fp_client_color_active; // 强制首次缓存绘制重设 uUseColor
@@ -1961,12 +1912,9 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
         dl_current_vao = op->cache_vao;
     }
     if(op->cache_indexed) {
-        GLTRACE_CALL(glDrawElements_dl_cached,
-                     es3_functions.glDrawElements(op->cache_mode, op->cache_count,
-                                                  op->cache_itype, NULL));
+        es3_functions.glDrawElements(op->cache_mode, op->cache_count, op->cache_itype, NULL);
     } else {
-        GLTRACE_CALL(glDrawArrays_dl_cached,
-                     es3_functions.glDrawArrays(op->cache_mode, op->cache_first, op->cache_count));
+        es3_functions.glDrawArrays(op->cache_mode, op->cache_first, op->cache_count);
     }
     // MathCode: 不再每 op 切回 fp_vao；列表结束/遇到非缓存路径时再恢复，
     // 生物密集场景每个缓存 op 省一次 VAO 绑定。
@@ -2210,67 +2158,21 @@ static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
     }
     if(l->merge.draw_count <= 0 || !l->merge.vao || !l->merge.ebo) return false;
 
-    // MathCode: 1282 排查（2026-08-08 第二轮）。合并路径每次绘制前强制
-    // 绑定自己的 VAO + EBO（不再信任可能过期的 dl_current_vao 跟踪值）；
-    // 下面是双排空分步探针：先读残留错误再执行目标调用，区分“这一步本身
-    // 产生 0x502”和“吞到别处遗留的 1282”，日志里两者分开打印。
     fp_client_color_active = l->merge.use_color;
     if(dl_replay_dirty || l->merge.use_color != dl_last_uuse_color) {
         fp_set_default_uniforms();
-        GLenum uni_err = es3_functions.glGetError();
-        if(uni_err != GL_NO_ERROR) {
-            LTW_ERROR_PRINTF("LTW: merged display list uniforms err 0x%x (count=%d)",
-                             uni_err, l->merge.draw_count);
-        }
         dl_replay_dirty = false;
         dl_last_uuse_color = l->merge.use_color;
     }
 
-    GLenum bind_stale = es3_functions.glGetError();
-    es3_functions.glBindVertexArray(l->merge.vao);
-    dl_current_vao = l->merge.vao;
-    GLenum bind_err = es3_functions.glGetError();
-    if(bind_stale != GL_NO_ERROR) {
-        LTW_ERROR_PRINTF("LTW: merged display list stale err 0x%x before VAO bind (count=%d)",
-                         bind_stale, l->merge.draw_count);
+    // 每次绘制前强制绑定自己的 VAO + EBO（不信任可能过期的跟踪值），
+    // 避免用应用侧 VAO（可能没有 EBO）执行 glDrawElements。
+    if(dl_current_vao != l->merge.vao) {
+        es3_functions.glBindVertexArray(l->merge.vao);
+        dl_current_vao = l->merge.vao;
     }
-    if(bind_err != GL_NO_ERROR) {
-        GLint cur_vao = 0;
-        es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &cur_vao);
-        LTW_ERROR_PRINTF("LTW: merged display list VAO bind err 0x%x (vao=%u isVAO=%u curVAO=%d)",
-                         bind_err, l->merge.vao,
-                         (unsigned)es3_functions.glIsVertexArray(l->merge.vao), cur_vao);
-        // 绑定失败说明合并缓存已失效（上下文重建/对象被删）：丢弃缓存并
-        // 永久回退逐 op 路径，避免每帧重建重试刷屏。
-        fp_dl_free_merged(l);
-        l->merge.attempted = true;
-        return false;
-    }
-
-    GLenum ebo_stale = es3_functions.glGetError();
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, l->merge.ebo);
-    GLenum ebo_err = es3_functions.glGetError();
-    if(ebo_stale != GL_NO_ERROR) {
-        LTW_ERROR_PRINTF("LTW: merged display list stale err 0x%x before EBO bind (count=%d)",
-                         ebo_stale, l->merge.draw_count);
-    }
-    if(ebo_err != GL_NO_ERROR) {
-        LTW_ERROR_PRINTF("LTW: merged display list EBO bind err 0x%x (ebo=%u isBuf=%u)",
-                         ebo_err, l->merge.ebo,
-                         (unsigned)es3_functions.glIsBuffer(l->merge.ebo));
-    }
-
-    GLenum draw_stale = es3_functions.glGetError();
     es3_functions.glDrawElements(GL_TRIANGLES, l->merge.draw_count, GL_UNSIGNED_INT, NULL);
-    GLenum draw_err = es3_functions.glGetError();
-    if(draw_stale != GL_NO_ERROR) {
-        LTW_ERROR_PRINTF("LTW: merged display list stale err 0x%x before draw (count=%d)",
-                         draw_stale, l->merge.draw_count);
-    }
-    if(draw_err != GL_NO_ERROR) {
-        LTW_ERROR_PRINTF("LTW: merged display list draw err 0x%x (count=%d vao=%u vbo=%u ebo=%u)",
-                         draw_err, l->merge.draw_count, l->merge.vao, l->merge.vbo, l->merge.ebo);
-    }
     return true;
 }
 

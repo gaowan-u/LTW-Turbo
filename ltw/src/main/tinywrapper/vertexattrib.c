@@ -279,8 +279,5 @@ void glVertexAttrib4Niv( 	GLuint index,
 
 void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer) {
     // 在初期，为了保持程序能运行，我们先直接调用底层的 GLES 函数
-    // MathCode: 1282 排查——glVertexAttribPointer 在 ARRAY_BUFFER 处于
-    // mapped 状态时会产生 GL_INVALID_OPERATION(0x502)。
-    GLTRACE_CALL(glVertexAttribPointer,
-                 es3_functions.glVertexAttribPointer(index, size, type, normalized, stride, pointer));
+    es3_functions.glVertexAttribPointer(index, size, type, normalized, stride, pointer);
 }

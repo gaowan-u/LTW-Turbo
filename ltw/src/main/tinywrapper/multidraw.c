@@ -17,7 +17,6 @@
 #include "quads.h"
 void glMultiDrawArrays( GLenum mode, GLint *first, GLsizei *count, GLsizei primcount )
 {
-    LTW_ENTER("glMultiDrawArrays");
     // 优化：跳过空绘制调用
     if(!current_context || primcount <= 0) return;
 
@@ -52,7 +51,6 @@ void glMultiDrawArrays( GLenum mode, GLint *first, GLsizei *count, GLsizei primc
 
 void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void * const *indices, GLsizei primcount )
 {
-    LTW_ENTER("glMultiDrawElements");
     if(!current_context) return;
     if(primcount <= 0) return;
 
@@ -122,11 +120,10 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
             GLsizei icount = count[i];
             if(icount == 0) continue;
             icount *= typebytes;
-            GLTRACE_CALL(glCopyBufferSubData_multidraw,
-                         current_context->fast_gl.glCopyBufferSubData(GL_ELEMENT_ARRAY_BUFFER,
-                                                                      GL_COPY_WRITE_BUFFER,
-                                                                      (GLintptr)indices[i],
-                                                                      write_offset + offset, icount));
+            current_context->fast_gl.glCopyBufferSubData(GL_ELEMENT_ARRAY_BUFFER,
+                                                         GL_COPY_WRITE_BUFFER,
+                                                         (GLintptr)indices[i],
+                                                         write_offset + offset, icount);
             offset += icount;
         }
     } else {
@@ -136,10 +133,9 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
             GLsizei icount = count[i];
             if(icount == 0) continue;
             icount *= typebytes;
-            GLTRACE_CALL(glBufferSubData_multidraw,
-                         current_context->fast_gl.glBufferSubData(GL_COPY_WRITE_BUFFER,
-                                                                  write_offset + offset, icount,
-                                                                  indices[i]));
+            current_context->fast_gl.glBufferSubData(GL_COPY_WRITE_BUFFER,
+                                                     write_offset + offset, icount,
+                                                     indices[i]);
             offset += icount;
         }
     }
@@ -157,9 +153,7 @@ void glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const void *
     // 绑定并绘制
     current_context->fast_gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, current_context->multidraw_element_buffer);
     if(!ltw_quads_draw_elements(mode, total, type, (const void*)write_offset))
-        GLTRACE_CALL(glDrawElements_multidraw,
-                     current_context->fast_gl.glDrawElements(mode, total, type,
-                                                             (const void*)write_offset));
+        current_context->fast_gl.glDrawElements(mode, total, type, (const void*)write_offset);
 
     // 恢复原始绑定
     if(elementbuffer != 0) {
