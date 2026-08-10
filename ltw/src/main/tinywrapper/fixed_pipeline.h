@@ -66,6 +66,10 @@ void fp_flush_immediate_batch(void);
 // 是否还有未提交的即时模式批次（诊断用：帧首 glClear 时若仍为 true，
 // 说明帧切换入口没有拦截到，文字会被清屏清掉）。
 bool fp_immediate_batch_pending(void);
+// glBindVertexArray 包装器通知应用侧 VAO 绑定（CPU 跟踪，省驱动查询）
+void fp_set_bound_vao(GLuint vao);
+// glEnable/glDisable(GL_PRIMITIVE_RESTART_FIXED_INDEX) 包装器通知
+void fp_set_restart_enabled(bool enabled);
 void fp_vertex3fv(const GLfloat* v);
 void fp_vertex3f(GLfloat x, GLfloat y, GLfloat z);
 void fp_vertex3d(GLdouble x, GLdouble y, GLdouble z);

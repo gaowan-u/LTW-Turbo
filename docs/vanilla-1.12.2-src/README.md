@@ -148,6 +148,19 @@ F2 截图与世界缩略图共用此路径，一并修复。
 效果：F3 每帧从 ~1500 次 `glEnd`（每次 = VBO 上传 + 属性设置 + 绘制 + 状态
 恢复）降到一帧 ~30 次批量绘制（每行文字一次 `glDrawElements`）。
 
+### 4.2 批次提交瘦身（2026-08-10 第二轮）
+
+每行一次提交仍然有固定开销（VAO 查询、uniform 全量重设、属性重复配置），
+F3 从 120 FPS 掉到 ~86 FPS。第二轮把单次提交从 ~30 次 GL 调用压到 ~10 次：
+
+- VAO 绑定改 CPU 跟踪（`fp_app_vao` + `glBindVertexArray` 包装器），
+  去掉每次提交的 `glGetIntegerv(GL_VERTEX_ARRAY_BINDING)`；
+- `GL_PRIMITIVE_RESTART_FIXED_INDEX` 状态用 CPU 标志跟踪，
+  去掉每次提交的 `glIsEnabled`；
+- `fp_vao` 上的 attribute 只配置一次（GLES VAO 状态持久）；
+- 默认 shader uniform 加缓存，值没变就不重传（F3 整屏状态相同，
+  30 次提交里只有第一次真正设 uniform）。
+
 ## 注意事项
 
 - 这些是 1.12.2 **原版**逻辑；OptiFine/Forge 可能改动部分方法，但受伤红闪

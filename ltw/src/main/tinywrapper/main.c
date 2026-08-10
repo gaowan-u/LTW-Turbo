@@ -477,6 +477,7 @@ void glEnable(GLenum cap) {
         if(cap == GL_ALPHA_TEST) fp_set_alpha_test(true);
         return;
     }
+    if(cap == GL_PRIMITIVE_RESTART_FIXED_INDEX) fp_set_restart_enabled(true);
     // 之前只透传 GL_BLEND，GL_DEPTH_TEST / GL_CULL_FACE / GL_POLYGON_OFFSET_FILL /
     // GL_SCISSOR_TEST 等全部被吞掉。MC 1.12 画方块破坏裂纹时依赖
     // glEnable(GL_POLYGON_OFFSET_FILL) + glPolygonOffset(-1,-10) 把裂纹推离
@@ -495,6 +496,7 @@ void glDisable(GLenum cap) {
         if(cap == GL_ALPHA_TEST) fp_set_alpha_test(false);
         return;
     }
+    if(cap == GL_PRIMITIVE_RESTART_FIXED_INDEX) fp_set_restart_enabled(false);
     es3_functions.glDisable(cap);
 }
 
@@ -945,6 +947,13 @@ void glUseProgram(GLuint program) {
     fp_flush_immediate_batch();
     es3_functions.glUseProgram(program);
     current_context->program = program;
+}
+
+void glBindVertexArray(GLuint array) {
+    if(!current_context) return;
+    fp_flush_immediate_batch();
+    es3_functions.glBindVertexArray(array);
+    fp_set_bound_vao(array);
 }
 
 void glGetIntegerv(GLenum pname, GLint* data) {

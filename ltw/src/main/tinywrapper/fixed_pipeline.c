@@ -278,7 +278,28 @@ static GLuint fp_vbo_uv = 0;static GLuint fp_vao = 0;
 static GLuint fp_index_ebo = 0;
 static GLsizeiptr fp_index_ebo_cap = 0;
 static GLuint fp_saved_vao = 0;
+// 当前实际绑定的 VAO（CPU 跟踪，替代每次绘制前的 glGetIntegerv 同步查询）。
+// 内部所有 VAO 绑定走 fp_gl_bind_vao()，应用侧绑定经 glBindVertexArray
+// 包装器通知 fp_set_bound_vao()。
+static GLuint fp_app_vao = 0;
+// fp_vao 上的 attribute 是否已配置过（GLES 的 VAO 状态持久，只需配置一次）
+static bool fp_vao_attrs_ready = false;
+// GL_PRIMITIVE_RESTART_FIXED_INDEX 是否已启用（CPU 跟踪，替代 glIsEnabled 查询）
+static bool fp_restart_enabled = false;
 static bool fp_init_done = false;
+
+// 默认 shader uniform 缓存：值没变就不重传（每次批次提交省约 10 次 glUniform）
+static bool fp_uniforms_initialized = false;
+static GLfloat fp_last_mvp[FP_MATRIX_SIZE];
+static GLint fp_last_tex = -1;
+static GLint fp_last_usetex = -1;
+static GLint fp_last_usecolor = -1;
+static GLfloat fp_last_color[4];
+static GLint fp_last_single = -1;
+static GLint fp_last_lighttint = -1;
+static GLfloat fp_last_lightcolor[4];
+static GLint fp_last_alphafunc = -1;
+static GLfloat fp_last_alpharef = 0.0f;
 
 // alpha test 状态（MC 1.12 文字渲染依赖 GL_ALPHA_TEST）
 static bool fp_alpha_test = false;
@@ -614,6 +635,12 @@ static void fp_ensure_program(void) {
     es3_functions.glDeleteShader(fs);
 }
 
+// 绑定 VAO 并同步 CPU 跟踪（替代绘制前的 glGetIntegerv(GL_VERTEX_ARRAY_BINDING)）
+static void fp_gl_bind_vao(GLuint vao) {
+    es3_functions.glBindVertexArray(vao);
+    fp_app_vao = vao;
+}
+
 // 提交即时模式顶点
 static void fp_flush_immediate(void) {
     if(!fp_immediate_active || fp_immediate_count == 0) return;
@@ -629,10 +656,9 @@ static void fp_flush_immediate(void) {
 
     // 先保存应用绑定状态，并把 fp_vbo 绑定为当前 ARRAY_BUFFER，
     // glBufferData 操作的是"当前绑定的 buffer"，必须先绑定。
-    GLint old_vao = 0;
+    GLint old_vao = (GLint)fp_app_vao;
     GLint old_array_buffer = current_context ? (GLint)current_context->bound_buffers[0] : 0;
     GLint old_program = current_context ? (GLint)current_context->program : 0;
-    es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &old_vao);
     glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
 
     // QUADS -> TRIANGLES：复制顶点展开
@@ -682,11 +708,11 @@ static void fp_flush_immediate(void) {
     }
 
     // 绑定默认 program + 属性（使用私有 VAO，避免污染应用绑定的 VAO）
-    es3_functions.glBindVertexArray(fp_vao);
+    fp_gl_bind_vao(fp_vao);
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
-    {
+    if(!fp_vao_attrs_ready) {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
@@ -695,6 +721,7 @@ static void fp_flush_immediate(void) {
                                             (const void*)(3 * sizeof(GLfloat)));
         es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
                                             (const void*)(7 * sizeof(GLfloat)));
+        fp_vao_attrs_ready = true;
     }
 
     if(fp_submit_indexed && fp_submit_indices && fp_submit_index_count > 0) {
@@ -704,15 +731,15 @@ static void fp_flush_immediate(void) {
         es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER,
                                    (GLsizeiptr)fp_submit_index_count * sizeof(uint32_t),
                                    fp_submit_indices, GL_STREAM_DRAW);
-        GLboolean restart_was_enabled =
-            es3_functions.glIsEnabled(GL_PRIMITIVE_RESTART_FIXED_INDEX);
-        if(!restart_was_enabled) {
+        if(!fp_restart_enabled) {
             es3_functions.glEnable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+            fp_restart_enabled = true;
         }
         es3_functions.glDrawElements(fp_immediate_mode, fp_submit_index_count,
                                      GL_UNSIGNED_INT, NULL);
-        if(!restart_was_enabled) {
+        if(fp_restart_enabled) {
             es3_functions.glDisable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+            fp_restart_enabled = false;
         }
         // 清掉 fp_vao 上的 EBO，避免影响后续非索引路径
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -722,7 +749,7 @@ static void fp_flush_immediate(void) {
 
     // 恢复状态
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
-    es3_functions.glBindVertexArray((GLuint)old_vao);
+    fp_gl_bind_vao((GLuint)old_vao);
     // MathCode: 即时模式路径绑定/解绑了 VAO，必须同步内部跟踪值，
     // 否则显示列表合并路径会误以为自己的 VAO 仍处于绑定状态而跳过绑定，
     // 用应用侧 VAO（可能没有 EBO）执行 glDrawElements → GL_INVALID_OPERATION。
@@ -909,6 +936,17 @@ bool fp_immediate_batch_pending(void) {
     return fp_batch_active && fp_immediate_count > 0;
 }
 
+// glBindVertexArray 包装器通知应用侧 VAO 绑定（CPU 跟踪，省驱动查询）
+void fp_set_bound_vao(GLuint vao) {
+    fp_app_vao = vao;
+}
+
+// glEnable/glDisable(GL_PRIMITIVE_RESTART_FIXED_INDEX) 包装器通知，
+// 批处理 strip 提交时用 CPU 标志代替 glIsEnabled 查询
+void fp_set_restart_enabled(bool enabled) {
+    fp_restart_enabled = enabled;
+}
+
 // ---- 矩阵 API ----
 void fp_init(void) {
     // 上下文重建时（FCL 偶尔会重建 EGL context），GL 对象是 context 私有的，
@@ -933,6 +971,10 @@ void fp_init(void) {
     fp_index_ebo_cap = 0;
     fp_batch_ebo = 0;
     fp_saved_vao = 0;
+    fp_app_vao = 0;
+    fp_vao_attrs_ready = false;
+    fp_restart_enabled = false;
+    fp_uniforms_initialized = false;
     for(int m = 0; m < FP_MATRIX_COUNT; m++) {
         fp_matrix_top[m] = 0;
         fp_mat_identity(fp_matrix_stack[m][0]);
@@ -1414,15 +1456,48 @@ static void fp_set_default_uniforms(void) {
     GLfloat mvp[FP_MATRIX_SIZE];
     fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
                fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
-    if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
-    if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
-    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, (fp_bound_texture != 0 && fp_texture_enabled[0]) ? 1 : 0);
+    // uniform 值没变就不重传：F3 一整屏文字共享同一组状态，30 次批次提交
+    // 里只有第一次真正需要设 uniform。
+    if(!fp_uniforms_initialized ||
+       memcmp(fp_last_mvp, mvp, sizeof(fp_last_mvp)) != 0) {
+        if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
+        memcpy(fp_last_mvp, mvp, sizeof(fp_last_mvp));
+    }
+    GLint usetex = (fp_bound_texture != 0 && fp_texture_enabled[0]) ? 1 : 0;
+    if(!fp_uniforms_initialized || fp_last_tex != 0) {
+        if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
+        fp_last_tex = 0;
+    }
     // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
-    if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
-    if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
-    if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
-    if(fp_lighttint_loc >= 0) es3_functions.glUniform1i(fp_lighttint_loc, fp_light_tint ? 1 : 0);
-    if(fp_lightcolor_loc >= 0) es3_functions.glUniform4fv(fp_lightcolor_loc, 1, fp_texenv_state[1].color);
+    GLint usecolor = fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0);
+    if(!fp_uniforms_initialized || fp_last_usetex != usetex) {
+        if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, usetex);
+        fp_last_usetex = usetex;
+    }
+    if(!fp_uniforms_initialized || fp_last_usecolor != usecolor) {
+        if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, usecolor);
+        fp_last_usecolor = usecolor;
+    }
+    if(!fp_uniforms_initialized ||
+       memcmp(fp_last_color, fp_current_color, sizeof(fp_last_color)) != 0) {
+        if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
+        memcpy(fp_last_color, fp_current_color, sizeof(fp_last_color));
+    }
+    GLint single = fp_bound_single_channel ? 1 : 0;
+    if(!fp_uniforms_initialized || fp_last_single != single) {
+        if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, single);
+        fp_last_single = single;
+    }
+    GLint lighttint = fp_light_tint ? 1 : 0;
+    if(!fp_uniforms_initialized || fp_last_lighttint != lighttint) {
+        if(fp_lighttint_loc >= 0) es3_functions.glUniform1i(fp_lighttint_loc, lighttint);
+        fp_last_lighttint = lighttint;
+    }
+    if(!fp_uniforms_initialized ||
+       memcmp(fp_last_lightcolor, fp_texenv_state[1].color, sizeof(fp_last_lightcolor)) != 0) {
+        if(fp_lightcolor_loc >= 0) es3_functions.glUniform4fv(fp_lightcolor_loc, 1, fp_texenv_state[1].color);
+        memcpy(fp_last_lightcolor, fp_texenv_state[1].color, sizeof(fp_last_lightcolor));
+    }
     // shader 里用 0..7 表示 GL_NEVER..GL_ALWAYS，不能直接传原始 GLenum
     // （例如 GL_GREATER=516），否则所有分支都匹配不上、alpha test 失效。
     GLint alpha_mode = 7;
@@ -1439,8 +1514,16 @@ static void fp_set_default_uniforms(void) {
             default:          alpha_mode = 7; break;
         }
     }
-    if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, alpha_mode);
-    if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, fp_alpha_test ? fp_alpha_ref : 0.0f);
+    if(!fp_uniforms_initialized || fp_last_alphafunc != alpha_mode) {
+        if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, alpha_mode);
+        fp_last_alphafunc = alpha_mode;
+    }
+    GLfloat alpha_ref = fp_alpha_test ? fp_alpha_ref : 0.0f;
+    if(!fp_uniforms_initialized || fp_last_alpharef != alpha_ref) {
+        if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, alpha_ref);
+        fp_last_alpharef = alpha_ref;
+    }
+    fp_uniforms_initialized = true;
 }
 
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
@@ -1455,8 +1538,8 @@ bool fp_bind_default_program(void) {
     fp_set_default_uniforms();
 
     // 使用私有 VAO，避免污染应用绑定的 VAO 的 attribute 状态
-    es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, (GLint*)&fp_saved_vao);
-    if(fp_vao) es3_functions.glBindVertexArray(fp_vao);
+    fp_saved_vao = fp_app_vao;
+    if(fp_vao) fp_gl_bind_vao(fp_vao);
     return true;
 }
 
@@ -1587,7 +1670,7 @@ void fp_unbind_default_program(void) {
     if(!fp_program) return;
     // unit0 绑定在绑定阶段从未被改写（fp_bound_texture 即 unit0 当前绑定，
     // 由 glBindTexture 包装器 CPU 维护），无需恢复纹理状态
-    if(fp_saved_vao != 0) es3_functions.glBindVertexArray(fp_saved_vao);
+    if(fp_saved_vao != 0) fp_gl_bind_vao(fp_saved_vao);
     // 与 fp_flush_immediate 同理：恢复应用 VAO 后同步内部跟踪值，
     // 避免显示列表合并路径基于过期值跳过自己的 VAO 绑定。
     dl_current_vao = (GLuint)fp_saved_vao;
@@ -1988,7 +2071,7 @@ static bool fp_begin_dl_replay(void) {
 
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
-    es3_functions.glBindVertexArray(fp_vao);
+    fp_gl_bind_vao(fp_vao);
     dl_current_vao = fp_vao;
     dl_replay_dirty = true;
     dl_last_uuse_color = !fp_client_color_active; // 强制首次缓存绘制重设 uUseColor
@@ -2008,9 +2091,9 @@ static void fp_end_dl_replay(void) {
     // EAB 属于 VAO：先切回应用 VAO（含默认 VAO 0）再恢复 EAB，
     // 避免把 EAB 写进私有 fp_vao
     if(dl_saved_vao != 0) {
-        es3_functions.glBindVertexArray((GLuint)dl_saved_vao);
+        fp_gl_bind_vao((GLuint)dl_saved_vao);
     } else {
-        es3_functions.glBindVertexArray(0);
+        fp_gl_bind_vao(0);
     }
     dl_current_vao = (GLuint)dl_saved_vao;
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)dl_saved_eab);
@@ -2053,7 +2136,7 @@ static bool fp_dl_build_client_cache(dl_op_entry_t* op, const dl_client_draw_pay
     uint32_t* expanded = NULL;
     bool ok = false;
 
-    es3_functions.glBindVertexArray(vao);
+    fp_gl_bind_vao(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)p->vertex_len, vdata, GL_STATIC_DRAW);
 
@@ -2152,7 +2235,7 @@ fail:
     // ok=true 时是正常收尾（无 goto 到此），ok=false 时是错误清理路径
     if(expanded) free(expanded);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
-    es3_functions.glBindVertexArray(0);
+    fp_gl_bind_vao(0);
     if(!ok) {
         if(ebo) es3_functions.glDeleteBuffers(1, &ebo);
         es3_functions.glDeleteBuffers(1, &vbo);
@@ -2209,7 +2292,7 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
     }
 
     if(dl_current_vao != op->cache_vao) {
-        es3_functions.glBindVertexArray(op->cache_vao);
+        fp_gl_bind_vao(op->cache_vao);
         dl_current_vao = op->cache_vao;
     }
     if(op->cache_indexed) {
@@ -2394,7 +2477,7 @@ static bool fp_dl_build_merged_cache(fp_dl_list_t* l) {
     es3_functions.glGenBuffers(1, &ebo);
     if(ebo == 0) goto fail;
 
-    es3_functions.glBindVertexArray(vao);
+    fp_gl_bind_vao(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)total_vertex_bytes, vdata, GL_STATIC_DRAW);
 
@@ -2427,7 +2510,7 @@ static bool fp_dl_build_merged_cache(fp_dl_list_t* l) {
     free(vdata);
     free(idata);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
-    es3_functions.glBindVertexArray(0);
+    fp_gl_bind_vao(0);
     dl_current_vao = 0;
 
     l->merge.vao = vao;
@@ -2446,7 +2529,7 @@ fail:
     free(vdata);
     free(idata);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
-    es3_functions.glBindVertexArray(0);
+    fp_gl_bind_vao(0);
     dl_current_vao = 0;
     return false;
 }
@@ -2469,7 +2552,7 @@ static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
     // 每次绘制前强制绑定自己的 VAO + EBO（不信任可能过期的跟踪值），
     // 避免用应用侧 VAO（可能没有 EBO）执行 glDrawElements。
     if(dl_current_vao != l->merge.vao) {
-        es3_functions.glBindVertexArray(l->merge.vao);
+        fp_gl_bind_vao(l->merge.vao);
         dl_current_vao = l->merge.vao;
     }
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, l->merge.ebo);
@@ -2483,7 +2566,7 @@ static void fp_dl_free_merged(fp_dl_list_t* l) {
         GLint bound_vao = 0;
         es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
         if((GLuint)bound_vao == l->merge.vao) {
-            es3_functions.glBindVertexArray(0);
+            fp_gl_bind_vao(0);
             dl_current_vao = 0;
         }
         if(l->merge.ebo) es3_functions.glDeleteBuffers(1, &l->merge.ebo);
@@ -2504,7 +2587,7 @@ static void fp_dl_free_cache(dl_op_entry_t* op) {
     GLint bound_vao = 0;
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
     if((GLuint)bound_vao == op->cache_vao) {
-        es3_functions.glBindVertexArray(0);
+        fp_gl_bind_vao(0);
         dl_current_vao = 0;
     }
     if(op->cache_ebo) es3_functions.glDeleteBuffers(1, &op->cache_ebo);
