@@ -15,6 +15,7 @@
 #include "egl.h"
 #include "mempool.h"
 #include "debug.h"
+#include "fixed_pipeline.h"
 #include <string.h>
 
 static framebuffer_t* get_framebuffer(GLenum target) {
@@ -132,6 +133,7 @@ void rebind_framebuffer(GLenum target, framebuffer_t *framebuffer, GLenum virt_a
 void glClearBufferiv( 	GLenum buffer,
                          GLint drawBuffer,
                          const GLint * value) {
+    fp_flush_immediate_batch();
     framebuffer_t *framebuffer = get_framebuffer(GL_DRAW_FRAMEBUFFER);
     if(framebuffer && buffer == GL_COLOR) {
         GLenum attachment = map_attachment(framebuffer, GL_COLOR_ATTACHMENT0 + drawBuffer);
@@ -143,6 +145,7 @@ void glClearBufferiv( 	GLenum buffer,
 void glClearBufferuiv( 	GLenum buffer,
                           GLint drawBuffer,
                           const GLuint * value) {
+    fp_flush_immediate_batch();
     framebuffer_t *framebuffer = get_framebuffer(GL_DRAW_FRAMEBUFFER);
     if(framebuffer && buffer == GL_COLOR) {
         GLenum attachment = map_attachment(framebuffer, GL_COLOR_ATTACHMENT0 + drawBuffer);
@@ -154,6 +157,7 @@ void glClearBufferuiv( 	GLenum buffer,
 void glClearBufferfv( 	GLenum buffer,
                          GLint drawBuffer,
                          const GLfloat * value) {
+    fp_flush_immediate_batch();
     framebuffer_t *framebuffer = get_framebuffer(GL_DRAW_FRAMEBUFFER);
     if(framebuffer && buffer == GL_COLOR) {
         GLenum attachment = map_attachment(framebuffer, GL_COLOR_ATTACHMENT0 + drawBuffer);
@@ -164,6 +168,7 @@ void glClearBufferfv( 	GLenum buffer,
 
 void glDrawBuffers(GLsizei n, const GLenum* buffers) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     if(n > MAX_DRAWBUFFERS) {
         LTW_ERROR_PRINTF("LTW: glDrawBuffers n=%d exceeds MAX_DRAWBUFFERS=%d", n, MAX_DRAWBUFFERS);
         return;
@@ -366,6 +371,7 @@ void glDeleteFramebuffers(GLsizei n, const GLuint* framebuffers) {
 
 void glBindFramebuffer(GLenum target, GLuint framebuffer) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     es3_functions.glBindFramebuffer(target, framebuffer);
     switch (target) {
         case GL_FRAMEBUFFER:

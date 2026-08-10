@@ -38,6 +38,7 @@ static pthread_mutex_t egl_state_mutex = PTHREAD_MUTEX_INITIALIZER;
 EGLContext (*host_eglCreateContext)(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list);
 EGLBoolean (*host_eglDestroyContext)(EGLDisplay dpy, EGLContext ctx);
 EGLBoolean (*host_eglMakeCurrent) (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx);
+EGLBoolean (*host_eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
 
 void init_egl() {
     context_map = alloc_intmap();
@@ -47,6 +48,7 @@ void init_egl() {
             "eglDestroyContext");
     host_eglMakeCurrent = (EGLBoolean (*)(EGLDisplay, EGLSurface, EGLSurface,
                                           EGLContext)) host_eglGetProcAddress("eglMakeCurrent");
+    host_eglSwapBuffers = (EGLBoolean (*)(EGLDisplay, EGLSurface)) host_eglGetProcAddress("eglSwapBuffers");
 }
 
 static bool init_context(context_t* tw_context) {
@@ -422,6 +424,7 @@ EGLBoolean eglDestroyContext (EGLDisplay dpy, EGLContext ctx) {
 }
 
 EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
+    fp_flush_immediate_batch();
     // 使用互斥锁保护全局 EGL 状态
     pthread_mutex_lock(&egl_state_mutex);
 
@@ -489,4 +492,11 @@ EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGL
     pthread_mutex_unlock(&egl_state_mutex);
 
     return EGL_TRUE;
+}
+
+// 帧切换：先把尚未提交的即时模式批次（F3 文字等）画出去，再换缓冲，
+// 否则延迟提交的 HUD 文字会被下一帧开头的 glClear 清掉。
+EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
+    fp_flush_immediate_batch();
+    return host_eglSwapBuffers(dpy, surface);
 }

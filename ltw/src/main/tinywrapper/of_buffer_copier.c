@@ -18,6 +18,7 @@
 #include <string.h>
 #include "swizzle.h"
 #include "debug.h"
+#include "fixed_pipeline.h"
 void buffer_copier_init(context_t* context) {
     framebuffer_copier_t* copier = &context->framebuffer_copier;
     while(es3_functions.glGetError() != 0) {}
@@ -97,6 +98,7 @@ void glGetTexImage( 	GLenum target,
                        GLenum type,
                        void * pixels) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     if(!current_context->es31) goto unsupported_esver;
     // MathCode: MC 1.12 的截图/世界缩略图读回固定用
     // GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV（32993/33639），GLES 没有该组合，
@@ -177,6 +179,7 @@ void glGetTexImage( 	GLenum target,
 
 void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid * data) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     if(format == GL_DEPTH_COMPONENT) {
         framebuffer_copier_t* copier = &current_context->framebuffer_copier;
         copier->depthData = data;
@@ -204,6 +207,7 @@ void glTexSubImage2D(GLenum target,
                      GLenum type,
                      const void * data) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查
     bool is_depth = (format == GL_DEPTH_COMPONENT);
     // MC 1.12 的字形/unicode 纹理用 GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV

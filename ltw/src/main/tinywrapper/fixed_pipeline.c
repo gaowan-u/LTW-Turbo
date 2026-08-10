@@ -308,6 +308,35 @@ static GLenum fp_immediate_mode = 0;
 static GLfloat* fp_immediate_vertices = NULL;
 static GLsizei fp_immediate_count = 0;
 static GLsizei fp_immediate_capacity = 0;
+// 即时模式批量合并：MC 1.12 FontRenderer 每个字形一个 glBegin/glEnd，如果
+// 每个 glEnd 都立刻上传 VBO + glDrawArrays，F3 一开每帧会多出几千次绘制。
+// 这里把“状态一致”的连续 glBegin/glEnd 攒进同一个 CPU 缓冲，遇到状态变化、
+// 应用侧绘制、清屏、读回或帧切换（eglSwapBuffers）再一次性提交。
+static bool fp_batch_active = false;
+static GLenum fp_batch_mode = 0;
+static GLuint fp_batch_texture = 0;
+static bool fp_batch_texture_enabled = false;
+static bool fp_batch_single = false;
+static bool fp_batch_light_tint = false;
+static GLfloat fp_batch_light_color[4];
+static bool fp_batch_alpha_test = false;
+static GLenum fp_batch_alpha_func = GL_ALWAYS;
+static GLfloat fp_batch_alpha_ref = 0.0f;
+static GLfloat fp_batch_mvp[FP_MATRIX_SIZE];
+// strip 图元批处理：每段 glBegin/glEnd 的起始顶点偏移，提交时用
+// GL_PRIMITIVE_RESTART_FIXED_INDEX 断开，避免把两个字形的 strip 连成一条
+// 大 strip 画出对角线。QUADS/LINES/TRIANGLES 不需要断开。
+static GLsizei* fp_batch_prim_starts = NULL;
+static GLsizei fp_batch_prim_count = 0;
+static GLsizei fp_batch_prim_cap = 0;
+// 批处理索引缓冲（strip 断开用），随 context 重建
+static uint32_t* fp_batch_indices = NULL;
+static GLsizei fp_batch_indices_cap = 0;
+static GLuint fp_batch_ebo = 0;
+// 下一次 fp_flush_immediate 是否走索引绘制（仅批处理 strip 时置位）
+static bool fp_submit_indexed = false;
+static const uint32_t* fp_submit_indices = NULL;
+static GLsizei fp_submit_index_count = 0;
 // QUADS 展开的可复用 scratch（避免每个 glEnd 一次 malloc/free）
 static GLfloat* fp_quad_scratch = NULL;
 static GLsizei fp_quad_scratch_cap = 0;
@@ -342,6 +371,9 @@ static bool fp_client_normal_enabled = false;
 // enableTexture2D 的绘制）变成白色方块。
 static bool fp_texture_enabled[FP_TEXENV_UNITS];
 static GLuint fp_bound_texture = 0;
+// unit0 绑定是否由 glBindTexture 包装器可靠维护。为真时绘制路径不再向驱动
+// 查询 GL_TEXTURE_BINDING_2D（每字形 2 次同步查询，F3 文字路径的主要开销）。
+static bool fp_bound_texture_valid = false;
 
 // MathCode: 纹理环境状态模拟（2026-08 新增，修复生物受伤红闪）
 // 桌面 GL_TEXTURE_ENV：GLES 3.x 没有 glTexEnv/纹理
@@ -377,6 +409,9 @@ static uint32_t fp_texfmt_epoch = 1;
 // 前向声明
 static void fp_set_default_uniforms(void);
 static void fp_refresh_bound_texture(void);
+static void fp_batch_begin(void);
+static bool fp_batch_state_matches(GLenum mode);
+static void fp_flush_batch_immediate(void);
 
 // ---- 内部工具 ----
 static void fp_mat_mul(GLfloat* out, const GLfloat* a, const GLfloat* b) {
@@ -464,6 +499,27 @@ static void fp_apply_rotate(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) {
 // 即时模式顶点追加
 static void fp_immediate_push(GLfloat x, GLfloat y, GLfloat z) {
     if(!fp_immediate_active) return;
+    // 批处理攒满后先提交再继续，避免顶点被静默丢弃；QUADS 提交时要展开成
+    // 2 倍三角形，阈值按展开后仍不超 FP_MAX_VERTICES 计算。
+    GLsizei batch_limit = (fp_immediate_mode == GL_QUADS)
+                              ? (GLsizei)((GLsizei)(FP_MAX_VERTICES / 6) * 4)
+                              : FP_MAX_VERTICES;
+    if(fp_batch_active && fp_immediate_count >= batch_limit) {
+        fp_flush_batch_immediate();
+        fp_batch_begin();
+        // 当前这段 glBegin/glEnd 跨了批次边界，新批次的第一个顶点偏移是 0
+        if(fp_batch_prim_cap == 0) {
+            GLsizei* nb = (GLsizei*)realloc(NULL, 64 * sizeof(GLsizei));
+            if(nb) {
+                fp_batch_prim_starts = nb;
+                fp_batch_prim_cap = 64;
+            }
+        }
+        if(fp_batch_prim_cap > 0) {
+            fp_batch_prim_starts[0] = 0;
+            fp_batch_prim_count = 1;
+        }
+    }
     if(fp_immediate_count >= fp_immediate_capacity) {
         GLsizei newcap = fp_immediate_capacity == 0 ? 1024 : fp_immediate_capacity * 2;
         if(newcap > FP_MAX_VERTICES) newcap = FP_MAX_VERTICES;
@@ -552,6 +608,7 @@ static void fp_ensure_program(void) {
     es3_functions.glGenBuffers(1, &fp_vbo_uv);
     es3_functions.glGenVertexArrays(1, &fp_vao);
     es3_functions.glGenBuffers(1, &fp_index_ebo);
+    es3_functions.glGenBuffers(1, &fp_batch_ebo);
 
     es3_functions.glDeleteShader(vs);
     es3_functions.glDeleteShader(fs);
@@ -563,8 +620,9 @@ static void fp_flush_immediate(void) {
     fp_ensure_program();
     if(!fp_program) { fp_immediate_count = 0; return; }
 
-    // 用画这一刻的真实绑定刷新状态，不吃旧记忆值。
-    fp_refresh_bound_texture();
+    // unit0 绑定由 glBindTexture 包装器 CPU 维护；只有缓存失效（上下文重建、
+    // 防御性入口）才向驱动查询，避免每个字形 2 次同步 glGetIntegerv。
+    if(!fp_bound_texture_valid) fp_refresh_bound_texture();
 
     GLenum mode = fp_immediate_mode;
     GLsizei count = fp_immediate_count;
@@ -639,7 +697,28 @@ static void fp_flush_immediate(void) {
                                             (const void*)(7 * sizeof(GLfloat)));
     }
 
-    es3_functions.glDrawArrays(mode, 0, count);
+    if(fp_submit_indexed && fp_submit_indices && fp_submit_index_count > 0) {
+        // 批处理 strip：把多段 TRIANGLE_STRIP/LINE_STRIP 用固定重启索引
+        // （0xFFFFFFFF）连成一次 glDrawElements，段与段之间不会生成多余三角形。
+        es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, fp_batch_ebo);
+        es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                                   (GLsizeiptr)fp_submit_index_count * sizeof(uint32_t),
+                                   fp_submit_indices, GL_STREAM_DRAW);
+        GLboolean restart_was_enabled =
+            es3_functions.glIsEnabled(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+        if(!restart_was_enabled) {
+            es3_functions.glEnable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+        }
+        es3_functions.glDrawElements(fp_immediate_mode, fp_submit_index_count,
+                                     GL_UNSIGNED_INT, NULL);
+        if(!restart_was_enabled) {
+            es3_functions.glDisable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+        }
+        // 清掉 fp_vao 上的 EBO，避免影响后续非索引路径
+        es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    } else {
+        es3_functions.glDrawArrays(mode, 0, count);
+    }
 
     // 恢复状态
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
@@ -658,6 +737,176 @@ static void fp_flush_immediate(void) {
     if(dl_replay_active) dl_replay_dirty = true;
 
     fp_immediate_count = 0;
+}
+
+// ---- 即时模式批量合并 ----
+// 开始一个批次：快照当前绘制状态。同一批内的每个字形共享这份状态，
+// 提交时用它还原，而不是用提交那一刻的矩阵/纹理/alpha 状态。
+static void fp_batch_begin(void) {
+    fp_batch_active = true;
+    fp_batch_prim_count = 0;
+    fp_batch_mode = fp_immediate_mode;
+    fp_batch_texture = fp_bound_texture;
+    fp_batch_texture_enabled = fp_texture_enabled[0];
+    fp_batch_single = fp_bound_single_channel;
+    fp_batch_light_tint = fp_light_tint;
+    memcpy(fp_batch_light_color, fp_texenv_state[1].color,
+           sizeof(fp_batch_light_color));
+    fp_batch_alpha_test = fp_alpha_test;
+    fp_batch_alpha_func = fp_alpha_test_func;
+    fp_batch_alpha_ref = fp_alpha_ref;
+    fp_mat_mul(fp_batch_mvp,
+               fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
+               fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
+}
+
+// 当前状态与批次快照是否一致（不一致则下一个 glBegin 必须拆分批次）
+static bool fp_batch_state_matches(GLenum mode) {
+    return fp_batch_mode == mode &&
+           fp_batch_texture == fp_bound_texture &&
+           fp_batch_texture_enabled == fp_texture_enabled[0] &&
+           fp_batch_single == fp_bound_single_channel &&
+           fp_batch_light_tint == fp_light_tint &&
+           fp_batch_alpha_test == fp_alpha_test &&
+           fp_batch_alpha_func == fp_alpha_test_func &&
+           fp_batch_alpha_ref == fp_alpha_ref &&
+           fp_batch_light_color[0] == fp_texenv_state[1].color[0] &&
+           fp_batch_light_color[1] == fp_texenv_state[1].color[1] &&
+           fp_batch_light_color[2] == fp_texenv_state[1].color[2] &&
+           fp_batch_light_color[3] == fp_texenv_state[1].color[3];
+}
+
+// 一次性提交当前批次。应用侧任何可能改变绘制顺序/目标/状态的入口
+// （glDrawArrays、glClear、glReadPixels、eglSwapBuffers 等）都必须先调用。
+void fp_flush_batch_immediate(void) {
+    if(!fp_batch_active) return;
+    if(fp_immediate_count == 0) {
+        // 空批次：直接作废，避免旧状态快照被后续不同状态的图元沿用
+        fp_batch_active = false;
+        fp_batch_prim_count = 0;
+        return;
+    }
+    fp_ensure_program();
+    if(!fp_program) {
+        fp_immediate_count = 0;
+        fp_batch_active = false;
+        return;
+    }
+
+    // 保存应用当前状态，用批次快照绘制后恢复
+    GLuint saved_tex = fp_bound_texture;
+    bool saved_single = fp_bound_single_channel;
+    bool saved_tex_enabled = fp_texture_enabled[0];
+    bool saved_light_tint = fp_light_tint;
+    GLfloat saved_light_color[4];
+    memcpy(saved_light_color, fp_texenv_state[1].color,
+           sizeof(saved_light_color));
+    bool saved_alpha_test = fp_alpha_test;
+    GLenum saved_alpha_func = fp_alpha_test_func;
+    GLfloat saved_alpha_ref = fp_alpha_ref;
+    GLfloat saved_proj[FP_MATRIX_SIZE];
+    GLfloat saved_model[FP_MATRIX_SIZE];
+    memcpy(saved_proj,
+           fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
+           sizeof(saved_proj));
+    memcpy(saved_model,
+           fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]],
+           sizeof(saved_model));
+
+    // 应用批次快照：绑定录制时的纹理，并把矩阵栈临时变成“MVP=快照”
+    es3_functions.glBindTexture(GL_TEXTURE_2D, fp_batch_texture);
+    fp_bound_texture = fp_batch_texture;
+    fp_bound_single_channel = fp_batch_single;
+    fp_bound_texture_valid = true;
+    fp_texture_enabled[0] = fp_batch_texture_enabled;
+    fp_light_tint = fp_batch_light_tint;
+    memcpy(fp_texenv_state[1].color, fp_batch_light_color,
+           sizeof(fp_batch_light_color));
+    fp_alpha_test = fp_batch_alpha_test;
+    fp_alpha_test_func = fp_batch_alpha_func;
+    fp_alpha_ref = fp_batch_alpha_ref;
+    fp_mat_identity(fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]]);
+    memcpy(fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]],
+           fp_batch_mvp, sizeof(fp_batch_mvp));
+
+    // strip 图元：给每段 glBegin/glEnd 生成 段内索引 + 0xFFFFFFFF 重启索引，
+    // 一次 glDrawElements 画完整批，段与段之间不会连出多余三角形。
+    bool use_restart = (fp_batch_mode == GL_TRIANGLE_STRIP ||
+                        fp_batch_mode == GL_LINE_STRIP) &&
+                       fp_batch_prim_starts && fp_batch_prim_count > 1 &&
+                       fp_batch_ebo != 0;
+    if(use_restart) {
+        GLsizei total = fp_immediate_count;
+        GLsizei need = total + fp_batch_prim_count;
+        if(need > fp_batch_indices_cap) {
+            GLsizei newcap = need > 4096 ? need : 4096;
+            uint32_t* nb = (uint32_t*)realloc(fp_batch_indices,
+                                              (size_t)newcap * sizeof(uint32_t));
+            if(nb) {
+                fp_batch_indices = nb;
+                fp_batch_indices_cap = newcap;
+            }
+        }
+        if(fp_batch_indices && fp_batch_indices_cap >= need) {
+            size_t o = 0;
+            for(GLsizei p = 0; p < fp_batch_prim_count; p++) {
+                GLsizei start = fp_batch_prim_starts[p];
+                GLsizei end = (p + 1 < fp_batch_prim_count)
+                                  ? fp_batch_prim_starts[p + 1]
+                                  : total;
+                if(start < 0) start = 0;
+                if(start > total) start = total;
+                if(end > total) end = total;
+                if(start > end) start = end;
+                for(GLsizei i = start; i < end && o < (size_t)need; i++) {
+                    fp_batch_indices[o++] = (uint32_t)i;
+                }
+                if(o < (size_t)need) fp_batch_indices[o++] = 0xFFFFFFFFu;
+            }
+            fp_submit_indexed = true;
+            fp_submit_indices = fp_batch_indices;
+            fp_submit_index_count = (GLsizei)o;
+        }
+    }
+
+    // 提交。fp_immediate_active 置 true 让默认 shader 使用顶点色
+    // （uUseColor=1），字形颜色按录制时的 glColor4f 逐顶点保留。
+    GLenum saved_mode = fp_immediate_mode;
+    bool saved_active = fp_immediate_active;
+    fp_immediate_mode = fp_batch_mode;
+    fp_immediate_active = true;
+    fp_flush_immediate();
+    fp_immediate_mode = saved_mode;
+    fp_immediate_active = saved_active;
+    fp_submit_indexed = false;
+    fp_submit_indices = NULL;
+    fp_submit_index_count = 0;
+
+    // 恢复应用状态。GL 实际纹理绑定也要恢复：MC 的 GlStateManager 缓存绑定，
+    // 如果这里把字形纹理留在 unit0，下一帧它会以为没换纹理而直接绘制，
+    // 导致世界/HUD 采样到字体贴图。
+    es3_functions.glBindTexture(GL_TEXTURE_2D, saved_tex);
+    fp_bound_texture = saved_tex;
+    fp_bound_single_channel = saved_single;
+    fp_bound_texture_valid = true;
+    fp_texture_enabled[0] = saved_tex_enabled;
+    fp_light_tint = saved_light_tint;
+    memcpy(fp_texenv_state[1].color, saved_light_color,
+           sizeof(saved_light_color));
+    fp_alpha_test = saved_alpha_test;
+    fp_alpha_test_func = saved_alpha_func;
+    fp_alpha_ref = saved_alpha_ref;
+    memcpy(fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
+           saved_proj, sizeof(saved_proj));
+    memcpy(fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]],
+           saved_model, sizeof(saved_model));
+
+    fp_batch_active = false;
+    fp_batch_prim_count = 0;
+}
+
+bool fp_immediate_batch_pending(void) {
+    return fp_batch_active && fp_immediate_count > 0;
 }
 
 // ---- 矩阵 API ----
@@ -682,6 +931,7 @@ void fp_init(void) {
     fp_vbo = fp_vbo_pos = fp_vbo_color = fp_vbo_uv = fp_vao = 0;
     fp_index_ebo = 0;
     fp_index_ebo_cap = 0;
+    fp_batch_ebo = 0;
     fp_saved_vao = 0;
     for(int m = 0; m < FP_MATRIX_COUNT; m++) {
         fp_matrix_top[m] = 0;
@@ -693,6 +943,16 @@ void fp_init(void) {
     fp_immediate_capacity = 0;
     free(fp_immediate_vertices); // 上一 context 遗留的缓冲一并释放，避免泄漏
     fp_immediate_vertices = NULL;
+    free(fp_batch_prim_starts);
+    fp_batch_prim_starts = NULL;
+    fp_batch_prim_count = 0;
+    fp_batch_prim_cap = 0;
+    free(fp_batch_indices);
+    fp_batch_indices = NULL;
+    fp_batch_indices_cap = 0;
+    fp_submit_indexed = false;
+    fp_submit_indices = NULL;
+    fp_submit_index_count = 0;
     free(fp_quad_scratch);
     fp_quad_scratch = NULL;
     fp_quad_scratch_cap = 0;
@@ -704,6 +964,8 @@ void fp_init(void) {
     fp_active_texture = GL_TEXTURE0;
     fp_texture_enabled[0] = fp_texture_enabled[1] = fp_texture_enabled[2] = false;
     fp_bound_texture = 0;
+    fp_bound_texture_valid = false;
+    fp_batch_active = false;
     for(int i = 0; i < FP_TEXENV_UNITS; i++) {
         fp_texenv_state[i].env_mode = GL_MODULATE;
         fp_texenv_state[i].combine_rgb = GL_MODULATE;
@@ -792,10 +1054,47 @@ void fp_rotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) { fp_apply_rotat
 void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) { fp_apply_rotate((GLfloat)angle, (GLfloat)x, (GLfloat)y, (GLfloat)z); }
 
 // ---- 即时模式 ----
+// 允许合并进同一个批次的图元类型。TRIANGLE_STRIP/LINE_STRIP 提交时用
+// GL_PRIMITIVE_RESTART_FIXED_INDEX 断开；TRIANGLE_FAN/POLYGON 等不合并
+// （各自独立批次，绘制顺序不变）。
+static bool fp_batch_can_append(GLenum mode) {
+    return mode == GL_POINTS || mode == GL_LINES || mode == GL_TRIANGLES ||
+           mode == GL_QUADS || mode == GL_TRIANGLE_STRIP || mode == GL_LINE_STRIP;
+}
+
 void fp_begin(GLenum mode) {
+    // 显示列表编译期间不批处理：顶点按原逻辑逐段录制进列表
+    if(dl_is_compiling()) {
+        fp_immediate_mode = mode;
+        fp_immediate_active = true;
+        fp_immediate_count = 0;
+        return;
+    }
+    // 绑定缓存失效时先补一次查询，避免用旧记忆值开批次
+    if(!fp_bound_texture_valid) fp_refresh_bound_texture();
+    // 状态变了就先把上一批提交，再以当前状态开新批
+    if(fp_batch_active && (!fp_batch_state_matches(mode) || !fp_batch_can_append(mode))) {
+        fp_flush_batch_immediate();
+    }
     fp_immediate_mode = mode;
     fp_immediate_active = true;
-    fp_immediate_count = 0;
+    if(!fp_batch_active) {
+        fp_immediate_count = 0;
+        fp_batch_begin();
+    }
+    // 记录本段图元的起始顶点：strip 批处理用重启索引断开，需要知道段边界
+    if(fp_batch_prim_count >= fp_batch_prim_cap) {
+        GLsizei newcap = fp_batch_prim_cap == 0 ? 64 : fp_batch_prim_cap * 2;
+        GLsizei* nb = (GLsizei*)realloc(fp_batch_prim_starts,
+                                        (size_t)newcap * sizeof(GLsizei));
+        if(nb) {
+            fp_batch_prim_starts = nb;
+            fp_batch_prim_cap = newcap;
+        }
+    }
+    if(fp_batch_prim_count < fp_batch_prim_cap) {
+        fp_batch_prim_starts[fp_batch_prim_count++] = fp_immediate_count;
+    }
 }
 
 void fp_end(void) {
@@ -819,9 +1118,9 @@ void fp_end(void) {
                 }
             }
         }
-    } else {
-        fp_flush_immediate();
     }
+    // 非编译路径：顶点已经留在 fp_immediate_vertices 里，批次由
+    // fp_flush_immediate_batch() 在状态变化/应用绘制/帧切换时提交。
     fp_immediate_active = false;
 }
 
@@ -1084,6 +1383,7 @@ static void fp_refresh_bound_texture(void) {
     es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
     fp_bound_texture = (GLuint)tex;
     fp_bound_single_channel = (tex != 0) && fp_texfmt_resolve((GLuint)tex);
+    fp_bound_texture_valid = true;
     if(old_active != GL_TEXTURE0) es3_functions.glActiveTexture((GLenum)old_active);
     // 同步内部活动单元跟踪（refresh 结束后活动单元即 old_active）
     fp_active_texture = (GLenum)old_active;
@@ -1095,6 +1395,7 @@ void fp_notify_texture_bind_tex(GLuint texture) {
     if(!current_context || fp_active_texture != GL_TEXTURE0) return;
     fp_bound_texture = texture;
     fp_bound_single_channel = (texture != 0) && fp_texfmt_resolve(texture);
+    fp_bound_texture_valid = true;
 }
 
 // 纹理格式可能变化：使格式缓存整体失效（纹理上传不频繁，64 项惰性重建）

@@ -242,18 +242,22 @@ void glNormalPointer(GLenum type, GLsizei stride, const void* pointer) {
 // 光照贴图坐标；这里记录单元选择，fixed_pipeline.c 只消费 unit0 的坐标。
 void glClientActiveTexture(GLenum texture) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_set_client_active_texture(texture);
 }
 void glClientActiveTextureARB(GLenum texture) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_set_client_active_texture(texture);
 }
 void glEnableClientState(GLenum cap) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_enable_client_state(cap);
 }
 void glDisableClientState(GLenum cap) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_disable_client_state(cap);
 }
 void glArrayElement(GLint i) {
@@ -269,6 +273,7 @@ GLuint glGenLists(GLsizei range) {
 }
 void glNewList(GLuint list, GLenum mode) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     dl_new(list, mode);
 }
 void glEndList(void) {
@@ -277,10 +282,12 @@ void glEndList(void) {
 }
 void glCallList(GLuint list) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     dl_call(list);
 }
 void glCallLists(GLsizei n, GLenum type, const void* lists) {
     if(!current_context || n <= 0 || !lists) return;
+    fp_flush_immediate_batch();
     dl_calls(n, type, lists);
 }
 void glDeleteLists(GLuint list, GLsizei range) {
@@ -308,22 +315,27 @@ void glShadeModel(GLenum mode) {
 // 状态由固定管线记录，默认 shader 在绘制时模拟，不透传宿主机。
 void glTexEnvi(GLenum target, GLenum pname, GLint param) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_texenv(target, pname, NULL, &param, true);
 }
 void glTexEnvf(GLenum target, GLenum pname, GLfloat param) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_texenv(target, pname, &param, NULL, false);
 }
 void glTexEnvfv(GLenum target, GLenum pname, const GLfloat* params) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_texenv(target, pname, params, NULL, false);
 }
 void glTexEnviv(GLenum target, GLenum pname, const GLint* params) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_texenv(target, pname, NULL, params, true);
 }
 void glTexEnv(GLenum target, GLenum pname, const GLfloat* params) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_texenv(target, pname, params, NULL, false);
 }
 void glPushAttrib(GLbitfield mask) {
@@ -337,6 +349,7 @@ void glPopAttrib(void) {
 // alpha test（MC 1.12 文字渲染依赖；GLES 无此功能，由默认 shader discard 模拟）
 void glAlphaFunc(GLenum func, GLfloat ref) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_alpha_func(func, ref);
 }
 

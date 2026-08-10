@@ -21,6 +21,8 @@
 | `FontRenderer.java` | 文字字形、下划线/删除线（无纹理 POSITION 矩形） |
 | `ScreenShotHelper.java` | 世界缩略图/F2 截图：从 FBO 颜色纹理 `glGetTexImage(GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV)` 读回 |
 | `GuiListWorldSelectionEntry.java` | 世界列表：加载 `icon.png` 为 `DynamicTexture` 并绘制 32x32 缩略图 |
+| `GuiIngame.java` | HUD 总入口：`renderGameOverlay` 里按 `showDebugInfo` 调用 F3 调试屏 |
+| `GuiOverlayDebug.java` | F3 调试屏本体：左右两列文字、每行底色矩形、Alt+F3 延迟条 |
 
 ## 已确认的关键调用序列（2026-08 调试记录）
 
@@ -88,6 +90,63 @@ BGRA+REV 的内存布局（即 Java ARGB 整数）。
 若临时 FBO 仍不完整，则直接回退到“当前读帧缓冲”（截图时通常仍是主 FBO）
 执行 `glReadPixels`，不再依赖临时 FBO。
 F2 截图与世界缩略图共用此路径，一并修复。
+
+### 4. F3 调试屏为什么在 LTW 上掉帧
+
+原版 1.12.2 的 F3 实现（`GuiIngame.renderGameOverlay` → `GuiOverlayDebug.renderDebugInfo`）：
+
+1. `Minecraft.runTick` 的键盘循环里，F3（LWJGL key 61）**松开**时翻转
+   `gameSettings.showDebugInfo`；按住 F3 期间按 A/B/C/G/T 等走
+   `processKeyF3` 的组合键。Shift+F3 额外开 `showDebugProfilerChart`（饼图），
+   Alt+F3 开 `showLagometer`（延迟条）。普通 F3 **不启用 profiler**。
+2. 每帧渲染时，`GuiOverlayDebug.call()` 现场拼左侧列表（版本、FPS、渲染/
+   实体数、XYZ、朝向、生物群系、光照、本地难度、目标方块），
+   `getDebugInfoRight()` 拼右侧列表（Java、内存、CPU、显示器、GL 厂商/渲染器/
+   版本、方块属性）。
+3. 每行画一个半透明 `drawRect` 底色，再 `fontRenderer.drawString(...)`；
+   `FontRenderer`（`FontRenderer.java:263`/`:317`）逐字执行
+   `glBegin(GL_TRIANGLE_STRIP)` + 4 个顶点 + `glEnd()`。
+4. `Minecraft.runGameLoop` 每秒更新一次 `mc.debug` 的 FPS 字符串；
+   `renderDebugInfoLeft` 里那行 "Debug: Pie [shift] / FPS [alt]" 是现场拼的。
+
+也就是说 F3 打开后，每帧大约新增 30 行 × 平均 40~60 字符 ≈ 1500~2000 个
+“一个字 = 一次立即模式绘制”的调用。桌面 GL 的立即模式由驱动/CPU 扛住，
+弱机也只是掉几帧；但 LTW 的 `fp_flush_immediate`
+（`ltw/src/main/tinywrapper/fixed_pipeline.c:618`）让**每次 glEnd 都变成一次
+完整的 GLES 绘制事务**：
+
+- `glGetIntegerv(GL_VERTEX_ARRAY_BINDING)`（`fixed_pipeline.c:635`）同步查询；
+- `fp_refresh_bound_texture()`（`fixed_pipeline.c:625`）又查
+  `GL_ACTIVE_TEXTURE` + `GL_TEXTURE_BINDING_2D` 两次；
+- `glBufferData(GL_ARRAY_BUFFER, ..., GL_STREAM_DRAW)` 上传 4 顶点；
+- 绑私有 VAO、切默认 program、`fp_set_default_uniforms()`
+  （`fixed_pipeline.c:1413`）一口气设约 10 个 uniform；
+- 3 次 `glEnableVertexAttribArray` + 3 次 `glVertexAttribPointer`；
+- `glDrawArrays` + 恢复 VAO/ARRAY_BUFFER/program。
+
+每个字符 ≈ 20+ 次 GL 调用，1500~2000 个字符就是每帧 3~4 万次 GL 调用，
+其中还有 3 次/字的驱动查询。这就是“打开 F3 帧率骤降”的直接来源：
+不是原版逻辑多高级，而是它的文字绘制路径在 LTW 上被放大了两个数量级。
+
+### 4.1 修复（2026-08-10）
+
+`fixed_pipeline.c` 新增“即时模式批处理”：状态一致的连续 `glBegin/glEnd`
+先攒进同一个 CPU 顶点缓冲，提交时才上传 + 绘制：
+
+- `fp_begin`/`fp_end` 不再每字上传：同一纹理/alpha/矩阵段的字形合并成一批；
+- 字形是 `GL_TRIANGLE_STRIP`，批处理提交时按每段生成索引并启用
+  `GL_PRIMITIVE_RESTART_FIXED_INDEX`（0xFFFFFFFF 重启），一次
+  `glDrawElements` 画完整批，段与段之间不会连出多余三角形；
+- 批次录制时快照纹理、`GL_TEXTURE_2D` 开关、alpha test、光照贴图插值色和
+  MVP 矩阵，提交时用快照还原，避免“攒完一批后矩阵/纹理已变”；
+- `glBindTexture/glEnable/glDisable/glDrawArrays/glClear/glReadPixels/
+  glFlush/eglSwapBuffers` 等入口先冲刷批次，保证绘制顺序与帧缓冲语义不变；
+- `fp_flush_immediate` 不再每次向驱动查 `GL_TEXTURE_BINDING_2D`，unit0 绑定
+  由 `glBindTexture` 包装器 CPU 维护（`fp_bound_texture_valid`），只有上下文
+  重建等缓存失效时才回退到驱动查询。
+
+效果：F3 每帧从 ~1500 次 `glEnd`（每次 = VBO 上传 + 属性设置 + 绘制 + 状态
+恢复）降到一帧 ~30 次批量绘制（每行文字一次 `glDrawElements`）。
 
 ## 注意事项
 
