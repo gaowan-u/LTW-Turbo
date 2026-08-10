@@ -421,8 +421,6 @@ static void init_incontext(context_t* tw_context) {
 
 EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list) {
     EGLContext phys_context = host_eglCreateContext(dpy, config, share_context, attrib_list);
-    printf("[DBG-mctx] eglCreateContext share=%p -> ctx=%p thread=%lx\n",
-           (void*)share_context, (void*)phys_context, (unsigned long)pthread_self());
     if(phys_context == EGL_NO_CONTEXT) return phys_context;
     context_t* tw_context = calloc(1, sizeof(context_t));
     if(tw_context == NULL || !init_context(tw_context)) {
@@ -435,8 +433,6 @@ EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext share_c
 }
 
 EGLBoolean eglDestroyContext (EGLDisplay dpy, EGLContext ctx) {
-    printf("[DBG-mctx] eglDestroyContext dpy=%p ctx=%p thread=%lx\n",
-           (void*)dpy, (void*)ctx, (unsigned long)pthread_self());
     if(!host_eglDestroyContext(dpy, ctx)) return EGL_FALSE;
     context_t* old_ctx = unordered_map_remove(context_map, ctx);
     if(old_ctx) {
@@ -462,8 +458,6 @@ EGLBoolean eglDestroyContext (EGLDisplay dpy, EGLContext ctx) {
 }
 
 EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
-    printf("[DBG-mctx] eglMakeCurrent dpy=%p draw=%p read=%p ctx=%p thread=%lx\n",
-           (void*)dpy, (void*)draw, (void*)read, (void*)ctx, (unsigned long)pthread_self());
     // 使用互斥锁保护全局 EGL 状态
     pthread_mutex_lock(&egl_state_mutex);
 
@@ -485,8 +479,6 @@ EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGL
     if (current_display == dpy && current_draw_surface == draw &&
         current_read_surface == read && current_egl_context == ctx) {
         // 上下文已经绑定，直接返回成功
-        printf("[DBG-mctx] eglMakeCurrent early-return ctx=%p thread=%lx\n",
-               (void*)ctx, (unsigned long)pthread_self());
         pthread_mutex_unlock(&egl_state_mutex);
         return EGL_TRUE;
     }

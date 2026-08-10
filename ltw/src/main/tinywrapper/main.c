@@ -14,7 +14,6 @@
  */
 #include <stdio.h>
 #include <dlfcn.h>
-#include <pthread.h>
 
 #include <stdbool.h>
 #include "GL/gl.h"
@@ -589,29 +588,6 @@ void glDeleteBuffers(GLsizei n, const GLuint* buffers) {
     }
     es3_functions.glDeleteBuffers(n, buffers);
 }
-// MathCode: [DBG-mctx] 诊断探针（定位后随探针一起移除）：
-// 拦截应用侧 VAO 生命周期，确认 fp_vao=1 是否被应用误删/误用。
-void glGenVertexArrays(GLsizei n, GLuint* arrays) {
-    es3_functions.glGenVertexArrays(n, arrays);
-    if(arrays && n > 0) {
-        printf("[DBG-mctx] app glGenVertexArrays n=%d id0=%u ctx=%p thread=%lx\n",
-               n, arrays[0], (void*)current_context, (unsigned long)pthread_self());
-    }
-}
-void glDeleteVertexArrays(GLsizei n, const GLuint* arrays) {
-    if(arrays && n > 0) {
-        printf("[DBG-mctx] app glDeleteVertexArrays n=%d id0=%u ctx=%p thread=%lx\n",
-               n, arrays[0], (void*)current_context, (unsigned long)pthread_self());
-    }
-    es3_functions.glDeleteVertexArrays(n, arrays);
-}
-void glBindVertexArray(GLuint array) {
-    if(array == 1) {
-        printf("[DBG-mctx] app glBindVertexArray(1) ctx=%p thread=%lx\n",
-               (void*)current_context, (unsigned long)pthread_self());
-    }
-    es3_functions.glBindVertexArray(array);
-}
 void glCompileShader(GLuint shader) {
     if(!current_context) return;
     GLTRACE_CALL(glCompileShader, es3_functions.glCompileShader(shader));
@@ -1034,17 +1010,16 @@ void glTexBufferRangeARB(GLenum target, GLenum internalFormat, GLuint buffer, GL
 }
 
 static bool noerror;
-// GL error queue tracing. MathCode: 2026-08-08 排查 Post render 1282 期间
-// 默认开启（启动器无法注入环境变量时也能出日志），用 LTW_GLERR_TRACE=0
-// 可关闭；定位完成后把默认值改回 false。
+// GL error queue tracing. MathCode: Post render 1282 已定位并修复
+// （显示列表 op 扩容未清零导致垃圾句柄误删 fp_vao），默认关闭；
+// 需要排查时用 LTW_GLERR_TRACE=1 重新开启。
 bool glerr_trace = true;
 _Thread_local const char* ltw_last_glfn = NULL;
 
 __attribute((constructor)) void init_noerror() {
-    printf("[DBG-mctx] diagnostic build v3\n");
     noerror = env_istrue("LIBGL_NOERROR");
     debug = env_istrue("LTW_DEBUG");
-    glerr_trace = env_istrue_d("LTW_GLERR_TRACE", true);
+    glerr_trace = env_istrue_d("LTW_GLERR_TRACE", false);
     never_flush_buffers = env_istrue_d("LTW_NEVER_FLUSH_BUFFERS", true);
     coherent_dynamic_storage = env_istrue_d("LTW_COHERENT_DYNAMIC_STORAGE", true);
     if(!noerror) LTW_ERROR_PRINTF("LTW will NOT ignore GL errors. This may break mods, consider yourself warned.");

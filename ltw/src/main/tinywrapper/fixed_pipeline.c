@@ -16,7 +16,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <math.h>
-#include <pthread.h>
 #include <GLES3/gl3.h>
 #include "GL/gl.h"
 #include "fixed_pipeline.h"
@@ -554,10 +553,6 @@ static void fp_ensure_program(void) {
     es3_functions.glGenVertexArrays(1, &fp_vao);
     es3_functions.glGenBuffers(1, &fp_index_ebo);
 
-    printf("[DBG-mctx] fp objects created ctx=%p thread=%lx prog=%u vao=%u vbo=%u ebo=%u\n",
-           (void*)current_context, (unsigned long)pthread_self(),
-           fp_program, fp_vao, fp_vbo, fp_index_ebo);
-
     es3_functions.glDeleteShader(vs);
     es3_functions.glDeleteShader(fs);
 }
@@ -597,9 +592,8 @@ static void fp_trace_bind_vao(const char* site, GLuint vao) {
         if(_s != GL_NO_ERROR)
             printf("[LTW ERROR] stale 0x%x before fp glBindVertexArray (%s)\n", (unsigned)_s, site);
         if(_f != GL_NO_ERROR)
-            printf("[LTW ERROR] fp glBindVertexArray produced 0x%x (%s, vao=%u isVAO=%u ctx=%p thread=%lx)\n",
-                   (unsigned)_f, site, vao, (unsigned)es3_functions.glIsVertexArray(vao),
-                   (void*)current_context, (unsigned long)pthread_self());
+            printf("[LTW ERROR] fp glBindVertexArray produced 0x%x (%s, vao=%u isVAO=%u)\n",
+                   (unsigned)_f, site, vao, (unsigned)es3_functions.glIsVertexArray(vao));
         return;
     }
     es3_functions.glBindVertexArray(vao);
@@ -709,8 +703,6 @@ static void fp_flush_immediate(void) {
 
 // ---- 矩阵 API ----
 void fp_init(void) {
-    printf("[DBG-mctx] fp_init ctx=%p thread=%lx\n",
-           (void*)current_context, (unsigned long)pthread_self());
     // 上下文重建时（FCL 偶尔会重建 EGL context），GL 对象是 context 私有的，
     // 必须重置句柄并让 fp_ensure_program 在新 context 里重建。
     // MathCode: 实验开关优先级 = LTW_DL_MERGE 环境变量 > 共享配置 dlMerge > 默认开。
@@ -2284,9 +2276,6 @@ static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
 
 static void fp_dl_free_merged(fp_dl_list_t* l) {
     if(!l) return;
-    printf("[DBG-mctx] dl_free_merged ctx=%p vao=%u vbo=%u ebo=%u thread=%lx\n",
-           (void*)current_context, l->merge.vao, l->merge.vbo, l->merge.ebo,
-           (unsigned long)pthread_self());
     if(l->merge.vao) {
         GLint bound_vao = 0;
         es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
@@ -2309,9 +2298,6 @@ static void fp_dl_free_merged(fp_dl_list_t* l) {
 // context（glDeleteLists 等入口均检查 current_context）。
 static void fp_dl_free_cache(dl_op_entry_t* op) {
     if(!op || !op->cache_vao) return;
-    printf("[DBG-mctx] dl_free_cache ctx=%p vao=%u vbo=%u ebo=%u thread=%lx\n",
-           (void*)current_context, op->cache_vao, op->cache_vbo, op->cache_ebo,
-           (unsigned long)pthread_self());
     GLint bound_vao = 0;
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
     if((GLuint)bound_vao == op->cache_vao) {

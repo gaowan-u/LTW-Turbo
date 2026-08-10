@@ -125,11 +125,6 @@ GLESOVERRIDE(glBlitFramebuffer)
 GLESOVERRIDE(glDrawRangeElements)
 GLESOVERRIDE(glDrawArrays)
 GLESOVERRIDE(glDrawElements)
-// MathCode: [DBG-mctx] 诊断构建临时覆写，拦截应用侧 VAO 生命周期，
-// 定位 fp_vao=1 在渲染上下文无效的根因；定位后随探针一起移除。
-GLESOVERRIDE(glGenVertexArrays)
-GLESOVERRIDE(glDeleteVertexArrays)
-GLESOVERRIDE(glBindVertexArray)
 GLESOVERRIDE(glSampleCoverage)
 GLESOVERRIDE(glFlush)
 GLESOVERRIDE(glFinish)
