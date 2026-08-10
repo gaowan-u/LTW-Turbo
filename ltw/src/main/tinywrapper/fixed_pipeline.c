@@ -427,38 +427,53 @@ static GLfloat* fp_current_matrix_ptr(void) {
 }
 
 static void fp_apply_translate(GLfloat x, GLfloat y, GLfloat z) {
-    GLfloat t[FP_MATRIX_SIZE];
-    fp_mat_identity(t);
-    t[12] = x; t[13] = y; t[14] = z;
-    GLfloat m[FP_MATRIX_SIZE];
-    memcpy(m, fp_current_matrix_ptr(), sizeof(m));
-    fp_mat_mul(fp_current_matrix_ptr(), m, t);
+    if(x == 0.0f && y == 0.0f && z == 0.0f) return;
+
+    GLfloat *m = fp_current_matrix_ptr();
+
+    m[12] += m[0]*x + m[4]*y + m[8 ]*z;
+    m[13] += m[1]*x + m[5]*y + m[9 ]*z;
+    m[14] += m[2]*x + m[6]*y + m[10]*z;
+    m[15] += m[3]*x + m[7]*y + m[11]*z;
 }
 
 static void fp_apply_scale(GLfloat x, GLfloat y, GLfloat z) {
-    GLfloat t[FP_MATRIX_SIZE];
-    fp_mat_identity(t);
-    t[0] = x; t[5] = y; t[10] = z;
-    GLfloat m[FP_MATRIX_SIZE];
-    memcpy(m, fp_current_matrix_ptr(), sizeof(m));
-    fp_mat_mul(fp_current_matrix_ptr(), m, t);
+    if(x == 1.0f && y == 1.0f && z == 1.0f) return;
+
+    GLfloat *m = fp_current_matrix_ptr();  // float[16]
+
+    m[0] *= x; m[1] *= x; m[2] *= x; m[3] *= x;
+    m[4] *= y; m[5] *= y; m[6] *= y; m[7] *= y;
+    m[8] *= z; m[9] *= z; m[10] *= z; m[11] *= z;
 }
 
 static void fp_apply_rotate(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) {
+    if(angle == 0.0f) return;
+
     GLfloat rad = angle * (GLfloat)3.14159265358979 / 180.0f;
     GLfloat c = (GLfloat)cos(rad);
     GLfloat s = (GLfloat)sin(rad);
+
     GLfloat len = (GLfloat)sqrt(x * x + y * y + z * z);
     if(len == 0.0f) return;
-    x /= len; y /= len; z /= len;
-    GLfloat t[FP_MATRIX_SIZE];
-    t[0]  = x * x * (1 - c) + c;     t[4]  = x * y * (1 - c) - z * s; t[8]  = x * z * (1 - c) + y * s; t[12] = 0;
-    t[1]  = y * x * (1 - c) + z * s; t[5]  = y * y * (1 - c) + c;     t[9]  = y * z * (1 - c) - x * s; t[13] = 0;
-    t[2]  = x * z * (1 - c) - y * s; t[6]  = y * z * (1 - c) + x * s; t[10] = z * z * (1 - c) + c;     t[14] = 0;
-    t[3] = 0; t[7] = 0; t[11] = 0; t[15] = 1;
-    GLfloat m[FP_MATRIX_SIZE];
-    memcpy(m, fp_current_matrix_ptr(), sizeof(m));
-    fp_mat_mul(fp_current_matrix_ptr(), m, t);
+    if(len != 1.0f) {
+        x /= len; y /= len; z /= len;
+    }
+
+    GLfloat omc = 1.0f - c;
+    GLfloat xx = x * x, yy = y * y, zz = z * z;
+    GLfloat xy = x * y, xz = x * z, yz = y * z;
+
+    GLfloat t[16];
+    t[0]  = xx * omc + c;    t[4]  = xy * omc - z * s;  t[8]  = xz * omc + y * s;  t[12] = 0;
+    t[1]  = xy * omc + z * s; t[5]  = yy * omc + c;     t[9]  = yz * omc - x * s;  t[13] = 0;
+    t[2]  = xz * omc - y * s; t[6]  = yz * omc + x * s; t[10] = zz * omc + c;     t[14] = 0;
+    t[3]  = 0;                 t[7]  = 0;                 t[11] = 0;                 t[15] = 1;
+
+    GLfloat m[16];
+    GLfloat *mat = fp_current_matrix_ptr();
+    memcpy(m, mat, sizeof(m));
+    fp_mat_mul(mat, m, t);
 }
 
 // 即时模式顶点追加
@@ -784,12 +799,29 @@ void fp_frustum(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdo
     fp_mat_frustum(fp_current_matrix_ptr(), l, r, b, t, n, f);
 }
 
-void fp_translatef(GLfloat x, GLfloat y, GLfloat z) { fp_apply_translate(x, y, z); }
-void fp_translated(GLdouble x, GLdouble y, GLdouble z) { fp_apply_translate((GLfloat)x, (GLfloat)y, (GLfloat)z); }
-void fp_scalef(GLfloat x, GLfloat y, GLfloat z) { fp_apply_scale(x, y, z); }
-void fp_scaled(GLdouble x, GLdouble y, GLdouble z) { fp_apply_scale((GLfloat)x, (GLfloat)y, (GLfloat)z); }
-void fp_rotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) { fp_apply_rotate(angle, x, y, z); }
-void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) { fp_apply_rotate((GLfloat)angle, (GLfloat)x, (GLfloat)y, (GLfloat)z); }
+void fp_translatef(GLfloat x, GLfloat y, GLfloat z) { 
+    fp_apply_translate(x, y, z); 
+}
+
+void fp_translated(GLdouble x, GLdouble y, GLdouble z) { 
+    fp_apply_translate((GLfloat)x, (GLfloat)y, (GLfloat)z); 
+}
+
+void fp_scalef(GLfloat x, GLfloat y, GLfloat z) { 
+    fp_apply_scale(x, y, z); 
+}
+
+void fp_scaled(GLdouble x, GLdouble y, GLdouble z) { 
+    fp_apply_scale((GLfloat)x, (GLfloat)y, (GLfloat)z); 
+}
+
+void fp_rotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) { 
+    fp_apply_rotate(angle, x, y, z); 
+}
+
+void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) { 
+    fp_apply_rotate((GLfloat)angle, (GLfloat)x, (GLfloat)y, (GLfloat)z); 
+}
 
 // ---- 即时模式 ----
 void fp_begin(GLenum mode) {
