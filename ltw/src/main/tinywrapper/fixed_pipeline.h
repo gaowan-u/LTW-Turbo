@@ -105,7 +105,14 @@ void fp_set_client_active_texture(GLenum unit);
 
 // 纹理状态
 void fp_set_texture_enabled(bool enabled);
+// 显示列表回放专用：TEXTURE_ENABLE op 固定写入 unit0 的 GL_TEXTURE_2D 状态。
+void fp_set_unit0_texture_enabled(bool enabled);
 void fp_set_active_texture(GLuint unit);
+// MathCode: 桌面 glTexEnv/glTexEnvi/glTexEnvf/glTexEnvfv/glTexEnviv 的状态入口：
+// GLES 无纹理环境合并，这里把光照贴图单元（unit1）的 GL_COMBINE/
+// GL_INTERPOLATE + GL_TEXTURE_ENV_COLOR 状态记录下来，供默认 shader
+// 模拟受伤红闪（MC 1.12 RenderLivingBase.setBrightness）。
+void fp_texenv(GLenum target, GLenum pname, const GLfloat* fparams, const GLint* iparams, bool is_int);
 // glBindTexture(GL_TEXTURE_2D) 后调用：若当前活动单元是 unit0，刷新固定管线
 // 缓存的绑定纹理（避免 glBindTexture 后、绘制前被其他单元/路径覆盖）。
 void fp_notify_texture_bind(void);

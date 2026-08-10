@@ -301,6 +301,31 @@ void glShadeModel(GLenum mode) {
     if(!current_context) return;
     (void)mode;
 }
+
+// MathCode: 纹理环境（桌面 GL_TEXTURE_ENV；GLES 无对应物，2026-08 新增）
+// MC 1.12 生物受伤红闪依赖 RenderLivingBase.setBrightness 在光照贴图单元
+// 上设置 GL_COMBINE/GL_INTERPOLATE + GL_TEXTURE_ENV_COLOR=(1,0,0,0.3)。
+// 状态由固定管线记录，默认 shader 在绘制时模拟，不透传宿主机。
+void glTexEnvi(GLenum target, GLenum pname, GLint param) {
+    if(!current_context) return;
+    fp_texenv(target, pname, NULL, &param, true);
+}
+void glTexEnvf(GLenum target, GLenum pname, GLfloat param) {
+    if(!current_context) return;
+    fp_texenv(target, pname, &param, NULL, false);
+}
+void glTexEnvfv(GLenum target, GLenum pname, const GLfloat* params) {
+    if(!current_context) return;
+    fp_texenv(target, pname, params, NULL, false);
+}
+void glTexEnviv(GLenum target, GLenum pname, const GLint* params) {
+    if(!current_context) return;
+    fp_texenv(target, pname, NULL, params, true);
+}
+void glTexEnv(GLenum target, GLenum pname, const GLfloat* params) {
+    if(!current_context) return;
+    fp_texenv(target, pname, params, NULL, false);
+}
 void glPushAttrib(GLbitfield mask) {
     if(!current_context) return;
     (void)mask;

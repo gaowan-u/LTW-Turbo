@@ -263,7 +263,9 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint 
         skip_upload = false;
     }
     if(!skip_upload) {
-        es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)tri_count * 4, indices, GL_STREAM_DRAW);
+        es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                                   (GLsizeiptr)tri_count * 4,
+                                   indices, GL_STREAM_DRAW);
         if(src_ebo != 0) {
             ctx->quads_last_ebo = src_ebo;
             ctx->quads_last_gen = src_gen;

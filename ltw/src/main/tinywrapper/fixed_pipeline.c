@@ -20,11 +20,14 @@
 #include "GL/gl.h"
 #include "fixed_pipeline.h"
 #include "egl.h"
+#include "env.h"
+#include "ltw_config.h"
 #include "debug.h"
 
 // ---- 内部常量 ----
 #define FP_MAX_STACK_DEPTH 32
 #define FP_MAX_VERTICES 65536
+#define FP_TEXENV_UNITS 3
 #define FP_STRIDE (3 + 4 + 2)          // pos3 + color4 + uv2
 #define FP_VERTEX_BYTES (FP_STRIDE * sizeof(GLfloat))
 
@@ -113,6 +116,19 @@ typedef struct {
     GLuint list;
 } dl_call_list_payload_t;
 
+// MathCode: 实验性“整表合并”缓存。把同一个显示列表里格式一致、无状态
+// 插入的 CLIENT_DRAW op 合并进一个大 VBO/EBO，回放时一次 glDrawElements。
+typedef struct {
+    GLuint vao;
+    GLuint vbo;
+    GLuint ebo;
+    GLsizei draw_count;    // 合并后的三角形索引总数
+    bool use_color;        // 合并 op 的 uUseColor（格式一致才允许合并）
+    bool valid;            // 缓存已建立且属于当前 context
+    bool attempted;        // 已尝试过合并（失败则回退旧路径，避免每帧重试）
+    const void* ctx;       // 建立缓存的 context_t*
+} dl_merge_cache_t;
+
 // 列表存储
 typedef struct {
     uint32_t type;
@@ -145,6 +161,7 @@ typedef struct {
     uint32_t op_count;
     uint32_t op_cap;
     dl_op_entry_t* ops;
+    dl_merge_cache_t merge;   // 整表合并缓存（实验性，LTW_DL_MERGE）
     size_t bytes;          // 该列表数据总字节
 } fp_dl_list_t;
 
@@ -173,6 +190,9 @@ static GLuint dl_list_base_id = 0;
 static bool dl_replay_active = false;
 static bool dl_replay_dirty = true;      // 纹理等状态变化后，绘制前需重设 uniforms
 static bool dl_last_uuse_color = false;  // 上一次缓存绘制实际设置的 uUseColor
+static GLuint dl_current_vao = 0;        // MathCode: 批量回放期间当前绑定的 VAO，
+                                         // 连续缓存 op 之间不再切回 fp_vao
+static bool dl_merge_enabled = true;     // MathCode: 实验性整表合并开关（LTW_DL_MERGE）
 static GLint dl_saved_vao = 0;
 static GLint dl_saved_program = 0;
 static GLint dl_saved_abo = 0;
@@ -183,8 +203,10 @@ static bool dl_saved_texture_valid = false;
 
 static void dl_execute_list(GLuint list);
 static void fp_dl_reset_caches(void);
+static void fp_dl_free_merged(fp_dl_list_t* l);
 
 // ---- 默认 shader ----
+// MathCode: 默认 shader 增加受伤红闪模拟（uLightTint/uLightColor，2026-08）
 static const char* fp_vertex_shader_src =
     "#version 300 es\n"
     "layout(location=0) in vec4 aPos;\n"
@@ -211,6 +233,8 @@ static const char* fp_fragment_shader_src =
     "uniform bool uSingle;\n"
     "uniform int uAlphaFunc;\n"
     "uniform float uAlphaRef;\n"
+    "uniform bool uLightTint;\n"
+    "uniform vec4 uLightColor;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
     "    vec4 c = vec4(1.0);\n"
@@ -221,6 +245,7 @@ static const char* fp_fragment_shader_src =
     "    }\n"
     "    vec4 vc = uUseColor ? vColor : uColor;\n"
     "    vec4 fc = c * vc;\n"
+    "    if(uLightTint) fc.rgb = mix(fc.rgb, uLightColor.rgb, uLightColor.a);\n"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
     "    else if(uAlphaFunc == 1) atpass = fc.a < uAlphaRef;\n"
@@ -243,6 +268,8 @@ static GLint fp_color_loc = -1;
 static GLint fp_alphafunc_loc = -1;
 static GLint fp_alpharef_loc = -1;
 static GLint fp_single_loc = -1;
+static GLint fp_lighttint_loc = -1;
+static GLint fp_lightcolor_loc = -1;
 static GLuint fp_vbo = 0;
 static GLuint fp_vbo_pos = 0;
 static GLuint fp_vbo_color = 0;
@@ -309,8 +336,30 @@ static bool fp_client_color_enabled = false;
 static bool fp_client_normal_enabled = false;
 
 // 纹理状态
-static bool fp_texture_enabled = false;
+// MathCode: GL_TEXTURE_2D 启用状态是每个纹理单元独立的（桌面语义）。
+// 原版 disableLightmap() 会在光照贴图单元（unit1）上关纹理，若只用一个
+// bool 会把 unit0 的启用状态也带成 false，导致 GUI（准心/装备栏等不显式
+// enableTexture2D 的绘制）变成白色方块。
+static bool fp_texture_enabled[FP_TEXENV_UNITS];
 static GLuint fp_bound_texture = 0;
+
+// MathCode: 纹理环境状态模拟（2026-08 新增，修复生物受伤红闪）
+// 桌面 GL_TEXTURE_ENV：GLES 3.x 没有 glTexEnv/纹理
+// 合并。MC 1.12 用单元1（光照贴图）的 GL_COMBINE/GL_INTERPOLATE +
+// GL_TEXTURE_ENV_COLOR 实现受伤红闪（env color = (1,0,0,0.3)）与亮度调整。
+// 这里只跟踪固定管线实际用到的单元（0=主纹理 1=光照贴图 2=亮度纹理），
+// 默认 shader 在绘制时按需应用。
+typedef struct {
+    GLint env_mode;      // GL_TEXTURE_ENV_MODE（默认 GL_MODULATE）
+    GLint combine_rgb;   // GL_COMBINE_RGB
+    GLint src0_rgb;      // GL_SOURCE0_RGB
+    GLint src2_rgb;      // GL_SOURCE2_RGB（插值因子来源）
+    GLint operand2_rgb;  // GL_OPERAND2_RGB
+    GLfloat color[4];    // GL_TEXTURE_ENV_COLOR
+} fp_texenv_unit_t;
+static fp_texenv_unit_t fp_texenv_state[FP_TEXENV_UNITS];
+// unit1 是否处于“常量色插值”合并模式（受伤红闪/亮度色的生效条件）
+static bool fp_light_tint = false;
 
 // 单通道纹理格式缓存：GL_TEXTURE_INTERNAL_FORMAT 在纹理分配后不会变化，
 // 没必要每次 glBindTexture/绘制都向驱动查询。直接映射槽 + 世代号，
@@ -378,38 +427,53 @@ static GLfloat* fp_current_matrix_ptr(void) {
 }
 
 static void fp_apply_translate(GLfloat x, GLfloat y, GLfloat z) {
-    GLfloat t[FP_MATRIX_SIZE];
-    fp_mat_identity(t);
-    t[12] = x; t[13] = y; t[14] = z;
-    GLfloat m[FP_MATRIX_SIZE];
-    memcpy(m, fp_current_matrix_ptr(), sizeof(m));
-    fp_mat_mul(fp_current_matrix_ptr(), m, t);
+    if(x == 0.0f && y == 0.0f && z == 0.0f) return;
+
+    GLfloat *m = fp_current_matrix_ptr();
+
+    m[12] += m[0]*x + m[4]*y + m[8 ]*z;
+    m[13] += m[1]*x + m[5]*y + m[9 ]*z;
+    m[14] += m[2]*x + m[6]*y + m[10]*z;
+    m[15] += m[3]*x + m[7]*y + m[11]*z;
 }
 
 static void fp_apply_scale(GLfloat x, GLfloat y, GLfloat z) {
-    GLfloat t[FP_MATRIX_SIZE];
-    fp_mat_identity(t);
-    t[0] = x; t[5] = y; t[10] = z;
-    GLfloat m[FP_MATRIX_SIZE];
-    memcpy(m, fp_current_matrix_ptr(), sizeof(m));
-    fp_mat_mul(fp_current_matrix_ptr(), m, t);
+    if(x == 1.0f && y == 1.0f && z == 1.0f) return;
+
+    GLfloat *m = fp_current_matrix_ptr();  // float[16]
+
+    m[0] *= x; m[1] *= x; m[2] *= x; m[3] *= x;
+    m[4] *= y; m[5] *= y; m[6] *= y; m[7] *= y;
+    m[8] *= z; m[9] *= z; m[10] *= z; m[11] *= z;
 }
 
 static void fp_apply_rotate(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) {
+    if(angle == 0.0f) return;
+
     GLfloat rad = angle * (GLfloat)3.14159265358979 / 180.0f;
     GLfloat c = (GLfloat)cos(rad);
     GLfloat s = (GLfloat)sin(rad);
+
     GLfloat len = (GLfloat)sqrt(x * x + y * y + z * z);
     if(len == 0.0f) return;
-    x /= len; y /= len; z /= len;
-    GLfloat t[FP_MATRIX_SIZE];
-    t[0]  = x * x * (1 - c) + c;     t[4]  = x * y * (1 - c) - z * s; t[8]  = x * z * (1 - c) + y * s; t[12] = 0;
-    t[1]  = y * x * (1 - c) + z * s; t[5]  = y * y * (1 - c) + c;     t[9]  = y * z * (1 - c) - x * s; t[13] = 0;
-    t[2]  = x * z * (1 - c) - y * s; t[6]  = y * z * (1 - c) + x * s; t[10] = z * z * (1 - c) + c;     t[14] = 0;
-    t[3] = 0; t[7] = 0; t[11] = 0; t[15] = 1;
-    GLfloat m[FP_MATRIX_SIZE];
-    memcpy(m, fp_current_matrix_ptr(), sizeof(m));
-    fp_mat_mul(fp_current_matrix_ptr(), m, t);
+    if(len != 1.0f) {
+        x /= len; y /= len; z /= len;
+    }
+
+    GLfloat omc = 1.0f - c;
+    GLfloat xx = x * x, yy = y * y, zz = z * z;
+    GLfloat xy = x * y, xz = x * z, yz = y * z;
+
+    GLfloat t[16];
+    t[0]  = xx * omc + c;    t[4]  = xy * omc - z * s;  t[8]  = xz * omc + y * s;  t[12] = 0;
+    t[1]  = xy * omc + z * s; t[5]  = yy * omc + c;     t[9]  = yz * omc - x * s;  t[13] = 0;
+    t[2]  = xz * omc - y * s; t[6]  = yz * omc + x * s; t[10] = zz * omc + c;     t[14] = 0;
+    t[3]  = 0;                 t[7]  = 0;                 t[11] = 0;                 t[15] = 1;
+
+    GLfloat m[16];
+    GLfloat *mat = fp_current_matrix_ptr();
+    memcpy(m, mat, sizeof(m));
+    fp_mat_mul(mat, m, t);
 }
 
 // 即时模式顶点追加
@@ -494,6 +558,8 @@ static void fp_ensure_program(void) {
     fp_alpharef_loc = es3_functions.glGetUniformLocation(prog, "uAlphaRef");
     fp_single_loc = es3_functions.glGetUniformLocation(prog, "uSingle");
     fp_color_loc = es3_functions.glGetUniformLocation(prog, "uColor");
+    fp_lighttint_loc = es3_functions.glGetUniformLocation(prog, "uLightTint");
+    fp_lightcolor_loc = es3_functions.glGetUniformLocation(prog, "uLightColor");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
     es3_functions.glGenBuffers(1, &fp_vbo_pos);
@@ -577,20 +643,26 @@ static void fp_flush_immediate(void) {
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
     fp_set_default_uniforms();
-    es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
-    es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
-    es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
-    es3_functions.glVertexAttribPointer(FP_ATTR_POS, 3, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES, NULL);
-    es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, 4, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
-                                        (const void*)(3 * sizeof(GLfloat)));
-    es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
-                                        (const void*)(7 * sizeof(GLfloat)));
+    {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+        es3_functions.glVertexAttribPointer(FP_ATTR_POS, 3, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES, NULL);
+        es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, 4, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
+                                            (const void*)(3 * sizeof(GLfloat)));
+        es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
+                                            (const void*)(7 * sizeof(GLfloat)));
+    }
 
     es3_functions.glDrawArrays(mode, 0, count);
 
     // 恢复状态
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_array_buffer);
     es3_functions.glBindVertexArray((GLuint)old_vao);
+    // MathCode: 即时模式路径绑定/解绑了 VAO，必须同步内部跟踪值，
+    // 否则显示列表合并路径会误以为自己的 VAO 仍处于绑定状态而跳过绑定，
+    // 用应用侧 VAO（可能没有 EBO）执行 glDrawElements → GL_INVALID_OPERATION。
+    dl_current_vao = (GLuint)old_vao;
     if(old_program != (GLint)fp_program) {
         es3_functions.glUseProgram((GLuint)old_program);
         if(current_context) current_context->program = (GLuint)old_program;
@@ -607,9 +679,20 @@ static void fp_flush_immediate(void) {
 void fp_init(void) {
     // 上下文重建时（FCL 偶尔会重建 EGL context），GL 对象是 context 私有的，
     // 必须重置句柄并让 fp_ensure_program 在新 context 里重建。
+    // MathCode: 实验开关优先级 = LTW_DL_MERGE 环境变量 > 共享配置 dlMerge > 默认开。
+    if(getenv("LTW_DL_MERGE")) {
+        dl_merge_enabled = env_istrue("LTW_DL_MERGE");
+    } else {
+        ltw_config_init();
+        // MathCode: 2026-08-08 修复合并绘制 1282（Post render）与生物贴图错乱：
+        // 合并路径每次绘制前强制绑定自己的 VAO+EBO，并修复内部 VAO 跟踪被
+        // 即时模式/默认 program 路径解绑后不同步的问题；默认保持开启。
+        dl_merge_enabled = ltw_config_get_bool("dlMerge", true);
+    }
     fp_init_done = false;
     fp_program = 0;
     fp_mvp_loc = fp_tex_loc = fp_usetex_loc = fp_usecolor_loc = -1;
+    fp_lighttint_loc = fp_lightcolor_loc = -1;
     fp_color_loc = fp_alphafunc_loc = fp_alpharef_loc = fp_single_loc = -1;
     fp_vbo = fp_vbo_pos = fp_vbo_color = fp_vbo_uv = fp_vao = 0;
     fp_index_ebo = 0;
@@ -634,8 +717,18 @@ void fp_init(void) {
     fp_client_vertex_enabled = fp_client_texcoord_enabled = fp_client_color_enabled = fp_client_normal_enabled = false;
     fp_client_active_texture = GL_TEXTURE0;
     fp_active_texture = GL_TEXTURE0;
-    fp_texture_enabled = false;
+    fp_texture_enabled[0] = fp_texture_enabled[1] = fp_texture_enabled[2] = false;
     fp_bound_texture = 0;
+    for(int i = 0; i < FP_TEXENV_UNITS; i++) {
+        fp_texenv_state[i].env_mode = GL_MODULATE;
+        fp_texenv_state[i].combine_rgb = GL_MODULATE;
+        fp_texenv_state[i].src0_rgb = GL_TEXTURE;
+        fp_texenv_state[i].src2_rgb = GL_CONSTANT;
+        fp_texenv_state[i].operand2_rgb = GL_SRC_ALPHA;
+        fp_texenv_state[i].color[0] = fp_texenv_state[i].color[1] = 1.0f;
+        fp_texenv_state[i].color[2] = fp_texenv_state[i].color[3] = 1.0f;
+    }
+    fp_light_tint = false;
 
     // 显示列表 CPU 快照保留，但 GL 对象句柄随旧 context 失效，清零后惰性重建
     fp_dl_reset_caches();
@@ -644,6 +737,7 @@ void fp_init(void) {
     if(fp_texfmt_epoch == 0) fp_texfmt_epoch = 1;
     dl_replay_active = false;
     dl_replay_dirty = true;
+    dl_current_vao = 0;
 }
 
 void fp_matrix_mode(GLenum mode) {
@@ -705,12 +799,29 @@ void fp_frustum(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdo
     fp_mat_frustum(fp_current_matrix_ptr(), l, r, b, t, n, f);
 }
 
-void fp_translatef(GLfloat x, GLfloat y, GLfloat z) { fp_apply_translate(x, y, z); }
-void fp_translated(GLdouble x, GLdouble y, GLdouble z) { fp_apply_translate((GLfloat)x, (GLfloat)y, (GLfloat)z); }
-void fp_scalef(GLfloat x, GLfloat y, GLfloat z) { fp_apply_scale(x, y, z); }
-void fp_scaled(GLdouble x, GLdouble y, GLdouble z) { fp_apply_scale((GLfloat)x, (GLfloat)y, (GLfloat)z); }
-void fp_rotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) { fp_apply_rotate(angle, x, y, z); }
-void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) { fp_apply_rotate((GLfloat)angle, (GLfloat)x, (GLfloat)y, (GLfloat)z); }
+void fp_translatef(GLfloat x, GLfloat y, GLfloat z) { 
+    fp_apply_translate(x, y, z); 
+}
+
+void fp_translated(GLdouble x, GLdouble y, GLdouble z) { 
+    fp_apply_translate((GLfloat)x, (GLfloat)y, (GLfloat)z); 
+}
+
+void fp_scalef(GLfloat x, GLfloat y, GLfloat z) { 
+    fp_apply_scale(x, y, z); 
+}
+
+void fp_scaled(GLdouble x, GLdouble y, GLdouble z) { 
+    fp_apply_scale((GLfloat)x, (GLfloat)y, (GLfloat)z); 
+}
+
+void fp_rotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) { 
+    fp_apply_rotate(angle, x, y, z); 
+}
+
+void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) { 
+    fp_apply_rotate((GLfloat)angle, (GLfloat)x, (GLfloat)y, (GLfloat)z); 
+}
 
 // ---- 即时模式 ----
 void fp_begin(GLenum mode) {
@@ -867,12 +978,78 @@ void fp_array_element(GLint i) {
 }
 
 // ---- 纹理状态 ----
-void fp_set_texture_enabled(bool enabled) { fp_texture_enabled = enabled; }
+static int fp_texenv_unit_index(GLenum unit) {
+    switch(unit) {
+        case GL_TEXTURE0: return 0;
+        case GL_TEXTURE1: return 1;
+        case GL_TEXTURE2: return 2;
+        default: return -1;
+    }
+}
+
+// MathCode: 按当前活动纹理单元记录 GL_TEXTURE_2D 启用状态
+// （GL_TEXTURE_2D 是 per-unit 的桌面状态，unit1 的 disable 不能影响 unit0）。
+void fp_set_texture_enabled(bool enabled) {
+    int idx = fp_texenv_unit_index(fp_active_texture);
+    if(idx >= 0 && idx < FP_TEXENV_UNITS) fp_texture_enabled[idx] = enabled;
+}
+
+// 显示列表回放专用：TEXTURE_ENABLE op 录制时来自 unit0 的
+// glEnable/glDisable(GL_TEXTURE_2D)，回放时固定写 unit0 槽位。
+void fp_set_unit0_texture_enabled(bool enabled) {
+    fp_texture_enabled[0] = enabled;
+}
 void fp_set_active_texture(GLuint unit) {
     fp_active_texture = unit;
     if(unit == GL_TEXTURE0) {
         fp_refresh_bound_texture();
     }
+}
+
+// MathCode: 只有 unit1（光照贴图）的“GL_INTERPOLATE + 常量色 + SRC_ALPHA 因子”组合
+// 才是受伤红闪/亮度色，推导成 shader 能用的开关。
+static void fp_texenv_recompute(void) {
+    const fp_texenv_unit_t* u = &fp_texenv_state[1];
+    fp_light_tint = (u->env_mode == GL_COMBINE &&
+                     u->combine_rgb == GL_INTERPOLATE &&
+                     u->src0_rgb == GL_CONSTANT &&
+                     u->src2_rgb == GL_CONSTANT &&
+                     u->operand2_rgb == GL_SRC_ALPHA);
+}
+
+// MathCode: 桌面 glTexEnv* 状态入口（GLES 无对应物，固定管线内部模拟）
+void fp_texenv(GLenum target, GLenum pname, const GLfloat* fparams, const GLint* iparams, bool is_int) {
+    if(!current_context || target != GL_TEXTURE_ENV) return;
+    int idx = fp_texenv_unit_index(fp_active_texture);
+    if(idx < 0 || idx >= FP_TEXENV_UNITS) return;
+    fp_texenv_unit_t* u = &fp_texenv_state[idx];
+    switch(pname) {
+        case GL_TEXTURE_ENV_MODE:
+            u->env_mode = is_int ? *iparams : (GLint)*fparams;
+            break;
+        case GL_TEXTURE_ENV_COLOR:
+            if(is_int) {
+                for(int i = 0; i < 4; i++) u->color[i] = (GLfloat)iparams[i];
+            } else {
+                for(int i = 0; i < 4; i++) u->color[i] = fparams[i];
+            }
+            break;
+        case GL_COMBINE_RGB:
+            u->combine_rgb = is_int ? *iparams : (GLint)*fparams;
+            break;
+        case GL_SOURCE0_RGB:
+            u->src0_rgb = is_int ? *iparams : (GLint)*fparams;
+            break;
+        case GL_SOURCE2_RGB:
+            u->src2_rgb = is_int ? *iparams : (GLint)*fparams;
+            break;
+        case GL_OPERAND2_RGB:
+            u->operand2_rgb = is_int ? *iparams : (GLint)*fparams;
+            break;
+        default:
+            break;
+    }
+    if(idx == 1) fp_texenv_recompute();
 }
 
 void fp_notify_texture_bind(void) {
@@ -920,7 +1097,8 @@ static bool fp_texfmt_resolve(GLuint tex) {
     bool single = false;
     if(fp_texfmt_lookup(tex, &single)) return single;
     GLint fmt = 0;
-    es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
+    es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0,
+                                           GL_TEXTURE_INTERNAL_FORMAT, &fmt);
     single = (fmt == GL_R8 || fmt == GL_RED || fmt == GL_R16F || fmt == GL_R32F);
     fp_texfmt_store(tex, single);
     return single;
@@ -957,19 +1135,25 @@ void fp_texture_upload_invalidate(void) {
     if(fp_texfmt_epoch == 0) fp_texfmt_epoch = 1;
 }
 
-// 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 由绑定纹理决定：
-// GLES 纹理始终启用，绑定过纹理就采样，否则用顶点色。
+// 设置默认 program 的 uniforms（MVP + 纹理开关）。uUseTex 同时受“绑定纹理”
+// 与 GL_TEXTURE_2D 启用状态控制：桌面固定管线里 glDisable(GL_TEXTURE_2D)
+// 后即使有绑定纹理也不采样（MC 1.12 物品提示黑框、文字下划线走无纹理
+// POSITION_COLOR 矩形，之前忽略启用状态导致采样到上一个绑定的纹理）。
+// MathCode: 黑框修复——纹理采样必须同时满足“绑定了纹理”和
+// “GL_TEXTURE_2D 已启用”（桌面固定管线语义）。
 static void fp_set_default_uniforms(void) {
     GLfloat mvp[FP_MATRIX_SIZE];
     fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
                fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
     if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
     if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
-    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, fp_bound_texture ? 1 : 0);
+    if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, (fp_bound_texture != 0 && fp_texture_enabled[0]) ? 1 : 0);
     // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
     if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0));
     if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
     if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, fp_bound_single_channel ? 1 : 0);
+    if(fp_lighttint_loc >= 0) es3_functions.glUniform1i(fp_lighttint_loc, fp_light_tint ? 1 : 0);
+    if(fp_lightcolor_loc >= 0) es3_functions.glUniform4fv(fp_lightcolor_loc, 1, fp_texenv_state[1].color);
     // shader 里用 0..7 表示 GL_NEVER..GL_ALWAYS，不能直接传原始 GLenum
     // （例如 GL_GREATER=516），否则所有分支都匹配不上、alpha test 失效。
     GLint alpha_mode = 7;
@@ -1037,40 +1221,43 @@ static void fp_upload_client_arrays(GLsizei count) {
 
     // 一次上传整个交错数组
     glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
-    es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count, fp_client_vertex_ptr, GL_STREAM_DRAW);
+    es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count,
+                               fp_client_vertex_ptr, GL_STREAM_DRAW);
 
     // 位置 attribute：offset 0
-    es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
-    es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
-                                        GL_FALSE, fp_client_vertex_stride, NULL);
+    {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+        es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
+                                            GL_FALSE, fp_client_vertex_stride, NULL);
 
-    // 纹理 attribute：偏移 = texcoord 指针 - 顶点指针（交错布局内）
-    if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0 && fp_client_texcoord_ptr) {
-        ptrdiff_t off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
-        if(off >= 0 && (size_t)off < vsize) {
-            es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
-            es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
-                                                GL_FALSE, fp_client_vertex_stride, (const void*)off);
+        // 纹理 attribute：偏移 = texcoord 指针 - 顶点指针（交错布局内）
+        if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0 && fp_client_texcoord_ptr) {
+            ptrdiff_t off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            if(off >= 0 && (size_t)off < vsize) {
+                es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+                es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
+                                                    GL_FALSE, fp_client_vertex_stride, (const void*)off);
+            } else {
+                es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+            }
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
         }
-    } else {
-        es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
-    }
-    // 颜色 attribute：偏移 = color 指针 - 顶点指针
-    fp_client_color_active = (fp_client_color_enabled && fp_client_color_size > 0 && fp_client_color_ptr);
-    if(fp_client_color_active) {
-        ptrdiff_t off = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
-        if(off >= 0 && (size_t)off < vsize) {
-            es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
-            es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
-                                                GL_TRUE, fp_client_vertex_stride, (const void*)off);
+        // 颜色 attribute：偏移 = color 指针 - 顶点指针
+        fp_client_color_active = (fp_client_color_enabled && fp_client_color_size > 0 && fp_client_color_ptr);
+        if(fp_client_color_active) {
+            ptrdiff_t off = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            if(off >= 0 && (size_t)off < vsize) {
+                es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+                es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
+                                                    GL_TRUE, fp_client_vertex_stride, (const void*)off);
+            } else {
+                fp_client_color_active = false;
+                es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+            }
         } else {
-            fp_client_color_active = false;
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
-    } else {
-        es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
     }
 
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
@@ -1132,6 +1319,9 @@ void fp_unbind_default_program(void) {
     // unit0 绑定在绑定阶段从未被改写（fp_bound_texture 即 unit0 当前绑定，
     // 由 glBindTexture 包装器 CPU 维护），无需恢复纹理状态
     if(fp_saved_vao != 0) es3_functions.glBindVertexArray(fp_saved_vao);
+    // 与 fp_flush_immediate 同理：恢复应用 VAO 后同步内部跟踪值，
+    // 避免显示列表合并路径基于过期值跳过自己的 VAO 绑定。
+    dl_current_vao = (GLuint)fp_saved_vao;
     es3_functions.glUseProgram(0);
     if(current_context) current_context->program = 0;
 }
@@ -1159,7 +1349,27 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     GLint eab = 0;
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
     if(!fp_bind_default_program()) return false;
-    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
+    if(eab == 0) {
+        // GLES 禁止客户端索引指针（桌面 GL 1.x 允许）：无 EBO 时直接把
+        // CPU 索引上传到内部 scratch EBO，否则 glDrawElements 会产生
+        // GL_INVALID_OPERATION（MC 帧末 “Post render 1282” 的来源之一）。
+        if(indices && count > 0 &&
+           (type == GL_UNSIGNED_BYTE || type == GL_UNSIGNED_SHORT || type == GL_UNSIGNED_INT)) {
+            GLsizeiptr isize = (GLsizeiptr)count * (GLsizeiptr)fp_type_bytes(type);
+            if(fp_index_ebo != 0) {
+                es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, fp_index_ebo);
+                if(isize > fp_index_ebo_cap) {
+                    es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, isize, indices, GL_STREAM_DRAW);
+                    fp_index_ebo_cap = isize;
+                } else {
+                    es3_functions.glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, isize, indices);
+                }
+                indices = NULL;
+            }
+        }
+    } else {
+        es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
+    }
     fp_prepare_client_arrays(count);
     es3_functions.glDrawElements(mode, count, type, indices);
     fp_unbind_default_program();
@@ -1510,6 +1720,7 @@ static bool fp_begin_dl_replay(void) {
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
     es3_functions.glBindVertexArray(fp_vao);
+    dl_current_vao = fp_vao;
     dl_replay_dirty = true;
     dl_last_uuse_color = !fp_client_color_active; // 强制首次缓存绘制重设 uUseColor
     return true;
@@ -1532,6 +1743,7 @@ static void fp_end_dl_replay(void) {
     } else {
         es3_functions.glBindVertexArray(0);
     }
+    dl_current_vao = (GLuint)dl_saved_vao;
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)dl_saved_eab);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
     if((GLint)fp_program != dl_saved_program) {
@@ -1707,6 +1919,9 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
             dl_replay_active = fp_begin_dl_replay();
             return;
         }
+        // MathCode: 缓存构建内部绑定过临时 VAO，结束后实际绑定为 0，
+        // 清掉跟踪值，下面按需重新绑定 cache_vao。
+        dl_current_vao = 0;
     }
 
     // uUseColor 由客户端颜色数组是否启用决定；判断条件必须与缓存构建端
@@ -1724,13 +1939,292 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
         dl_replay_dirty = false;
     }
 
-    es3_functions.glBindVertexArray(op->cache_vao);
+    if(dl_current_vao != op->cache_vao) {
+        es3_functions.glBindVertexArray(op->cache_vao);
+        dl_current_vao = op->cache_vao;
+    }
     if(op->cache_indexed) {
         es3_functions.glDrawElements(op->cache_mode, op->cache_count, op->cache_itype, NULL);
     } else {
         es3_functions.glDrawArrays(op->cache_mode, op->cache_first, op->cache_count);
     }
-    es3_functions.glBindVertexArray(fp_vao); // 保持批量不变量：始终回到私有 VAO
+    // MathCode: 不再每 op 切回 fp_vao；列表结束/遇到非缓存路径时再恢复，
+    // 生物密集场景每个缓存 op 省一次 VAO 绑定。
+}
+
+// ---- 实验性整表合并（LTW_DL_MERGE）----
+// 只在“整个列表全部是可缓存的 CLIENT_DRAW op、且顶点格式完全一致、中间
+// 没有任何纹理/开关/嵌套/即时模式 op”时启用。满足条件就把所有顶点拼进
+// 一个大 VBO、索引拼进一个大 EBO，回放一次 glDrawElements；不满足就完全
+// 走原来的每 op 缓存路径。
+static bool fp_dl_merge_mode_supported(GLenum mode) {
+    return mode == GL_QUADS || mode == GL_TRIANGLES;
+}
+
+static bool fp_dl_merge_op_cacheable(const dl_op_entry_t* op, const dl_client_draw_payload_t* p) {
+    if(!op || !p || op->type != DL_OP_CLIENT_DRAW || op->size < sizeof(*p)) return false;
+    if(p->snap.vertex_abo != 0 || p->snap.texcoord_abo != 0 || p->snap.color_abo != 0) return false;
+    if(p->indices_ebo != 0 || p->vertex_len == 0 || p->count <= 0 || p->first != 0) return false;
+    if((size_t)p->vertex_off + (size_t)p->vertex_len > (size_t)op->size) return false;
+    // 合并 VBO 按 vertex_stride 交错拼接，UV/COLOR 必须与顶点同 stride，
+    // 否则合并后的 attribute 偏移全部错位（生物贴图错乱）。
+    if(p->snap.texcoord_stride != 0 && p->snap.texcoord_stride != p->snap.vertex_stride) return false;
+    if(p->snap.color_stride != 0 && p->snap.color_stride != p->snap.vertex_stride) return false;
+    if(p->indexed) {
+        if(p->indices_len == 0 || (size_t)p->indices_off + (size_t)p->indices_len > (size_t)op->size) return false;
+        if(p->itype != GL_UNSIGNED_BYTE && p->itype != GL_UNSIGNED_SHORT && p->itype != GL_UNSIGNED_INT) return false;
+        if((size_t)p->count * fp_type_bytes(p->itype) > (size_t)p->indices_len) return false;
+    }
+    return true;
+}
+
+static bool fp_dl_merge_snapshots_compatible(const fp_dl_client_snapshot_t* a,
+                                             const fp_dl_client_snapshot_t* b) {
+    return a->vertex_enabled == b->vertex_enabled &&
+           a->vertex_size == b->vertex_size &&
+           a->vertex_type == b->vertex_type &&
+           a->vertex_stride == b->vertex_stride &&
+           a->texcoord_enabled == b->texcoord_enabled &&
+           a->texcoord_size == b->texcoord_size &&
+           a->texcoord_type == b->texcoord_type &&
+           a->texcoord_stride == b->texcoord_stride &&
+           a->texcoord_off == b->texcoord_off &&
+           a->color_enabled == b->color_enabled &&
+           a->color_size == b->color_size &&
+           a->color_type == b->color_type &&
+           a->color_stride == b->color_stride &&
+           a->color_off == b->color_off &&
+           a->normal_enabled == b->normal_enabled &&
+           a->normal_type == b->normal_type &&
+           a->normal_stride == b->normal_stride &&
+           a->normal_off == b->normal_off;
+}
+
+static bool fp_dl_merge_use_color(const fp_dl_client_snapshot_t* s, size_t vsize) {
+    return s->color_enabled && s->color_size > 0 && s->color_off >= 0 &&
+           vsize != 0 && (size_t)s->color_off < vsize;
+}
+
+static bool fp_dl_build_merged_cache(fp_dl_list_t* l) {
+    if(!l || !current_context) return false;
+    l->merge.attempted = true;
+    if(l->op_count < 2) return false;
+
+    const fp_dl_client_snapshot_t* first_snap = NULL;
+    size_t vsize = 0;
+    size_t total_vertices = 0;
+    size_t total_vertex_bytes = 0;
+    size_t total_indices = 0;
+
+    // 第一遍：校验整表可合并
+    for(uint32_t i = 0; i < l->op_count; i++) {
+        const dl_op_entry_t* op = &l->ops[i];
+        const dl_client_draw_payload_t* p = (const dl_client_draw_payload_t*)op->data;
+        if(!fp_dl_merge_op_cacheable(op, p)) return false;
+        if(!fp_dl_merge_mode_supported(p->mode)) return false;
+        size_t tsize = fp_type_bytes(p->snap.vertex_type);
+        size_t ovsize = p->snap.vertex_stride ? (size_t)p->snap.vertex_stride
+                                              : (size_t)p->snap.vertex_size * tsize;
+        if(ovsize == 0) return false;
+        if(i == 0) {
+            first_snap = &p->snap;
+            vsize = ovsize;
+        } else if(!fp_dl_merge_snapshots_compatible(first_snap, &p->snap)) {
+            return false;
+        }
+        size_t verts = (size_t)p->count;
+        if(verts > FP_MAX_VERTICES || total_vertices + verts > FP_MAX_VERTICES) return false;
+        if((size_t)p->vertex_len != verts * ovsize) return false;
+        if(p->mode == GL_QUADS) {
+            if(p->count % 4 != 0) return false;
+            total_indices += (verts / 4) * 6;
+        } else {
+            // MathCode: 三角形列表必须整组对齐，否则跨 op 拼接会把上一条
+            // 多余的顶点和下一条顶点凑成错误三角形。
+            if(p->count % 3 != 0) return false;
+            total_indices += verts;
+        }
+        if(p->indexed) {
+            const uint8_t* src = op->data + p->indices_off;
+            for(GLsizei k = 0; k < p->count; k++) {
+                if(fp_dl_read_idx(src, p->itype, k) >= (uint32_t)p->count) return false;
+            }
+        }
+        total_vertices += verts;
+        total_vertex_bytes += p->vertex_len;
+    }
+    if(total_vertices == 0 || total_indices == 0 || total_indices > 1024u * 1024u) return false;
+
+    uint8_t* vdata = (uint8_t*)malloc(total_vertex_bytes);
+    uint32_t* idata = (uint32_t*)malloc(total_indices * sizeof(uint32_t));
+    if(!vdata || !idata) {
+        free(vdata);
+        free(idata);
+        return false;
+    }
+
+    size_t v_out = 0;
+    size_t i_out = 0;
+    GLsizei vbase = 0;
+    for(uint32_t i = 0; i < l->op_count; i++) {
+        const dl_op_entry_t* op = &l->ops[i];
+        const dl_client_draw_payload_t* p = (const dl_client_draw_payload_t*)op->data;
+        memcpy(vdata + v_out, op->data + p->vertex_off, p->vertex_len);
+        if(p->indexed) {
+            const uint8_t* src = op->data + p->indices_off;
+            if(p->mode == GL_QUADS) {
+                for(GLsizei q = 0; q < p->count; q += 4) {
+                    uint32_t a = fp_dl_read_idx(src, p->itype, q + 0);
+                    uint32_t b = fp_dl_read_idx(src, p->itype, q + 1);
+                    uint32_t c = fp_dl_read_idx(src, p->itype, q + 2);
+                    uint32_t d = fp_dl_read_idx(src, p->itype, q + 3);
+                    idata[i_out++] = (uint32_t)vbase + a;
+                    idata[i_out++] = (uint32_t)vbase + b;
+                    idata[i_out++] = (uint32_t)vbase + c;
+                    idata[i_out++] = (uint32_t)vbase + a;
+                    idata[i_out++] = (uint32_t)vbase + c;
+                    idata[i_out++] = (uint32_t)vbase + d;
+                }
+            } else {
+                for(GLsizei k = 0; k < p->count; k++) {
+                    idata[i_out++] = (uint32_t)vbase + fp_dl_read_idx(src, p->itype, k);
+                }
+            }
+        } else if(p->mode == GL_QUADS) {
+            for(GLsizei q = 0; q < p->count; q += 4) {
+                uint32_t a = (uint32_t)vbase + q + 0;
+                uint32_t b = (uint32_t)vbase + q + 1;
+                uint32_t c = (uint32_t)vbase + q + 2;
+                uint32_t d = (uint32_t)vbase + q + 3;
+                idata[i_out++] = a;
+                idata[i_out++] = b;
+                idata[i_out++] = c;
+                idata[i_out++] = a;
+                idata[i_out++] = c;
+                idata[i_out++] = d;
+            }
+        } else {
+            for(GLsizei k = 0; k < p->count; k++) {
+                idata[i_out++] = (uint32_t)vbase + (uint32_t)k;
+            }
+        }
+        v_out += p->vertex_len;
+        vbase += p->count;
+    }
+    if(i_out != total_indices) {
+        free(vdata);
+        free(idata);
+        return false;
+    }
+
+    GLuint vao = 0, vbo = 0, ebo = 0;
+    es3_functions.glGenVertexArrays(1, &vao);
+    if(vao == 0) goto fail;
+    es3_functions.glGenBuffers(1, &vbo);
+    if(vbo == 0) goto fail;
+    es3_functions.glGenBuffers(1, &ebo);
+    if(ebo == 0) goto fail;
+
+    es3_functions.glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)total_vertex_bytes, vdata, GL_STATIC_DRAW);
+
+    es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+    es3_functions.glVertexAttribPointer(FP_ATTR_POS, first_snap->vertex_size, first_snap->vertex_type,
+                                        GL_FALSE, first_snap->vertex_stride, NULL);
+    if(first_snap->texcoord_enabled && first_snap->texcoord_size > 0 &&
+       first_snap->texcoord_off >= 0 && (size_t)first_snap->texcoord_off < vsize) {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+        es3_functions.glVertexAttribPointer(FP_ATTR_UV, first_snap->texcoord_size, first_snap->texcoord_type,
+                                            GL_FALSE, first_snap->vertex_stride,
+                                            (const void*)(intptr_t)first_snap->texcoord_off);
+    } else {
+        es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+    }
+    if(first_snap->color_enabled && first_snap->color_size > 0 &&
+       first_snap->color_off >= 0 && (size_t)first_snap->color_off < vsize) {
+        es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+        es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, first_snap->color_size, first_snap->color_type,
+                                            GL_TRUE, first_snap->vertex_stride,
+                                            (const void*)(intptr_t)first_snap->color_off);
+    } else {
+        es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+    }
+
+    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(total_indices * sizeof(uint32_t)),
+                               idata, GL_STATIC_DRAW);
+
+    free(vdata);
+    free(idata);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
+    es3_functions.glBindVertexArray(0);
+    dl_current_vao = 0;
+
+    l->merge.vao = vao;
+    l->merge.vbo = vbo;
+    l->merge.ebo = ebo;
+    l->merge.draw_count = (GLsizei)total_indices;
+    l->merge.use_color = fp_dl_merge_use_color(first_snap, vsize);
+    l->merge.valid = true;
+    l->merge.ctx = current_context;
+    return true;
+
+fail:
+    if(ebo) es3_functions.glDeleteBuffers(1, &ebo);
+    if(vbo) es3_functions.glDeleteBuffers(1, &vbo);
+    if(vao) es3_functions.glDeleteVertexArrays(1, &vao);
+    free(vdata);
+    free(idata);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
+    es3_functions.glBindVertexArray(0);
+    dl_current_vao = 0;
+    return false;
+}
+
+static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
+    if(!l || !current_context || !dl_merge_enabled) return false;
+    if(!l->merge.valid || l->merge.ctx != current_context) {
+        if(l->merge.attempted) return false;
+        if(!fp_dl_build_merged_cache(l)) return false;
+    }
+    if(l->merge.draw_count <= 0 || !l->merge.vao || !l->merge.ebo) return false;
+
+    fp_client_color_active = l->merge.use_color;
+    if(dl_replay_dirty || l->merge.use_color != dl_last_uuse_color) {
+        fp_set_default_uniforms();
+        dl_replay_dirty = false;
+        dl_last_uuse_color = l->merge.use_color;
+    }
+
+    // 每次绘制前强制绑定自己的 VAO + EBO（不信任可能过期的跟踪值），
+    // 避免用应用侧 VAO（可能没有 EBO）执行 glDrawElements。
+    if(dl_current_vao != l->merge.vao) {
+        es3_functions.glBindVertexArray(l->merge.vao);
+        dl_current_vao = l->merge.vao;
+    }
+    es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, l->merge.ebo);
+    es3_functions.glDrawElements(GL_TRIANGLES, l->merge.draw_count, GL_UNSIGNED_INT, NULL);
+    return true;
+}
+
+static void fp_dl_free_merged(fp_dl_list_t* l) {
+    if(!l) return;
+    if(l->merge.vao) {
+        GLint bound_vao = 0;
+        es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
+        if((GLuint)bound_vao == l->merge.vao) {
+            es3_functions.glBindVertexArray(0);
+            dl_current_vao = 0;
+        }
+        if(l->merge.ebo) es3_functions.glDeleteBuffers(1, &l->merge.ebo);
+        if(l->merge.vbo) es3_functions.glDeleteBuffers(1, &l->merge.vbo);
+        es3_functions.glDeleteVertexArrays(1, &l->merge.vao);
+    }
+    l->merge.vao = l->merge.vbo = l->merge.ebo = 0;
+    l->merge.valid = false;
+    l->merge.attempted = false;
+    l->merge.ctx = NULL;
 }
 
 // 释放 op 的回放缓存 GL 对象。缓存句柄非 0 时一定属于当前 context
@@ -1740,7 +2234,10 @@ static void fp_dl_free_cache(dl_op_entry_t* op) {
     if(!op || !op->cache_vao) return;
     GLint bound_vao = 0;
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
-    if((GLuint)bound_vao == op->cache_vao) es3_functions.glBindVertexArray(0);
+    if((GLuint)bound_vao == op->cache_vao) {
+        es3_functions.glBindVertexArray(0);
+        dl_current_vao = 0;
+    }
     if(op->cache_ebo) es3_functions.glDeleteBuffers(1, &op->cache_ebo);
     if(op->cache_vbo) es3_functions.glDeleteBuffers(1, &op->cache_vbo);
     es3_functions.glDeleteVertexArrays(1, &op->cache_vao);
@@ -1765,6 +2262,11 @@ static void fp_dl_reset_caches(void) {
             op->cache_valid = 0;
             op->cache_ctx = NULL;
         }
+        l->merge.vao = l->merge.vbo = l->merge.ebo = 0;
+        l->merge.draw_count = 0;
+        l->merge.valid = false;
+        l->merge.attempted = false;
+        l->merge.ctx = NULL;
     }
 }
 
@@ -1815,7 +2317,7 @@ static void fp_dl_execute_op(dl_op_entry_t* op) {
         case DL_OP_TEXTURE_ENABLE: {
             if(op->size < sizeof(dl_texture_enable_payload_t)) return;
             const dl_texture_enable_payload_t* p = (const dl_texture_enable_payload_t*)payload;
-            fp_set_texture_enabled(p->enabled != 0);
+            fp_set_unit0_texture_enabled(p->enabled != 0);
             break;
         }
         default:
@@ -1862,6 +2364,7 @@ static fp_dl_list_t* dl_get_or_create(uint32_t id) {
 
 static void dl_clear_ops(fp_dl_list_t* l) {
     if(!l) return;
+    fp_dl_free_merged(l);
     for(uint32_t i = 0; i < l->op_count; i++) {
         fp_dl_free_cache(&l->ops[i]);
         if(l->ops[i].data) free(l->ops[i].data);
@@ -1903,6 +2406,7 @@ bool dl_capture_op(uint32_t type, const void* data, uint32_t size) {
             l->failed = true;
             return false;
         }
+        uint32_t old_count = l->op_count;
         dl_op_entry_t* no = (dl_op_entry_t*)realloc(l->ops, (size_t)ncap * sizeof(dl_op_entry_t));
         if(!no) {
             l->failed = true;
@@ -1910,6 +2414,13 @@ bool dl_capture_op(uint32_t type, const void* data, uint32_t size) {
         }
         l->ops = no;
         l->op_cap = ncap;
+        // MathCode: 扩容后必须把整个新增区域清零，不能只清第一个条目。
+        // cache_vao/cache_vbo/cache_ebo 等回放缓存字段未初始化时，
+        // dl_clear_ops 清理列表会把垃圾句柄当有效 VAO 删除（诊断日志确认
+        // 曾以 vao=1 误删内部私有 fp_vao），导致此后每次绑定 fp_vao 都生成
+        // GL_INVALID_OPERATION(0x502)，并连锁刷出数万行 "stale 0x502"
+        // （Post render 1282 的根因）。
+        memset(&l->ops[old_count], 0, (size_t)(ncap - old_count) * sizeof(dl_op_entry_t));
     }
     uint8_t* buf = NULL;
     if(size > 0) {
@@ -2093,14 +2604,20 @@ static void dl_execute_list(GLuint list) {
 
     dl_exec_chain[dl_exec_depth++] = list;
     l->exec_count++;
-    for(uint32_t i = 0; i < l->op_count; i++) {
-        dl_op_entry_t* op = &l->ops[i];
-        if(op->type == DL_OP_CALL_LIST) {
-            GLuint sub = 0;
-            if(op->size >= sizeof(sub)) memcpy(&sub, op->data, sizeof(sub));
-            dl_execute_list(sub);
-        } else {
-            fp_dl_execute_op(op);
+    // MathCode: 实验性整表合并。整表可合并时一次 glDrawElements 画完，
+    // 跳过逐 op 回放；不可合并/未开启时走原有路径。
+    if(dl_replay_active && fp_dl_try_play_merged(l)) {
+        // 合并绘制已覆盖整个列表
+    } else {
+        for(uint32_t i = 0; i < l->op_count; i++) {
+            dl_op_entry_t* op = &l->ops[i];
+            if(op->type == DL_OP_CALL_LIST) {
+                GLuint sub = 0;
+                if(op->size >= sizeof(sub)) memcpy(&sub, op->data, sizeof(sub));
+                dl_execute_list(sub);
+            } else {
+                fp_dl_execute_op(op);
+            }
         }
     }
     l->exec_count--;

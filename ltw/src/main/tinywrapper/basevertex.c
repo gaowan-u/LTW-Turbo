@@ -57,8 +57,7 @@ static void restore_state(GLuint element_buffer) {
 }
 
 void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLint basevertex) {
-    LTW_ENTER("glDrawElementsBaseVertex");
-    if(!current_context) { LTW_EXIT(); return; }
+    if(!current_context) return;
     if(current_context->drawelementsbasevertex != NULL) {
         current_context->drawelementsbasevertex(mode, count, type, indices, basevertex);
         return;
@@ -102,8 +101,7 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
                                    const void * const *indices,
                                    GLsizei drawcount,
                                    const GLint *basevertex) {
-    LTW_ENTER("glMultiDrawElementsBaseVertex");
-    if(!current_context) { LTW_EXIT(); return; }
+    if(!current_context) return;
     // 添加参数验证
     if(!count || !indices || !basevertex) {
         LTW_ERROR_PRINTF("LTW: NULL pointer passed to glMultiDrawElementsBaseVertex");
