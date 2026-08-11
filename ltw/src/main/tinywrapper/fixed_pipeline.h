@@ -60,6 +60,16 @@ void fp_rotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z);
 // 即时模式
 void fp_begin(GLenum mode);
 void fp_end(void);
+// 把已累积的连续 glBegin/glEnd 顶点以“录制时的状态快照”一次性提交。
+// 应用绘制/清屏/读回/帧切换等会改变绘制顺序的入口必须调用它。
+void fp_flush_immediate_batch(void);
+// 是否还有未提交的即时模式批次（诊断用：帧首 glClear 时若仍为 true，
+// 说明帧切换入口没有拦截到，文字会被清屏清掉）。
+bool fp_immediate_batch_pending(void);
+// glBindVertexArray 包装器通知应用侧 VAO 绑定（CPU 跟踪，省驱动查询）
+void fp_set_bound_vao(GLuint vao);
+// glEnable/glDisable(GL_PRIMITIVE_RESTART_FIXED_INDEX) 包装器通知
+void fp_set_restart_enabled(bool enabled);
 void fp_vertex3fv(const GLfloat* v);
 void fp_vertex3f(GLfloat x, GLfloat y, GLfloat z);
 void fp_vertex3d(GLdouble x, GLdouble y, GLdouble z);
@@ -105,7 +115,14 @@ void fp_set_client_active_texture(GLenum unit);
 
 // 纹理状态
 void fp_set_texture_enabled(bool enabled);
+// 显示列表回放专用：TEXTURE_ENABLE op 固定写入 unit0 的 GL_TEXTURE_2D 状态。
+void fp_set_unit0_texture_enabled(bool enabled);
 void fp_set_active_texture(GLuint unit);
+// MathCode: 桌面 glTexEnv/glTexEnvi/glTexEnvf/glTexEnvfv/glTexEnviv 的状态入口：
+// GLES 无纹理环境合并，这里把光照贴图单元（unit1）的 GL_COMBINE/
+// GL_INTERPOLATE + GL_TEXTURE_ENV_COLOR 状态记录下来，供默认 shader
+// 模拟受伤红闪（MC 1.12 RenderLivingBase.setBrightness）。
+void fp_texenv(GLenum target, GLenum pname, const GLfloat* fparams, const GLint* iparams, bool is_int);
 // glBindTexture(GL_TEXTURE_2D) 后调用：若当前活动单元是 unit0，刷新固定管线
 // 缓存的绑定纹理（避免 glBindTexture 后、绘制前被其他单元/路径覆盖）。
 void fp_notify_texture_bind(void);
@@ -119,6 +136,15 @@ void fp_texture_upload_invalidate(void);
 // alpha test 状态（MC 1.12 文字/透明渲染依赖）
 void fp_set_alpha_test(bool enabled);
 void fp_alpha_func(GLenum func, GLfloat ref);
+
+// 混合状态 CPU 跟踪：glEnable/glDisable(GL_BLEND) 与
+// glBlendFunc/glBlendFuncSeparate 包装器通知。批次快照与状态对比依赖
+// 这些值（F3 每行的 drawRect 会在行间开关混合/换 blend func，若每次都
+// 冲刷批次，整段文字无法合并）。
+void fp_set_blend_enabled(bool enabled);
+void fp_set_blend_func(GLenum sfactor, GLenum dfactor);
+void fp_set_blend_func_separate(GLenum sfactorRGB, GLenum dfactorRGB,
+                                GLenum sfactorAlpha, GLenum dfactorAlpha);
 
 // 无 program 时的绘制挂钩：返回 true 表示已用固定管线绘制
 // 这些函数假定当前绑定的 VAO 已设置好 attribute 数组（应用自己的

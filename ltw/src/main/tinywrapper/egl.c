@@ -38,6 +38,7 @@ static pthread_mutex_t egl_state_mutex = PTHREAD_MUTEX_INITIALIZER;
 EGLContext (*host_eglCreateContext)(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list);
 EGLBoolean (*host_eglDestroyContext)(EGLDisplay dpy, EGLContext ctx);
 EGLBoolean (*host_eglMakeCurrent) (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx);
+EGLBoolean (*host_eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
 
 void init_egl() {
     context_map = alloc_intmap();
@@ -47,6 +48,7 @@ void init_egl() {
             "eglDestroyContext");
     host_eglMakeCurrent = (EGLBoolean (*)(EGLDisplay, EGLSurface, EGLSurface,
                                           EGLContext)) host_eglGetProcAddress("eglMakeCurrent");
+    host_eglSwapBuffers = (EGLBoolean (*)(EGLDisplay, EGLSurface)) host_eglGetProcAddress("eglSwapBuffers");
 }
 
 static bool init_context(context_t* tw_context) {
@@ -318,40 +320,6 @@ static void find_esversion(context_t* context) {
 void basevertex_init(context_t* context);
 void buffer_copier_init(context_t* context);
 
-// GL_KHR_debug error tracing: the driver reports the exact function and
-// arguments for every GL error via this callback. KHR_debug constants
-// (GLES 3.2 core) hardcoded as the stub headers lack them.
-#define LTW_DEBUG_OUTPUT             0x92E0
-#define LTW_DEBUG_OUTPUT_SYNC        0x8242
-#define LTW_DEBUG_TYPE_ERROR         0x824C
-#define LTW_DEBUG_TYPE_UNDEF_BEHAV   0x824E
-#define LTW_DONT_CARE                0x1100
-typedef void (GL_APIENTRYP LTWDEBUG_CALLBACKPROC)(GLenum source, GLenum type, GLuint id,
-        GLenum severity, GLsizei length, const GLchar *message, const void *userParam);
-typedef void (GL_APIENTRYP LTWDEBUG_CALLBACK_PTRPROC)(LTWDEBUG_CALLBACKPROC callback, const void *userParam);
-typedef void (GL_APIENTRYP LTWDEBUG_CONTROLPROC)(GLenum source, GLenum type, GLenum severity,
-        GLsizei count, const GLuint *ids, GLboolean enabled);
-
-static void ltw_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
-                               GLsizei length, const GLchar* message, const void* userParam) {
-    (void)source; (void)severity; (void)userParam; (void)length; (void)id;
-    (void)type; (void)message;
-}
-
-static void init_debug_callback() {
-    LTWDEBUG_CALLBACK_PTRPROC cb = (LTWDEBUG_CALLBACK_PTRPROC)host_eglGetProcAddress("glDebugMessageCallback");
-    if(!cb) return;
-    cb(ltw_debug_callback, NULL);
-    LTWDEBUG_CONTROLPROC ctrl = (LTWDEBUG_CONTROLPROC)host_eglGetProcAddress("glDebugMessageControl");
-    if(ctrl) {
-        ctrl(LTW_DONT_CARE, LTW_DONT_CARE, LTW_DONT_CARE, 0, NULL, GL_FALSE);
-        ctrl(LTW_DONT_CARE, LTW_DEBUG_TYPE_ERROR, LTW_DONT_CARE, 0, NULL, GL_TRUE);
-        ctrl(LTW_DONT_CARE, LTW_DEBUG_TYPE_UNDEF_BEHAV, LTW_DONT_CARE, 0, NULL, GL_TRUE);
-    }
-    es3_functions.glEnable(LTW_DEBUG_OUTPUT_SYNC);
-    es3_functions.glEnable(LTW_DEBUG_OUTPUT);
-}
-
 static void init_incontext(context_t* tw_context) {
     es3_functions.glGetIntegerv(GL_MAX_TEXTURE_SIZE, &tw_context->maxTextureSize);
     es3_functions.glGetIntegerv(GL_MAX_DRAW_BUFFERS, &tw_context->max_drawbuffers);
@@ -361,8 +329,6 @@ static void init_incontext(context_t* tw_context) {
     }
 
     find_esversion(tw_context);
-
-    init_debug_callback();
 
     basevertex_init(tw_context);
     buffer_copier_init(tw_context);
@@ -458,6 +424,7 @@ EGLBoolean eglDestroyContext (EGLDisplay dpy, EGLContext ctx) {
 }
 
 EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
+    fp_flush_immediate_batch();
     // 使用互斥锁保护全局 EGL 状态
     pthread_mutex_lock(&egl_state_mutex);
 
@@ -525,4 +492,11 @@ EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGL
     pthread_mutex_unlock(&egl_state_mutex);
 
     return EGL_TRUE;
+}
+
+// 帧切换：先把尚未提交的即时模式批次（F3 文字等）画出去，再换缓冲，
+// 否则延迟提交的 HUD 文字会被下一帧开头的 glClear 清掉。
+EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
+    fp_flush_immediate_batch();
+    return host_eglSwapBuffers(dpy, surface);
 }
