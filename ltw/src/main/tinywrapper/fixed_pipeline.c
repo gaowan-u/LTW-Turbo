@@ -1849,7 +1849,8 @@ bool fp_prepare_client_arrays(GLsizei count) {
     if(!fp_program) fp_ensure_program();
     if(!fp_program) return false;
 
-    // [LMT] 诊断探针：打印 uv1 状态变化（每类状态首次出现时打一次）
+    // [LMT] 诊断探针：掉落物/手持物品模型顶点少（<512），每次都打印；
+    // 区块等大绘制只在状态变化时打印。定位掉落物亮度不稳定的状态竞态。
     if(ltw_lightmap_trace) {
         int st = (fp_client_texcoord1_enabled ? 1 : 0)
                | ((fp_client_texcoord1_size > 0 ? 1 : 0) << 1)
@@ -1859,7 +1860,8 @@ bool fp_prepare_client_arrays(GLsizei count) {
                | ((fp_texture_enabled[1] ? 1 : 0) << 5)
                | ((fp_client_uv1_active ? 1 : 0) << 6)
                | ((fp_lightmap_const_active ? 1 : 0) << 7);
-        if(st != ltw_lm_trace_state) {
+        bool small_draw = (count < 512);
+        if(small_draw || st != ltw_lm_trace_state) {
             ltw_lm_trace_state = st;
             LTW_ERROR_PRINTF("[LMT] draw count=%d uv1_en=%d size=%d ptr=%p abo=%d "
                              "tex1=%u texen1=%d uv1act=%d const=%d",
