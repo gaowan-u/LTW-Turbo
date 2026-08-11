@@ -2453,6 +2453,11 @@ static void fp_end_dl_replay(void) {
         es3_functions.glUseProgram((GLuint)dl_saved_program);
         if(current_context) current_context->program = (GLuint)dl_saved_program;
     }
+    // MathCode: 2026-08-11 GUI 灰色修复——实体段结束必须清除常量 lightmap，
+    // 否则 const_active 残留到 GUI 矩形（客户端数组绘制，touched=0 无 uv1），
+    // uselightmap 落到 const 分支（2）→ GUI 整体被 lightmap 调制变灰。
+    // 实体段内（begin..end 之间）的 fallback/缓存绘制仍正常使用 const。
+    fp_lightmap_const_active = false;
 }
 
 // 为 CLIENT_DRAW op 建立回放缓存（仅 CPU 快照路径）。录制后的顶点/索引
