@@ -1129,7 +1129,13 @@ void fp_init(void) {
     fp_lightmap_const_active = false;
     fp_last_lightmap_uv_valid = false;
     fp_last_lightmap_uv_snap[0] = fp_last_lightmap_uv_snap[1] = 0.0f;
-    ltw_lightmap_trace = getenv("LTW_LIGHTMAP_TRACE") != NULL;
+    // MathCode: 探针开关优先级 = LTW_LIGHTMAP_TRACE 环境变量 > 共享配置 lightmapTrace > 默认关。
+    if(getenv("LTW_LIGHTMAP_TRACE")) {
+        ltw_lightmap_trace = env_istrue("LTW_LIGHTMAP_TRACE");
+    } else {
+        ltw_config_init();
+        ltw_lightmap_trace = ltw_config_get_bool("lightmapTrace", false);
+    }
     ltw_lm_trace_state = -1;
     fp_client_active_texture = GL_TEXTURE0;
     fp_active_texture = GL_TEXTURE0;
