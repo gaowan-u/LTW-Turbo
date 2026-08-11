@@ -435,6 +435,10 @@ static bool fp_lightmap_const_active = false;
 // fp_upload_client_arrays 在 CPU 路径拷贝（数据在绘制时刻仍有效）。
 static bool fp_last_lightmap_uv_valid = false;
 static GLfloat fp_last_lightmap_uv_snap[2] = {0.0f, 0.0f};
+// 诊断：LTW_LIGHTMAP_TRACE=1 时打印 lightmap 相关状态变化
+// （定位掉落物/手持物品昼夜亮度问题的临时探针，定位后移除）
+static bool ltw_lightmap_trace = false;
+static int ltw_lm_trace_state = -1;
 static GLint fp_client_color_size = 0;
 static GLenum fp_client_color_type = GL_FLOAT;
 static GLsizei fp_client_color_stride = 0;
@@ -1840,11 +1844,6 @@ static void fp_upload_client_arrays(GLsizei count) {
 
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
 }
-
-// 诊断：LTW_LIGHTMAP_TRACE=1 时打印 lightmap 相关状态变化
-// （定位掉落物/手持物品昼夜亮度问题的临时探针，定位后移除）
-static bool ltw_lightmap_trace = false;
-static int ltw_lm_trace_state = -1;
 
 bool fp_prepare_client_arrays(GLsizei count) {
     if(!fp_program) fp_ensure_program();
