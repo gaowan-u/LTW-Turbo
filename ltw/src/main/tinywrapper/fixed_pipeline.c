@@ -1692,10 +1692,17 @@ static void fp_set_default_uniforms(void) {
     // 昼夜亮度开关：0=关，1=顶点 UV1（方块），2=常量 UV（实体/掉落物）。
     // fp_client_uv1_active 由 fp_prepare_client_arrays 按顶点数据实际布局
     // 设置；fp_lightmap_const_active 由 DL 回放（实体段）按最近方块亮度设置。
+    // MathCode: 2026-08-11 掉落物闪烁根因修复——不再依赖 fp_texture_enabled[1]：
+    // MC 桌面语义下 unit1（lightmap）的 GL_TEXTURE_2D 启用是持久状态，从不被
+    // MC 主动管理（enable 只在 updateLightmap 一次；后续 disable 都发生在
+    // unit0）。LTW 按活动单元记录 enable，GUI 段在 unit1 活动时误清
+    // fp_texture_enabled[1]，导致掉落物/实体丢失 lightmap（夜晚全亮闪烁）。
+    // 现在只要求 unit1 绑定有效纹理（lightmap 绑定后恒不换），
+    // 是否启用由数据有效性（uv1act/const_active）决定。
     GLint uselightmap = 0;
-    if(fp_client_uv1_active && fp_bound_texture1 != 0 && fp_texture_enabled[1]) {
+    if(fp_client_uv1_active && fp_bound_texture1 != 0) {
         uselightmap = 1;
-    } else if(fp_lightmap_const_active && fp_bound_texture1 != 0 && fp_texture_enabled[1]) {
+    } else if(fp_lightmap_const_active && fp_bound_texture1 != 0) {
         uselightmap = 2;
     }
     if(!fp_uniforms_initialized || fp_last_uselightmap != uselightmap) {
@@ -1814,8 +1821,12 @@ static void fp_upload_client_arrays(GLsizei count) {
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
-        // unit1（光照贴图）坐标 attribute：偏移 = 指针差（交错缓冲内）
-        if(fp_client_texcoord1_enabled && fp_client_texcoord1_size > 0 && fp_client_texcoord1_ptr) {
+        // unit1（光照贴图）坐标 attribute：偏移 = 指针差（交错缓冲内）。
+        // MathCode: 2026-08-11 掉落物闪烁根因修复——不再要求 enabled：
+        // MC 桌面语义下 unit1 的 TEXTURE_COORD_ARRAY 启用状态持久（从不被
+        // MC 管理），指针有效即数据有效；enabled 被 GUI 段误清会导致
+        // 掉落物丢 lightmap（夜晚全亮闪烁）。
+        if(fp_client_texcoord1_size > 0 && fp_client_texcoord1_ptr) {
             ptrdiff_t off = (const uint8_t*)fp_client_texcoord1_ptr - (const uint8_t*)fp_client_vertex_ptr;
             if(off >= 0 && (size_t)off < vsize) {
                 es3_functions.glEnableVertexAttribArray(FP_ATTR_UV1);
@@ -1925,11 +1936,14 @@ bool fp_prepare_client_arrays(GLsizei count) {
         if(v1bo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)v1bo);
         // 防御：unit1 指针是 VBO 偏移，绘制前必须落在本次顶点数据范围内
         // （GUI 矩形等无 unit1 的格式会残留旧偏移，越界则禁用 lightmap）
+        // MathCode: 2026-08-11 掉落物闪烁根因修复——不再要求 enabled
+        // （桌面语义 unit1 数组启用状态持久，MC 从不管理），只按数据
+        // 有效性 + 越界防御判断。
         GLintptr v1off = (GLintptr)(intptr_t)fp_client_texcoord1_ptr;
         size_t v1stride = fp_client_texcoord1_stride
                               ? (size_t)fp_client_texcoord1_stride
                               : (size_t)fp_client_texcoord1_size * fp_type_bytes(fp_client_texcoord1_type);
-        if(fp_client_texcoord1_enabled && fp_client_texcoord1_size > 0 &&
+        if(fp_client_texcoord1_size > 0 &&
            fp_client_texcoord1_ptr != NULL &&
            v1off > 0 && v1stride > 0 &&
            (size_t)v1off + v1stride <= (size_t)count * v1stride) {
@@ -2374,9 +2388,11 @@ static bool fp_begin_dl_replay(void) {
     // 用最近一次方块渲染的首顶点 lightmap UV 做常量采样，实体整体亮度
     // 随场景昼夜变化（生物/玩家/掉落物模型；受伤红闪走 uLightTint 模拟，
     // 常量 lightmap 乘在其后，与原版 unit2 MODULATE 顺序一致）。
+    // MathCode: 2026-08-11 掉落物闪烁根因修复——不依赖 fp_texture_enabled[1]
+    // （桌面语义 unit1 纹理启用持久，MC 从不管理；见 fp_set_default_uniforms）。
     fp_client_uv1_active = false;
     fp_lightmap_const_active = (fp_last_lightmap_uv_valid &&
-                                fp_bound_texture1 != 0 && fp_texture_enabled[1]);
+                                fp_bound_texture1 != 0);
 
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
