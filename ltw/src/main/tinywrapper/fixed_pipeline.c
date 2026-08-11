@@ -34,6 +34,7 @@
 #define FP_ATTR_POS 0
 #define FP_ATTR_COLOR 1
 #define FP_ATTR_UV 2
+#define FP_ATTR_UV1 3   // unit1（光照贴图）纹理坐标，方块渲染的昼夜亮度
 
 // ---- 显示列表（Display List）支持 ----
 // Minecraft <=1.12 的生物模型通过 glNewList/glCallList 编译回放，
@@ -65,6 +66,7 @@ typedef struct {
 typedef struct {
     bool vertex_enabled;
     bool texcoord_enabled;
+    bool texcoord1_enabled;
     bool color_enabled;
     bool normal_enabled;
     GLint vertex_size;
@@ -73,6 +75,9 @@ typedef struct {
     GLint texcoord_size;
     GLenum texcoord_type;
     GLsizei texcoord_stride;
+    GLint texcoord1_size;
+    GLenum texcoord1_type;
+    GLsizei texcoord1_stride;
     GLint color_size;
     GLenum color_type;
     GLsizei color_stride;
@@ -80,9 +85,11 @@ typedef struct {
     GLsizei normal_stride;
     GLint vertex_abo;
     GLint texcoord_abo;
+    GLint texcoord1_abo;
     GLint color_abo;
     GLintptr vertex_off;
     GLintptr texcoord_off;
+    GLintptr texcoord1_off;
     GLintptr color_off;
     GLintptr normal_off;
 } fp_dl_client_snapshot_t;
@@ -207,17 +214,23 @@ static void fp_dl_free_merged(fp_dl_list_t* l);
 
 // ---- 默认 shader ----
 // MathCode: 默认 shader 增加受伤红闪模拟（uLightTint/uLightColor，2026-08）
+// MathCode: 方块昼夜亮度（2026-08）：MC 1.12 方块渲染在 unit1 提供 lightmap
+// 亮度 UV（GL_SHORT，值 0-15），固定管线 unit1 以 GL_MODULATE 把 lightmap
+// 纹理乘进片元色。GLES 无固定管线，这里用第二套 UV + lightmap 纹理采样模拟。
 static const char* fp_vertex_shader_src =
     "#version 300 es\n"
     "layout(location=0) in vec4 aPos;\n"
     "layout(location=1) in vec4 aColor;\n"
     "layout(location=2) in vec2 aUV;\n"
+    "layout(location=3) in vec2 aUV1;\n"
     "uniform mat4 uMVP;\n"
     "out vec4 vColor;\n"
     "out vec2 vUV;\n"
+    "out vec2 vUV1;\n"
     "void main() {\n"
     "    vColor = aColor;\n"
     "    vUV = aUV;\n"
+    "    vUV1 = aUV1;\n"
     "    gl_Position = uMVP * aPos;\n"
     "}\n";
 
@@ -226,6 +239,7 @@ static const char* fp_fragment_shader_src =
     "precision mediump float;\n"
     "in vec4 vColor;\n"
     "in vec2 vUV;\n"
+    "in vec2 vUV1;\n"
     "uniform sampler2D uTex;\n"
     "uniform bool uUseTex;\n"
     "uniform bool uUseColor;\n"
@@ -235,6 +249,8 @@ static const char* fp_fragment_shader_src =
     "uniform float uAlphaRef;\n"
     "uniform bool uLightTint;\n"
     "uniform vec4 uLightColor;\n"
+    "uniform sampler2D uLightMap;\n"
+    "uniform bool uUseLightMap;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
     "    vec4 c = vec4(1.0);\n"
@@ -246,6 +262,8 @@ static const char* fp_fragment_shader_src =
     "    vec4 vc = uUseColor ? vColor : uColor;\n"
     "    vec4 fc = c * vc;\n"
     "    if(uLightTint) fc.rgb = mix(fc.rgb, uLightColor.rgb, uLightColor.a);\n"
+    "    // 方块昼夜亮度：lightmap UV 是 0-15 的亮度级，÷16 归一化到 0-1\n"
+    "    if(uUseLightMap) fc.rgb *= texture(uLightMap, vUV1 / 16.0).rgb;\n"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
     "    else if(uAlphaFunc == 1) atpass = fc.a < uAlphaRef;\n"
@@ -270,6 +288,8 @@ static GLint fp_alpharef_loc = -1;
 static GLint fp_single_loc = -1;
 static GLint fp_lighttint_loc = -1;
 static GLint fp_lightcolor_loc = -1;
+static GLint fp_lightmap_loc = -1;
+static GLint fp_uselightmap_loc = -1;
 static GLuint fp_vbo = 0;
 static GLuint fp_vbo_pos = 0;
 static GLuint fp_vbo_color = 0;
@@ -298,6 +318,7 @@ static GLint fp_last_lighttint = -1;
 static GLfloat fp_last_lightcolor[4];
 static GLint fp_last_alphafunc = -1;
 static GLfloat fp_last_alpharef = 0.0f;
+static GLint fp_last_uselightmap = -1;
 
 // alpha test 状态（MC 1.12 文字渲染依赖 GL_ALPHA_TEST）
 static bool fp_alpha_test = false;
@@ -387,6 +408,19 @@ static GLint fp_client_texcoord_size = 0;
 static GLenum fp_client_texcoord_type = GL_FLOAT;
 static GLsizei fp_client_texcoord_stride = 0;
 static const void* fp_client_texcoord_ptr = NULL;
+// unit1（光照贴图）纹理坐标客户端数组：MC 1.12 方块渲染在 unit1 上提供
+// lightmap 亮度 UV（GL_SHORT，值 0-15），固定管线把它乘进片元色实现昼夜
+// 明暗。以前被忽略导致夜晚像白天（夜视效果）。
+static GLint fp_client_texcoord1_size = 0;
+static GLenum fp_client_texcoord1_type = GL_FLOAT;
+static GLsizei fp_client_texcoord1_stride = 0;
+static const void* fp_client_texcoord1_ptr = NULL;
+static GLint fp_client_texcoord1_abo = 0;
+static bool fp_client_texcoord1_enabled = false;
+// 当前绘制路径是否真实提供了 unit1 坐标（方块渲染）。与
+// fp_client_texcoord1_enabled 分开：MC 的残留状态（GUI/文字段）不会误开
+// lightmap 采样，否则文字/矩形会被 lightmap 纹理调制变色。
+static bool fp_client_uv1_active = false;
 static GLint fp_client_color_size = 0;
 static GLenum fp_client_color_type = GL_FLOAT;
 static GLsizei fp_client_color_stride = 0;
@@ -406,6 +440,9 @@ static bool fp_client_normal_enabled = false;
 // enableTexture2D 的绘制）变成白色方块。
 static bool fp_texture_enabled[FP_TEXENV_UNITS];
 static GLuint fp_bound_texture = 0;
+// unit1（光照贴图）绑定纹理，由 glBindTexture 包装器按活动单元 CPU 维护。
+// 方块渲染时 MC 每帧把它绑到 lightmap 纹理（16x16 亮度渐变）。
+static GLuint fp_bound_texture1 = 0;
 // unit0 绑定是否由 glBindTexture 包装器可靠维护。为真时绘制路径不再向驱动
 // 查询 GL_TEXTURE_BINDING_2D（每字形 2 次同步查询，F3 文字路径的主要开销）。
 static bool fp_bound_texture_valid = false;
@@ -636,6 +673,8 @@ static void fp_ensure_program(void) {
     fp_color_loc = es3_functions.glGetUniformLocation(prog, "uColor");
     fp_lighttint_loc = es3_functions.glGetUniformLocation(prog, "uLightTint");
     fp_lightcolor_loc = es3_functions.glGetUniformLocation(prog, "uLightColor");
+    fp_lightmap_loc = es3_functions.glGetUniformLocation(prog, "uLightMap");
+    fp_uselightmap_loc = es3_functions.glGetUniformLocation(prog, "uUseLightMap");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
     es3_functions.glGenBuffers(1, &fp_vbo_pos);
@@ -725,11 +764,15 @@ static void fp_flush_immediate(void) {
     fp_gl_bind_vao(fp_vao);
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
+    // 即时模式（GUI 文字/矩形）不带 unit1 坐标：禁用残留的 UV1 属性并
+    // 关闭 lightmap 采样，防止文字被上一段方块渲染残留的 lightmap 调制
+    fp_client_uv1_active = false;
     fp_set_default_uniforms();
     {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+        es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
         es3_functions.glVertexAttribPointer(FP_ATTR_POS, 3, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES, NULL);
         es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, 4, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
                                             (const void*)(3 * sizeof(GLfloat)));
@@ -1019,6 +1062,7 @@ void fp_init(void) {
     fp_program = 0;
     fp_mvp_loc = fp_tex_loc = fp_usetex_loc = fp_usecolor_loc = -1;
     fp_lighttint_loc = fp_lightcolor_loc = -1;
+    fp_lightmap_loc = fp_uselightmap_loc = -1;
     fp_color_loc = fp_alphafunc_loc = fp_alpharef_loc = fp_single_loc = -1;
     fp_vbo = fp_vbo_pos = fp_vbo_color = fp_vbo_uv = fp_vao = 0;
     fp_index_ebo = 0;
@@ -1055,10 +1099,18 @@ void fp_init(void) {
     fp_current_texcoord[0] = fp_current_texcoord[1] = 0.0f;
     fp_current_texcoord[2] = 0.0f; fp_current_texcoord[3] = 1.0f;
     fp_client_vertex_enabled = fp_client_texcoord_enabled = fp_client_color_enabled = fp_client_normal_enabled = false;
+    fp_client_texcoord1_enabled = false;
+    fp_client_texcoord1_size = 0;
+    fp_client_texcoord1_type = GL_FLOAT;
+    fp_client_texcoord1_stride = 0;
+    fp_client_texcoord1_ptr = NULL;
+    fp_client_texcoord1_abo = 0;
+    fp_client_uv1_active = false;
     fp_client_active_texture = GL_TEXTURE0;
     fp_active_texture = GL_TEXTURE0;
     fp_texture_enabled[0] = fp_texture_enabled[1] = fp_texture_enabled[2] = false;
     fp_bound_texture = 0;
+    fp_bound_texture1 = 0;
     fp_bound_texture_valid = false;
     fp_batch_active = false;
     for(int i = 0; i < FP_TEXENV_UNITS; i++) {
@@ -1299,12 +1351,17 @@ void fp_vertex_pointer(GLint size, GLenum type, GLsizei stride, const void* poin
     fp_client_vertex_abo = fp_current_abo();
 }
 void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
-    // 固定管线模拟只消费 unit0 的纹理坐标；unit1（MC 1.12 光照贴图）忽略，
-    // 且不能让它覆盖 unit0 的记录。
-    if(fp_client_active_texture != GL_TEXTURE0) return;
-    fp_client_texcoord_size = size; fp_client_texcoord_type = type;
-    fp_client_texcoord_stride = stride; fp_client_texcoord_ptr = pointer;
-    fp_client_texcoord_abo = fp_current_abo();
+    if(fp_client_active_texture == GL_TEXTURE0) {
+        fp_client_texcoord_size = size; fp_client_texcoord_type = type;
+        fp_client_texcoord_stride = stride; fp_client_texcoord_ptr = pointer;
+        fp_client_texcoord_abo = fp_current_abo();
+    } else if(fp_client_active_texture == GL_TEXTURE1) {
+        // unit1 = 光照贴图坐标（MC 1.12 方块渲染的昼夜亮度），单独记录，
+        // 不覆盖 unit0 的图集 UV。
+        fp_client_texcoord1_size = size; fp_client_texcoord1_type = type;
+        fp_client_texcoord1_stride = stride; fp_client_texcoord1_ptr = pointer;
+        fp_client_texcoord1_abo = fp_current_abo();
+    }
 }
 void fp_set_client_active_texture(GLenum unit) {
     fp_client_active_texture = unit;
@@ -1322,6 +1379,7 @@ void fp_enable_client_state(GLenum cap) {
         case GL_VERTEX_ARRAY:  fp_client_vertex_enabled = true;   break;
         case GL_TEXTURE_COORD_ARRAY:
             if(fp_client_active_texture == GL_TEXTURE0) fp_client_texcoord_enabled = true;
+            else if(fp_client_active_texture == GL_TEXTURE1) fp_client_texcoord1_enabled = true;
             break;
         case GL_COLOR_ARRAY:   fp_client_color_enabled = true;    break;
         case GL_NORMAL_ARRAY:  fp_client_normal_enabled = true;   break;
@@ -1333,6 +1391,7 @@ void fp_disable_client_state(GLenum cap) {
         case GL_VERTEX_ARRAY:  fp_client_vertex_enabled = false;  break;
         case GL_TEXTURE_COORD_ARRAY:
             if(fp_client_active_texture == GL_TEXTURE0) fp_client_texcoord_enabled = false;
+            else if(fp_client_active_texture == GL_TEXTURE1) fp_client_texcoord1_enabled = false;
             break;
         case GL_COLOR_ARRAY:   fp_client_color_enabled = false;   break;
         case GL_NORMAL_ARRAY:  fp_client_normal_enabled = false;  break;
@@ -1503,12 +1562,17 @@ static void fp_refresh_bound_texture(void) {
 }
 
 // glBindTexture(GL_TEXTURE_2D) 且活动单元为 unit0 时由包装器直接通知：
-// unit0 绑定用 CPU 维护，免去每次绑定的驱动查询（单通道判断走本地缓存）
+// 各单元的绑定用 CPU 维护，免去每次绑定的驱动查询（单通道判断走本地缓存）
 void fp_notify_texture_bind_tex(GLuint texture) {
-    if(!current_context || fp_active_texture != GL_TEXTURE0) return;
-    fp_bound_texture = texture;
-    fp_bound_single_channel = (texture != 0) && fp_texfmt_resolve(texture);
-    fp_bound_texture_valid = true;
+    if(!current_context) return;
+    if(fp_active_texture == GL_TEXTURE0) {
+        fp_bound_texture = texture;
+        fp_bound_single_channel = (texture != 0) && fp_texfmt_resolve(texture);
+        fp_bound_texture_valid = true;
+    } else if(fp_active_texture == GL_TEXTURE1) {
+        // 光照贴图单元（MC 每帧 updateLightmap 绑定 lightmap 纹理）
+        fp_bound_texture1 = texture;
+    }
 }
 
 // 纹理格式可能变化：使格式缓存整体失效（纹理上传不频繁，64 项惰性重建）
@@ -1593,6 +1657,30 @@ static void fp_set_default_uniforms(void) {
     if(!fp_uniforms_initialized || fp_last_alpharef != alpha_ref) {
         if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, alpha_ref);
         fp_last_alpharef = alpha_ref;
+    }
+    // 方块昼夜亮度：仅当本次绘制真实提供 unit1 坐标、unit1 绑定了 lightmap
+    // 纹理且 unit1 的 GL_TEXTURE_2D 启用时才采样（fp_client_uv1_active 由
+    // fp_prepare_client_arrays 按顶点数据实际布局设置，防残留状态误开）。
+    GLint uselightmap = (fp_client_uv1_active && fp_bound_texture1 != 0 &&
+                         fp_texture_enabled[1]) ? 1 : 0;
+    if(!fp_uniforms_initialized || fp_last_uselightmap != uselightmap) {
+        if(fp_uselightmap_loc >= 0) es3_functions.glUniform1i(fp_uselightmap_loc, uselightmap);
+        fp_last_uselightmap = uselightmap;
+    }
+    // uLightMap 采样器固定绑定 unit1（lightmap 纹理所在单元），只需设一次。
+    // 直接走 es3_functions 切换活动单元，避免 glActiveTexture 包装器
+    // 触发批次冲刷；fp_active_texture 同步保持 CPU 跟踪一致。
+    if(fp_lightmap_loc >= 0 && !fp_uniforms_initialized) {
+        GLenum old_active = fp_active_texture;
+        if(old_active != GL_TEXTURE1) {
+            es3_functions.glActiveTexture(GL_TEXTURE1);
+            fp_active_texture = GL_TEXTURE1;
+        }
+        es3_functions.glUniform1i(fp_lightmap_loc, 1);
+        if(old_active != GL_TEXTURE1) {
+            es3_functions.glActiveTexture(old_active);
+            fp_active_texture = old_active;
+        }
     }
     fp_uniforms_initialized = true;
 }
@@ -1681,6 +1769,23 @@ static void fp_upload_client_arrays(GLsizei count) {
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
+        // unit1（光照贴图）坐标 attribute：偏移 = 指针差（交错缓冲内）
+        if(fp_client_texcoord1_enabled && fp_client_texcoord1_size > 0 && fp_client_texcoord1_ptr) {
+            ptrdiff_t off = (const uint8_t*)fp_client_texcoord1_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            if(off >= 0 && (size_t)off < vsize) {
+                es3_functions.glEnableVertexAttribArray(FP_ATTR_UV1);
+                es3_functions.glVertexAttribPointer(FP_ATTR_UV1, fp_client_texcoord1_size,
+                                                    fp_client_texcoord1_type, GL_FALSE,
+                                                    fp_client_vertex_stride, (const void*)off);
+                fp_client_uv1_active = true;
+            } else {
+                es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
+                fp_client_uv1_active = false;
+            }
+        } else {
+            es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
+            fp_client_uv1_active = false;
+        }
     }
 
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
@@ -1731,6 +1836,29 @@ bool fp_prepare_client_arrays(GLsizei count) {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
         }
         if(ubo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
+        // unit1（光照贴图）坐标：与 unit0 UV 同缓冲（交错布局），各自绑定
+        GLint v1bo = fp_client_texcoord1_abo ? fp_client_texcoord1_abo : old_abo;
+        if(v1bo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)v1bo);
+        // 防御：unit1 指针是 VBO 偏移，绘制前必须落在本次顶点数据范围内
+        // （GUI 矩形等无 unit1 的格式会残留旧偏移，越界则禁用 lightmap）
+        GLintptr v1off = (GLintptr)(intptr_t)fp_client_texcoord1_ptr;
+        size_t v1stride = fp_client_texcoord1_stride
+                              ? (size_t)fp_client_texcoord1_stride
+                              : (size_t)fp_client_texcoord1_size * fp_type_bytes(fp_client_texcoord1_type);
+        if(fp_client_texcoord1_enabled && fp_client_texcoord1_size > 0 &&
+           fp_client_texcoord1_ptr != NULL &&
+           v1off > 0 && v1stride > 0 &&
+           (size_t)v1off + v1stride <= (size_t)count * v1stride) {
+            es3_functions.glEnableVertexAttribArray(FP_ATTR_UV1);
+            es3_functions.glVertexAttribPointer(FP_ATTR_UV1, fp_client_texcoord1_size,
+                                                fp_client_texcoord1_type, GL_FALSE,
+                                                fp_client_texcoord1_stride, fp_client_texcoord1_ptr);
+            fp_client_uv1_active = true;
+        } else {
+            es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
+            fp_client_uv1_active = false;
+        }
+        if(v1bo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
     }
     // attribute 启用情况影响 uUseColor，这里重设 uniforms（bind 先于 prepare）
     fp_set_default_uniforms();
@@ -1837,6 +1965,10 @@ static void fp_dl_save_client_state(fp_dl_client_snapshot_t* out) {
     out->texcoord_size = fp_client_texcoord_size;
     out->texcoord_type = fp_client_texcoord_type;
     out->texcoord_stride = fp_client_texcoord_stride;
+    out->texcoord1_enabled = fp_client_texcoord1_enabled;
+    out->texcoord1_size = fp_client_texcoord1_size;
+    out->texcoord1_type = fp_client_texcoord1_type;
+    out->texcoord1_stride = fp_client_texcoord1_stride;
     out->color_enabled = fp_client_color_enabled;
     out->color_size = fp_client_color_size;
     out->color_type = fp_client_color_type;
@@ -1846,9 +1978,11 @@ static void fp_dl_save_client_state(fp_dl_client_snapshot_t* out) {
     out->normal_stride = fp_client_normal_stride;
     out->vertex_abo = fp_client_vertex_abo;
     out->texcoord_abo = fp_client_texcoord_abo;
+    out->texcoord1_abo = fp_client_texcoord1_abo;
     out->color_abo = fp_client_color_abo;
     out->vertex_off = (GLintptr)(intptr_t)fp_client_vertex_ptr;
     out->texcoord_off = (GLintptr)(intptr_t)fp_client_texcoord_ptr;
+    out->texcoord1_off = (GLintptr)(intptr_t)fp_client_texcoord1_ptr;
     out->color_off = (GLintptr)(intptr_t)fp_client_color_ptr;
     out->normal_off = (GLintptr)(intptr_t)fp_client_normal_ptr;
 }
@@ -1864,6 +1998,10 @@ static void fp_dl_restore_client_state(const fp_dl_client_snapshot_t* s) {
     fp_client_texcoord_size = s->texcoord_size;
     fp_client_texcoord_type = s->texcoord_type;
     fp_client_texcoord_stride = s->texcoord_stride;
+    fp_client_texcoord1_enabled = s->texcoord1_enabled;
+    fp_client_texcoord1_size = s->texcoord1_size;
+    fp_client_texcoord1_type = s->texcoord1_type;
+    fp_client_texcoord1_stride = s->texcoord1_stride;
     fp_client_color_enabled = s->color_enabled;
     fp_client_color_size = s->color_size;
     fp_client_color_type = s->color_type;
@@ -1873,9 +2011,11 @@ static void fp_dl_restore_client_state(const fp_dl_client_snapshot_t* s) {
     fp_client_normal_stride = s->normal_stride;
     fp_client_vertex_abo = s->vertex_abo;
     fp_client_texcoord_abo = s->texcoord_abo;
+    fp_client_texcoord1_abo = s->texcoord1_abo;
     fp_client_color_abo = s->color_abo;
     fp_client_vertex_ptr = (const void*)(intptr_t)s->vertex_off;
     fp_client_texcoord_ptr = (const void*)(intptr_t)s->texcoord_off;
+    fp_client_texcoord1_ptr = (const void*)(intptr_t)s->texcoord1_off;
     fp_client_color_ptr = (const void*)(intptr_t)s->color_off;
     fp_client_normal_ptr = (const void*)(intptr_t)s->normal_off;
 }
@@ -1897,6 +2037,10 @@ bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
     snap.texcoord_size = fp_client_texcoord_size;
     snap.texcoord_type = fp_client_texcoord_type;
     snap.texcoord_stride = fp_client_texcoord_stride;
+    snap.texcoord1_enabled = fp_client_texcoord1_enabled;
+    snap.texcoord1_size = fp_client_texcoord1_size;
+    snap.texcoord1_type = fp_client_texcoord1_type;
+    snap.texcoord1_stride = fp_client_texcoord1_stride;
     snap.color_enabled = fp_client_color_enabled;
     snap.color_size = fp_client_color_size;
     snap.color_type = fp_client_color_type;
@@ -1906,6 +2050,7 @@ bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
     snap.normal_stride = fp_client_normal_stride;
     snap.vertex_abo = fp_client_vertex_abo;
     snap.texcoord_abo = fp_client_texcoord_abo;
+    snap.texcoord1_abo = fp_client_texcoord1_abo;
     snap.color_abo = fp_client_color_abo;
 
     const void* vertex_data = NULL;
@@ -1923,6 +2068,7 @@ bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
                 const uint8_t* base = (const uint8_t*)fp_client_vertex_ptr;
                 snap.vertex_off = 0;
                 snap.texcoord_off = fp_dl_ptr_off(base, fp_client_texcoord_ptr, bytes);
+                snap.texcoord1_off = fp_dl_ptr_off(base, fp_client_texcoord1_ptr, bytes);
                 snap.color_off = fp_dl_ptr_off(base, fp_client_color_ptr, bytes);
                 snap.normal_off = fp_dl_ptr_off(base, fp_client_normal_ptr, bytes);
                 // 桌面语义：glDrawArrays(mode, first, count) 从第 first 个
@@ -1941,6 +2087,7 @@ bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
         // FCL/Pojav 对 <=1.12 强制关闭 VBO（客户端数组路径），MC 1.12 不受影响。
         snap.vertex_off = (GLintptr)(intptr_t)fp_client_vertex_ptr;
         snap.texcoord_off = (GLintptr)(intptr_t)fp_client_texcoord_ptr;
+        snap.texcoord1_off = (GLintptr)(intptr_t)fp_client_texcoord1_ptr;
         snap.color_off = (GLintptr)(intptr_t)fp_client_color_ptr;
         snap.normal_off = (GLintptr)(intptr_t)fp_client_normal_ptr;
     }
@@ -2139,6 +2286,9 @@ static bool fp_begin_dl_replay(void) {
     dl_saved_active_tex = (GLint)fp_active_texture;
     dl_saved_bound_tex = (GLint)fp_bound_texture;
     dl_saved_texture_valid = (fp_bound_texture != 0);
+    // 实体显示列表段不提供 unit1 坐标：关闭 lightmap 采样，防止残留状态
+    // 让实体模型被 lightmap 调制（实体亮度走 uLightTint 模拟）。
+    fp_client_uv1_active = false;
 
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
