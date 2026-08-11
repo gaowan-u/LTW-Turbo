@@ -423,6 +423,14 @@ static GLsizei fp_client_texcoord1_stride = 0;
 static const void* fp_client_texcoord1_ptr = NULL;
 static GLint fp_client_texcoord1_abo = 0;
 static bool fp_client_texcoord1_enabled = false;
+// MathCode: 2026-08-11 GUI 变色修复——unit1 指针"本次设置过"标记。
+// MC 桌面语义：WorldVertexBufferUploader.draw 每次绘制前设置全部数组指针，
+// 带 lightmap 的格式会设 unit1 指针，无 lightmap 的格式（GUI 矩形）不设。
+// 仅凭残留指针/off 检查无法区分（Tessellator 复用全局缓冲，残留指针的
+// 偏移恰好在本次缓冲范围内），导致 GUI 矩形被 lightmap 误调制（变色）。
+// 此标记在 unit1 glTexCoordPointer 时置位，绘制入口消费并清零：
+// 只有"本次绘制前设置过 unit1 指针"才视为 lightmap 数据有效。
+static bool fp_client_texcoord1_touched = false;
 // 当前绘制路径是否真实提供了 unit1 坐标（方块渲染）。与
 // fp_client_texcoord1_enabled 分开：MC 的残留状态（GUI/文字段）不会误开
 // lightmap 采样，否则文字/矩形会被 lightmap 纹理调制变色。
@@ -1125,6 +1133,7 @@ void fp_init(void) {
     fp_client_texcoord1_stride = 0;
     fp_client_texcoord1_ptr = NULL;
     fp_client_texcoord1_abo = 0;
+    fp_client_texcoord1_touched = false;
     fp_client_uv1_active = false;
     fp_lightmap_const_active = false;
     fp_last_lightmap_uv_valid = false;
@@ -1392,6 +1401,7 @@ void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* po
         fp_client_texcoord1_size = size; fp_client_texcoord1_type = type;
         fp_client_texcoord1_stride = stride; fp_client_texcoord1_ptr = pointer;
         fp_client_texcoord1_abo = fp_current_abo();
+        fp_client_texcoord1_touched = true;  // MathCode: 本次绘制 lightmap 数据有效标记
     }
 }
 void fp_set_client_active_texture(GLenum unit) {
@@ -1772,7 +1782,7 @@ static size_t fp_type_bytes(GLenum type) {
 // 把客户端交错数组上传到单个 VBO，并按各数组指针相对顶点指针的偏移
 // 设置 attribute（MC 1.12 的 Tessellator 用交错布局：stride 内依次是
 // 位置+纹理+颜色，glColorPointer/glTexCoordPointer 的指针指向块内偏移）。
-static void fp_upload_client_arrays(GLsizei count) {
+static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
     if(!fp_client_vertex_enabled || fp_client_vertex_size <= 0 || !fp_client_vertex_ptr) return;
     // ABO 绑定由 glBindBuffer 包装器（含内部绑定）统一维护，无需驱动查询
     GLint old_abo = current_context ? (GLint)current_context->bound_buffers[0] : 0;
@@ -1822,11 +1832,12 @@ static void fp_upload_client_arrays(GLsizei count) {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
         // unit1（光照贴图）坐标 attribute：偏移 = 指针差（交错缓冲内）。
-        // MathCode: 2026-08-11 掉落物闪烁根因修复——不再要求 enabled：
-        // MC 桌面语义下 unit1 的 TEXTURE_COORD_ARRAY 启用状态持久（从不被
-        // MC 管理），指针有效即数据有效；enabled 被 GUI 段误清会导致
-        // 掉落物丢 lightmap（夜晚全亮闪烁）。
-        if(fp_client_texcoord1_size > 0 && fp_client_texcoord1_ptr) {
+        // MathCode: 2026-08-11 掉落物闪烁/GUI 变色根因修复——条件改为
+        // "本次绘制前设置过 unit1 指针"（touched）：MC 桌面语义下 unit1
+        // 的 TEXTURE_COORD_ARRAY 启用状态持久且从不被管理，enable 状态
+        // 不可靠；但残留指针+缓冲复用（Tessellator 全局缓冲）会让 off
+        // 越界检查漏放 GUI 矩形，必须用 touched 区分"本次真实设置"。
+        if(uv1_touched && fp_client_texcoord1_size > 0 && fp_client_texcoord1_ptr) {
             ptrdiff_t off = (const uint8_t*)fp_client_texcoord1_ptr - (const uint8_t*)fp_client_vertex_ptr;
             if(off >= 0 && (size_t)off < vsize) {
                 es3_functions.glEnableVertexAttribArray(FP_ATTR_UV1);
@@ -1876,26 +1887,33 @@ bool fp_prepare_client_arrays(GLsizei count) {
                | ((fp_bound_texture1 != 0 ? 1 : 0) << 4)
                | ((fp_texture_enabled[1] ? 1 : 0) << 5)
                | ((fp_client_uv1_active ? 1 : 0) << 6)
-               | ((fp_lightmap_const_active ? 1 : 0) << 7);
+               | ((fp_lightmap_const_active ? 1 : 0) << 7)
+               | ((fp_client_texcoord1_touched ? 1 : 0) << 8);
         bool small_draw = (count < 512);
         if(small_draw || st != ltw_lm_trace_state) {
             ltw_lm_trace_state = st;
             LTW_ERROR_PRINTF("[LMT] draw count=%d uv1_en=%d size=%d ptr=%p abo=%d "
-                             "tex1=%u texen1=%d uv1act=%d const=%d",
+                             "tex1=%u texen1=%d uv1act=%d const=%d tch=%d",
                              count, fp_client_texcoord1_enabled, fp_client_texcoord1_size,
                              fp_client_texcoord1_ptr, fp_client_texcoord1_abo,
                              fp_bound_texture1, fp_texture_enabled[1],
                              fp_client_uv1_active ? 1 : 0,
-                             fp_lightmap_const_active ? 1 : 0);
+                             fp_lightmap_const_active ? 1 : 0,
+                             fp_client_texcoord1_touched ? 1 : 0);
         }
     }
+    // MathCode: 2026-08-11 GUI 变色修复——消费 unit1 touched 标记：
+    // 只有本次绘制前 MC 设置过 unit1 指针（lightmap 数据真实存在）才有效，
+    // 残留指针（Tessellator 缓冲复用）不再能触发 lightmap。
+    bool uv1_touched = fp_client_texcoord1_touched;
+    fp_client_texcoord1_touched = false;
 
     // GLES 3.x 禁止客户端数组指针。用数组"设置时"的 ARRAY_BUFFER 绑定判断：
     // 设置时未绑定（pointer 是 CPU 地址）→ 拷贝到 fp_vbo；设置时已绑定
     // （pointer 是 VBO 偏移）→ 直通。不能用绘制时的当前绑定判断（应用
     // 可能在 glVertexPointer 之后绑定/解绑了 ARRAY_BUFFER 做别的事）。
     if(fp_client_vertex_abo == 0) {
-        fp_upload_client_arrays(count);
+        fp_upload_client_arrays(count, uv1_touched);
     } else {
         // VBO 路径：pointer 是偏移，直通（必须先绑定对应的 VBO，偏移才有效）。
         // 应用在 glVertexPointer 时绑定了 VBO（fp_client_*_abo），绘制时当前
@@ -1936,14 +1954,14 @@ bool fp_prepare_client_arrays(GLsizei count) {
         if(v1bo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)v1bo);
         // 防御：unit1 指针是 VBO 偏移，绘制前必须落在本次顶点数据范围内
         // （GUI 矩形等无 unit1 的格式会残留旧偏移，越界则禁用 lightmap）
-        // MathCode: 2026-08-11 掉落物闪烁根因修复——不再要求 enabled
-        // （桌面语义 unit1 数组启用状态持久，MC 从不管理），只按数据
-        // 有效性 + 越界防御判断。
+        // MathCode: 2026-08-11 掉落物闪烁/GUI 变色根因修复——条件 = 本次
+        // 绘制前 MC 设置过 unit1 指针（touched）+ 数据有效性 + 越界防御；
+        // 不依赖 enabled（桌面语义 unit1 数组启用状态持久，MC 从不管理）。
         GLintptr v1off = (GLintptr)(intptr_t)fp_client_texcoord1_ptr;
         size_t v1stride = fp_client_texcoord1_stride
                               ? (size_t)fp_client_texcoord1_stride
                               : (size_t)fp_client_texcoord1_size * fp_type_bytes(fp_client_texcoord1_type);
-        if(fp_client_texcoord1_size > 0 &&
+        if(uv1_touched && fp_client_texcoord1_size > 0 &&
            fp_client_texcoord1_ptr != NULL &&
            v1off > 0 && v1stride > 0 &&
            (size_t)v1off + v1stride <= (size_t)count * v1stride) {
@@ -2121,6 +2139,9 @@ static void fp_dl_restore_client_state(const fp_dl_client_snapshot_t* s) {
 bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
                                bool indexed, GLenum itype, const void* indices) {
     if(!dl_is_compiling()) return false;
+    // MathCode: 2026-08-11 GUI 变色修复——绘制被吞入 DL，消费 unit1 touched
+    // 标记（该绘制的 lightmap 数据已进快照，touched 语义由快照替代）。
+    fp_client_texcoord1_touched = false;
     // 编译期间一律吞掉绘制（不真正画），无论录制是否成功；桌面语义是
     // "编译即收录"，GL_COMPILE_AND_EXECUTE 由 dl_end 在结束时整体执行一次。
     if(first < 0 || count < 0) return true;
@@ -2276,6 +2297,10 @@ static void fp_dl_play_client_draw(const fp_dl_client_snapshot_t* snap, GLenum m
     fp_dl_client_snapshot_t save;
     fp_dl_save_client_state(&save);
     bool save_color_active = fp_client_color_active;
+    // MathCode: 2026-08-11 GUI 变色修复——回放绘制期间 touched 由快照数据
+    // 决定（录制时若设置了 unit1 指针则 lightmap 有效），结束后恢复进入值。
+    bool save_touched = fp_client_texcoord1_touched;
+    fp_client_texcoord1_touched = (snap->texcoord1_size > 0 && snap->texcoord1_off >= 0);
 
     // 应用录制快照
     if(snap->vertex_abo == 0) {
@@ -2354,6 +2379,7 @@ static void fp_dl_play_client_draw(const fp_dl_client_snapshot_t* snap, GLenum m
     // 恢复调用前的客户端数组状态
     fp_dl_restore_client_state(&save);
     fp_client_color_active = save_color_active;
+    fp_client_texcoord1_touched = save_touched;
 }
 
 // ---- 显示列表批量回放：几何缓存与状态摊分 ----
