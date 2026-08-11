@@ -250,7 +250,8 @@ static const char* fp_fragment_shader_src =
     "uniform bool uLightTint;\n"
     "uniform vec4 uLightColor;\n"
     "uniform sampler2D uLightMap;\n"
-    "uniform bool uUseLightMap;\n"
+    "uniform int uUseLightMap;\n"
+    "uniform vec2 uLightMapUV;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
     "    vec4 c = vec4(1.0);\n"
@@ -262,8 +263,10 @@ static const char* fp_fragment_shader_src =
     "    vec4 vc = uUseColor ? vColor : uColor;\n"
     "    vec4 fc = c * vc;\n"
     "    if(uLightTint) fc.rgb = mix(fc.rgb, uLightColor.rgb, uLightColor.a);\n"
-    "    // 方块昼夜亮度：lightmap UV 是 0-15 的亮度级，÷16 归一化到 0-1\n"
-    "    if(uUseLightMap) fc.rgb *= texture(uLightMap, vUV1 / 16.0).rgb;\n"
+    "    // 昼夜亮度：uUseLightMap=1 走顶点 lightmap UV（方块，0-15 亮度级 ÷16），\n"
+    "    // =2 走常量 UV（实体/掉落物模型无 unit1 坐标，用最近方块的首顶点亮度）\n"
+    "    if(uUseLightMap == 1) fc.rgb *= texture(uLightMap, vUV1 / 16.0).rgb;\n"
+    "    else if(uUseLightMap == 2) fc.rgb *= texture(uLightMap, uLightMapUV).rgb;\n"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
     "    else if(uAlphaFunc == 1) atpass = fc.a < uAlphaRef;\n"
@@ -290,6 +293,7 @@ static GLint fp_lighttint_loc = -1;
 static GLint fp_lightcolor_loc = -1;
 static GLint fp_lightmap_loc = -1;
 static GLint fp_uselightmap_loc = -1;
+static GLint fp_lightmapuv_loc = -1;
 static GLuint fp_vbo = 0;
 static GLuint fp_vbo_pos = 0;
 static GLuint fp_vbo_color = 0;
@@ -319,6 +323,8 @@ static GLfloat fp_last_lightcolor[4];
 static GLint fp_last_alphafunc = -1;
 static GLfloat fp_last_alpharef = 0.0f;
 static GLint fp_last_uselightmap = -1;
+static GLint fp_last_lightmapuv_set = -1;
+static GLfloat fp_last_lightmap_uv[2] = {0.5f, 0.5f};
 
 // alpha test 状态（MC 1.12 文字渲染依赖 GL_ALPHA_TEST）
 static bool fp_alpha_test = false;
@@ -421,6 +427,14 @@ static bool fp_client_texcoord1_enabled = false;
 // fp_client_texcoord1_enabled 分开：MC 的残留状态（GUI/文字段）不会误开
 // lightmap 采样，否则文字/矩形会被 lightmap 纹理调制变色。
 static bool fp_client_uv1_active = false;
+// 实体常量 lightmap：生物/玩家/掉落物模型走显示列表回放，顶点无 unit1
+// 坐标（桌面固定管线同样如此）。绘制时用"最近一次方块渲染的首顶点
+// lightmap UV"做常量采样，实体整体亮度随场景昼夜变化。
+static bool fp_lightmap_const_active = false;
+// 最近一次方块渲染首顶点的 lightmap UV（归一化 0-1），由
+// fp_upload_client_arrays 在 CPU 路径拷贝（数据在绘制时刻仍有效）。
+static bool fp_last_lightmap_uv_valid = false;
+static GLfloat fp_last_lightmap_uv_snap[2] = {0.0f, 0.0f};
 static GLint fp_client_color_size = 0;
 static GLenum fp_client_color_type = GL_FLOAT;
 static GLsizei fp_client_color_stride = 0;
@@ -675,6 +689,7 @@ static void fp_ensure_program(void) {
     fp_lightcolor_loc = es3_functions.glGetUniformLocation(prog, "uLightColor");
     fp_lightmap_loc = es3_functions.glGetUniformLocation(prog, "uLightMap");
     fp_uselightmap_loc = es3_functions.glGetUniformLocation(prog, "uUseLightMap");
+    fp_lightmapuv_loc = es3_functions.glGetUniformLocation(prog, "uLightMapUV");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
     es3_functions.glGenBuffers(1, &fp_vbo_pos);
@@ -765,8 +780,9 @@ static void fp_flush_immediate(void) {
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
     // 即时模式（GUI 文字/矩形）不带 unit1 坐标：禁用残留的 UV1 属性并
-    // 关闭 lightmap 采样，防止文字被上一段方块渲染残留的 lightmap 调制
+    // 关闭 lightmap 采样（含实体常量分支），防止文字被 lightmap 调制
     fp_client_uv1_active = false;
+    fp_lightmap_const_active = false;
     fp_set_default_uniforms();
     {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
@@ -1062,7 +1078,7 @@ void fp_init(void) {
     fp_program = 0;
     fp_mvp_loc = fp_tex_loc = fp_usetex_loc = fp_usecolor_loc = -1;
     fp_lighttint_loc = fp_lightcolor_loc = -1;
-    fp_lightmap_loc = fp_uselightmap_loc = -1;
+    fp_lightmap_loc = fp_uselightmap_loc = fp_lightmapuv_loc = -1;
     fp_color_loc = fp_alphafunc_loc = fp_alpharef_loc = fp_single_loc = -1;
     fp_vbo = fp_vbo_pos = fp_vbo_color = fp_vbo_uv = fp_vao = 0;
     fp_index_ebo = 0;
@@ -1106,6 +1122,11 @@ void fp_init(void) {
     fp_client_texcoord1_ptr = NULL;
     fp_client_texcoord1_abo = 0;
     fp_client_uv1_active = false;
+    fp_lightmap_const_active = false;
+    fp_last_lightmap_uv_valid = false;
+    fp_last_lightmap_uv_snap[0] = fp_last_lightmap_uv_snap[1] = 0.0f;
+    ltw_lightmap_trace = getenv("LTW_LIGHTMAP_TRACE") != NULL;
+    ltw_lm_trace_state = -1;
     fp_client_active_texture = GL_TEXTURE0;
     fp_active_texture = GL_TEXTURE0;
     fp_texture_enabled[0] = fp_texture_enabled[1] = fp_texture_enabled[2] = false;
@@ -1658,14 +1679,28 @@ static void fp_set_default_uniforms(void) {
         if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, alpha_ref);
         fp_last_alpharef = alpha_ref;
     }
-    // 方块昼夜亮度：仅当本次绘制真实提供 unit1 坐标、unit1 绑定了 lightmap
-    // 纹理且 unit1 的 GL_TEXTURE_2D 启用时才采样（fp_client_uv1_active 由
-    // fp_prepare_client_arrays 按顶点数据实际布局设置，防残留状态误开）。
-    GLint uselightmap = (fp_client_uv1_active && fp_bound_texture1 != 0 &&
-                         fp_texture_enabled[1]) ? 1 : 0;
+    // 昼夜亮度开关：0=关，1=顶点 UV1（方块），2=常量 UV（实体/掉落物）。
+    // fp_client_uv1_active 由 fp_prepare_client_arrays 按顶点数据实际布局
+    // 设置；fp_lightmap_const_active 由 DL 回放（实体段）按最近方块亮度设置。
+    GLint uselightmap = 0;
+    if(fp_client_uv1_active && fp_bound_texture1 != 0 && fp_texture_enabled[1]) {
+        uselightmap = 1;
+    } else if(fp_lightmap_const_active && fp_bound_texture1 != 0 && fp_texture_enabled[1]) {
+        uselightmap = 2;
+    }
     if(!fp_uniforms_initialized || fp_last_uselightmap != uselightmap) {
         if(fp_uselightmap_loc >= 0) es3_functions.glUniform1i(fp_uselightmap_loc, uselightmap);
         fp_last_uselightmap = uselightmap;
+    }
+    // 实体常量 lightmap UV（归一化 0-1）
+    if(fp_lightmapuv_loc >= 0 && (!fp_uniforms_initialized ||
+       fp_last_lightmapuv_set != (fp_lightmap_const_active ? 1 : 0) ||
+       memcmp(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv)) != 0)) {
+        if(fp_lightmap_const_active) {
+            es3_functions.glUniform2fv(fp_lightmapuv_loc, 1, fp_last_lightmap_uv_snap);
+            memcpy(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv));
+        }
+        fp_last_lightmapuv_set = fp_lightmap_const_active ? 1 : 0;
     }
     // uLightMap 采样器固定绑定 unit1（lightmap 纹理所在单元），只需设一次。
     // 直接走 es3_functions 切换活动单元，避免 glActiveTexture 包装器
@@ -1778,6 +1813,21 @@ static void fp_upload_client_arrays(GLsizei count) {
                                                     fp_client_texcoord1_type, GL_FALSE,
                                                     fp_client_vertex_stride, (const void*)off);
                 fp_client_uv1_active = true;
+                // 快照首顶点的 lightmap UV（GL_SHORT 亮度级 → ÷16 归一化）。
+                // 实体模型无 unit1 坐标，绘制时用这个常量亮度近似场景明暗；
+                // 数据此刻仍指向 MC 正在使用的缓冲，拷贝后才安全。
+                {
+                    const uint8_t* p = (const uint8_t*)fp_client_texcoord1_ptr;
+                    if(fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2) {
+                        int16_t u0 = *(const int16_t*)p;
+                        int16_t v0 = *(const int16_t*)(p + 2);
+                        if(u0 >= 0 && u0 <= 255 && v0 >= 0 && v0 <= 255) {
+                            fp_last_lightmap_uv_snap[0] = (GLfloat)u0 / 16.0f;
+                            fp_last_lightmap_uv_snap[1] = (GLfloat)v0 / 16.0f;
+                            fp_last_lightmap_uv_valid = true;
+                        }
+                    }
+                }
             } else {
                 es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
                 fp_client_uv1_active = false;
@@ -1791,9 +1841,36 @@ static void fp_upload_client_arrays(GLsizei count) {
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
 }
 
+// 诊断：LTW_LIGHTMAP_TRACE=1 时打印 lightmap 相关状态变化
+// （定位掉落物/手持物品昼夜亮度问题的临时探针，定位后移除）
+static bool ltw_lightmap_trace = false;
+static int ltw_lm_trace_state = -1;
+
 bool fp_prepare_client_arrays(GLsizei count) {
     if(!fp_program) fp_ensure_program();
     if(!fp_program) return false;
+
+    // [LMT] 诊断探针：打印 uv1 状态变化（每类状态首次出现时打一次）
+    if(ltw_lightmap_trace) {
+        int st = (fp_client_texcoord1_enabled ? 1 : 0)
+               | ((fp_client_texcoord1_size > 0 ? 1 : 0) << 1)
+               | ((fp_client_texcoord1_ptr ? 1 : 0) << 2)
+               | ((fp_client_texcoord1_abo != 0 ? 1 : 0) << 3)
+               | ((fp_bound_texture1 != 0 ? 1 : 0) << 4)
+               | ((fp_texture_enabled[1] ? 1 : 0) << 5)
+               | ((fp_client_uv1_active ? 1 : 0) << 6)
+               | ((fp_lightmap_const_active ? 1 : 0) << 7);
+        if(st != ltw_lm_trace_state) {
+            ltw_lm_trace_state = st;
+            LTW_ERROR_PRINTF("[LMT] draw count=%d uv1_en=%d size=%d ptr=%p abo=%d "
+                             "tex1=%u texen1=%d uv1act=%d const=%d",
+                             count, fp_client_texcoord1_enabled, fp_client_texcoord1_size,
+                             fp_client_texcoord1_ptr, fp_client_texcoord1_abo,
+                             fp_bound_texture1, fp_texture_enabled[1],
+                             fp_client_uv1_active ? 1 : 0,
+                             fp_lightmap_const_active ? 1 : 0);
+        }
+    }
 
     // GLES 3.x 禁止客户端数组指针。用数组"设置时"的 ARRAY_BUFFER 绑定判断：
     // 设置时未绑定（pointer 是 CPU 地址）→ 拷贝到 fp_vbo；设置时已绑定
@@ -2286,9 +2363,13 @@ static bool fp_begin_dl_replay(void) {
     dl_saved_active_tex = (GLint)fp_active_texture;
     dl_saved_bound_tex = (GLint)fp_bound_texture;
     dl_saved_texture_valid = (fp_bound_texture != 0);
-    // 实体显示列表段不提供 unit1 坐标：关闭 lightmap 采样，防止残留状态
-    // 让实体模型被 lightmap 调制（实体亮度走 uLightTint 模拟）。
+    // 实体显示列表段无 per-vertex unit1 坐标（桌面固定管线同样如此）：
+    // 用最近一次方块渲染的首顶点 lightmap UV 做常量采样，实体整体亮度
+    // 随场景昼夜变化（生物/玩家/掉落物模型；受伤红闪走 uLightTint 模拟，
+    // 常量 lightmap 乘在其后，与原版 unit2 MODULATE 顺序一致）。
     fp_client_uv1_active = false;
+    fp_lightmap_const_active = (fp_last_lightmap_uv_valid &&
+                                fp_bound_texture1 != 0 && fp_texture_enabled[1]);
 
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
