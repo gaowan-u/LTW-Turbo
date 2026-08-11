@@ -14,68 +14,87 @@
 #include "debug.h"
 
 // ---- 矩阵栈 ----
+// 任何矩阵变化都先冲刷批次：批次按录制时的 MVP 快照提交，矩阵一变
+// 快照即失效。F3 段内矩阵不变，文字攒到段末 popMatrix 一次性提交
+// （docs/f3-overlay-single-submit-plan.md 阶段 A）。
 void glMatrixMode(GLenum mode) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_matrix_mode(mode);
 }
 void glLoadIdentity(void) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_load_identity();
 }
 void glLoadMatrixf(const GLfloat* m) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_load_matrixf(m);
 }
 void glLoadMatrixd(const GLdouble* m) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_load_matrixd(m);
 }
 void glMultMatrixf(const GLfloat* m) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_mult_matrixf(m);
 }
 void glMultMatrixd(const GLdouble* m) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_mult_matrixd(m);
 }
 void glPushMatrix(void) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_push_matrix();
 }
 void glPopMatrix(void) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_pop_matrix();
 }
 void glOrtho(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_ortho(left, right, bottom, top, zNear, zFar);
 }
 void glFrustum(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_frustum(left, right, bottom, top, zNear, zFar);
 }
 void glTranslatef(GLfloat x, GLfloat y, GLfloat z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_translatef(x, y, z);
 }
 void glTranslated(GLdouble x, GLdouble y, GLdouble z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_translated(x, y, z);
 }
 void glScalef(GLfloat x, GLfloat y, GLfloat z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_scalef(x, y, z);
 }
 void glScaled(GLdouble x, GLdouble y, GLdouble z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_scaled(x, y, z);
 }
 void glRotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_rotatef(angle, x, y, z);
 }
 void glRotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_rotated(angle, x, y, z);
 }
 

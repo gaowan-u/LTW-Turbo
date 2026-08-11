@@ -303,6 +303,14 @@ static GLfloat fp_last_alpharef = 0.0f;
 static bool fp_alpha_test = false;
 static GLenum fp_alpha_test_func = 0x0207;   // GL_ALWAYS
 static GLfloat fp_alpha_ref = 0.0f;
+// 混合状态 CPU 跟踪：GL_BLEND 开关 + blend func。桌面 GL 默认 blend func
+// 是 (ONE, ZERO)；MC 的 GlStateManager 总在 enableBlend 前显式设置，
+// 这里主要用于批次快照的对比/应用/恢复。
+static bool fp_blend_enabled = false;
+static GLenum fp_blend_sfactor_rgb = GL_ONE;
+static GLenum fp_blend_dfactor_rgb = GL_ZERO;
+static GLenum fp_blend_sfactor_alpha = GL_ONE;
+static GLenum fp_blend_dfactor_alpha = GL_ZERO;
 // 客户端颜色数组是否真实启用（决定 shader 用顶点色还是当前色）
 static bool fp_client_color_active = false;
 // glClientActiveTexture 选中的客户端活动纹理单元。MC 1.12 的
@@ -341,6 +349,14 @@ static GLfloat fp_batch_light_color[4];
 static bool fp_batch_alpha_test = false;
 static GLenum fp_batch_alpha_func = GL_ALWAYS;
 static GLfloat fp_batch_alpha_ref = 0.0f;
+// 批次快照的混合状态：F3 段内 drawRect 会在行间开关 GL_BLEND/换 blend
+// func，提交时（popMatrix）必须用录制时的混合状态绘制，否则文字会不带
+// 混合画出（黑块）。
+static bool fp_batch_blend_enabled = false;
+static GLenum fp_batch_blend_sfactor_rgb = GL_ONE;
+static GLenum fp_batch_blend_dfactor_rgb = GL_ZERO;
+static GLenum fp_batch_blend_sfactor_alpha = GL_ONE;
+static GLenum fp_batch_blend_dfactor_alpha = GL_ZERO;
 static GLfloat fp_batch_mvp[FP_MATRIX_SIZE];
 // strip 图元批处理：每段 glBegin/glEnd 的起始顶点偏移，提交时用
 // GL_PRIMITIVE_RESTART_FIXED_INDEX 断开，避免把两个字形的 strip 连成一条
@@ -779,6 +795,11 @@ static void fp_batch_begin(void) {
     fp_batch_alpha_test = fp_alpha_test;
     fp_batch_alpha_func = fp_alpha_test_func;
     fp_batch_alpha_ref = fp_alpha_ref;
+    fp_batch_blend_enabled = fp_blend_enabled;
+    fp_batch_blend_sfactor_rgb = fp_blend_sfactor_rgb;
+    fp_batch_blend_dfactor_rgb = fp_blend_dfactor_rgb;
+    fp_batch_blend_sfactor_alpha = fp_blend_sfactor_alpha;
+    fp_batch_blend_dfactor_alpha = fp_blend_dfactor_alpha;
     fp_mat_mul(fp_batch_mvp,
                fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
                fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
@@ -794,6 +815,11 @@ static bool fp_batch_state_matches(GLenum mode) {
            fp_batch_alpha_test == fp_alpha_test &&
            fp_batch_alpha_func == fp_alpha_test_func &&
            fp_batch_alpha_ref == fp_alpha_ref &&
+           fp_batch_blend_enabled == fp_blend_enabled &&
+           fp_batch_blend_sfactor_rgb == fp_blend_sfactor_rgb &&
+           fp_batch_blend_dfactor_rgb == fp_blend_dfactor_rgb &&
+           fp_batch_blend_sfactor_alpha == fp_blend_sfactor_alpha &&
+           fp_batch_blend_dfactor_alpha == fp_blend_dfactor_alpha &&
            fp_batch_light_color[0] == fp_texenv_state[1].color[0] &&
            fp_batch_light_color[1] == fp_texenv_state[1].color[1] &&
            fp_batch_light_color[2] == fp_texenv_state[1].color[2] &&
@@ -828,6 +854,11 @@ void fp_flush_immediate_batch(void) {
     bool saved_alpha_test = fp_alpha_test;
     GLenum saved_alpha_func = fp_alpha_test_func;
     GLfloat saved_alpha_ref = fp_alpha_ref;
+    bool saved_blend_enabled = fp_blend_enabled;
+    GLenum saved_blend_sfactor_rgb = fp_blend_sfactor_rgb;
+    GLenum saved_blend_dfactor_rgb = fp_blend_dfactor_rgb;
+    GLenum saved_blend_sfactor_alpha = fp_blend_sfactor_alpha;
+    GLenum saved_blend_dfactor_alpha = fp_blend_dfactor_alpha;
     GLfloat saved_proj[FP_MATRIX_SIZE];
     GLfloat saved_model[FP_MATRIX_SIZE];
     memcpy(saved_proj,
@@ -849,6 +880,20 @@ void fp_flush_immediate_batch(void) {
     fp_alpha_test = fp_batch_alpha_test;
     fp_alpha_test_func = fp_batch_alpha_func;
     fp_alpha_ref = fp_batch_alpha_ref;
+    // 混合状态也按批次快照还原（GL 实际状态 + CPU 跟踪同步）：
+    // F3 段内录制文字时 GL_BLEND 是关闭的，但提交时刻（popMatrix）可能
+    // 已被行间 drawRect 的 enableBlend 打开，若不还原，文字会带着混合画。
+    if(fp_batch_blend_enabled) es3_functions.glEnable(GL_BLEND);
+    else es3_functions.glDisable(GL_BLEND);
+    es3_functions.glBlendFuncSeparate(fp_batch_blend_sfactor_rgb,
+                                      fp_batch_blend_dfactor_rgb,
+                                      fp_batch_blend_sfactor_alpha,
+                                      fp_batch_blend_dfactor_alpha);
+    fp_blend_enabled = fp_batch_blend_enabled;
+    fp_blend_sfactor_rgb = fp_batch_blend_sfactor_rgb;
+    fp_blend_dfactor_rgb = fp_batch_blend_dfactor_rgb;
+    fp_blend_sfactor_alpha = fp_batch_blend_sfactor_alpha;
+    fp_blend_dfactor_alpha = fp_batch_blend_dfactor_alpha;
     fp_mat_identity(fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]]);
     memcpy(fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]],
            fp_batch_mvp, sizeof(fp_batch_mvp));
@@ -920,6 +965,18 @@ void fp_flush_immediate_batch(void) {
     fp_alpha_test = saved_alpha_test;
     fp_alpha_test_func = saved_alpha_func;
     fp_alpha_ref = saved_alpha_ref;
+    // 恢复应用侧混合状态（GL + CPU）
+    if(saved_blend_enabled) es3_functions.glEnable(GL_BLEND);
+    else es3_functions.glDisable(GL_BLEND);
+    es3_functions.glBlendFuncSeparate(saved_blend_sfactor_rgb,
+                                      saved_blend_dfactor_rgb,
+                                      saved_blend_sfactor_alpha,
+                                      saved_blend_dfactor_alpha);
+    fp_blend_enabled = saved_blend_enabled;
+    fp_blend_sfactor_rgb = saved_blend_sfactor_rgb;
+    fp_blend_dfactor_rgb = saved_blend_dfactor_rgb;
+    fp_blend_sfactor_alpha = saved_blend_sfactor_alpha;
+    fp_blend_dfactor_alpha = saved_blend_dfactor_alpha;
     memcpy(fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
            saved_proj, sizeof(saved_proj));
     memcpy(fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]],
@@ -1014,6 +1071,11 @@ void fp_init(void) {
         fp_texenv_state[i].color[2] = fp_texenv_state[i].color[3] = 1.0f;
     }
     fp_light_tint = false;
+    fp_blend_enabled = false;
+    fp_blend_sfactor_rgb = GL_ONE;
+    fp_blend_dfactor_rgb = GL_ZERO;
+    fp_blend_sfactor_alpha = GL_ONE;
+    fp_blend_dfactor_alpha = GL_ZERO;
 
     // 显示列表 CPU 快照保留，但 GL 对象句柄随旧 context 失效，清零后惰性重建
     fp_dl_reset_caches();
@@ -1364,6 +1426,19 @@ void fp_notify_texture_bind(void) {
 // ---- alpha test ----
 void fp_set_alpha_test(bool enabled) { fp_alpha_test = enabled; }
 void fp_alpha_func(GLenum func, GLfloat ref) { fp_alpha_test_func = func; fp_alpha_ref = ref; }
+
+void fp_set_blend_enabled(bool enabled) { fp_blend_enabled = enabled; }
+void fp_set_blend_func(GLenum sfactor, GLenum dfactor) {
+    fp_blend_sfactor_rgb = fp_blend_sfactor_alpha = sfactor;
+    fp_blend_dfactor_rgb = fp_blend_dfactor_alpha = dfactor;
+}
+void fp_set_blend_func_separate(GLenum sfactorRGB, GLenum dfactorRGB,
+                                GLenum sfactorAlpha, GLenum dfactorAlpha) {
+    fp_blend_sfactor_rgb = sfactorRGB;
+    fp_blend_dfactor_rgb = dfactorRGB;
+    fp_blend_sfactor_alpha = sfactorAlpha;
+    fp_blend_dfactor_alpha = dfactorAlpha;
+}
 
 // ---- 绘制挂钩 ----
 // 画之前直接查“当前绑定在活动纹理单元上的 2D 纹理”，而不是依赖

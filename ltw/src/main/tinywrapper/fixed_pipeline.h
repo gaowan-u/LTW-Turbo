@@ -137,6 +137,15 @@ void fp_texture_upload_invalidate(void);
 void fp_set_alpha_test(bool enabled);
 void fp_alpha_func(GLenum func, GLfloat ref);
 
+// 混合状态 CPU 跟踪：glEnable/glDisable(GL_BLEND) 与
+// glBlendFunc/glBlendFuncSeparate 包装器通知。批次快照与状态对比依赖
+// 这些值（F3 每行的 drawRect 会在行间开关混合/换 blend func，若每次都
+// 冲刷批次，整段文字无法合并）。
+void fp_set_blend_enabled(bool enabled);
+void fp_set_blend_func(GLenum sfactor, GLenum dfactor);
+void fp_set_blend_func_separate(GLenum sfactorRGB, GLenum dfactorRGB,
+                                GLenum sfactorAlpha, GLenum dfactorAlpha);
+
 // 无 program 时的绘制挂钩：返回 true 表示已用固定管线绘制
 // 这些函数假定当前绑定的 VAO 已设置好 attribute 数组（应用自己的
 // glVertexAttribPointer/glVertexPointer 已被 LTW 转换），只切换 program。

@@ -467,6 +467,21 @@ static bool is_fixed_function_cap(GLenum cap) {
 
 void glEnable(GLenum cap) {
     if(!current_context) return;
+    // 批次内状态（GL_TEXTURE_2D/GL_ALPHA_TEST/GL_BLEND）：只更新 CPU 跟踪，
+    // 不冲刷批次。F3 每行 drawRect 会开关纹理/混合，若每次都冲刷，
+    // 整段文字无法合并成一次提交（见 docs/f3-overlay-single-submit-plan.md）。
+    if(cap == GL_TEXTURE_2D || cap == GL_ALPHA_TEST || cap == GL_BLEND) {
+        if(cap == GL_TEXTURE_2D) {
+            fp_set_texture_enabled(true);
+            fp_dl_capture_texture_enable(true);
+        } else if(cap == GL_ALPHA_TEST) {
+            fp_set_alpha_test(true);
+        } else {
+            fp_set_blend_enabled(true);
+        }
+        if(!is_fixed_function_cap(cap)) es3_functions.glEnable(cap);
+        return;
+    }
     fp_flush_immediate_batch();
     if(cap == GL_DEBUG_OUTPUT && !debug) return;
     if(is_fixed_function_cap(cap)) {
@@ -487,6 +502,18 @@ void glEnable(GLenum cap) {
 
 void glDisable(GLenum cap) {
     if(!current_context) return;
+    if(cap == GL_TEXTURE_2D || cap == GL_ALPHA_TEST || cap == GL_BLEND) {
+        if(cap == GL_TEXTURE_2D) {
+            fp_set_texture_enabled(false);
+            fp_dl_capture_texture_enable(false);
+        } else if(cap == GL_ALPHA_TEST) {
+            fp_set_alpha_test(false);
+        } else {
+            fp_set_blend_enabled(false);
+        }
+        if(!is_fixed_function_cap(cap)) es3_functions.glDisable(cap);
+        return;
+    }
     fp_flush_immediate_batch();
     if(is_fixed_function_cap(cap)) {
         if(cap == GL_TEXTURE_2D) {
@@ -534,12 +561,14 @@ void glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
 }
 void glBlendFunc(GLenum sfactor, GLenum dfactor) {
     if(!current_context) return;
-    fp_flush_immediate_batch();
+    // 不冲刷批次：blend func 已 CPU 跟踪并进批次快照（drawRect 每行都会
+    // tryBlendFuncSeparate，冲刷会把 F3 文字段拆成一行一提交）。
+    fp_set_blend_func(sfactor, dfactor);
     es3_functions.glBlendFunc(sfactor, dfactor);
 }
 void glBlendFuncSeparate(GLenum sfactorRGB, GLenum dfactorRGB, GLenum sfactorAlpha, GLenum dfactorAlpha) {
     if(!current_context) return;
-    fp_flush_immediate_batch();
+    fp_set_blend_func_separate(sfactorRGB, dfactorRGB, sfactorAlpha, dfactorAlpha);
     es3_functions.glBlendFuncSeparate(sfactorRGB, dfactorRGB, sfactorAlpha, dfactorAlpha);
 }
 void glDepthFunc(GLenum func) {
@@ -1090,7 +1119,10 @@ void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
 
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     if(!current_context) return;
-    fp_flush_immediate_batch();
+    // 不冲刷批次：F3 每行的 drawRect（GL_QUADS 客户端数组）在行间即时绘制，
+    // 文字批次跨行继续攒，直到 popMatrix/帧末/其他冲刷点一次性提交。
+    // z-order 语义：矩形始终先于文字绘制，文字仍盖在矩形之上（与逐行
+    // 绘制一致）；矩阵/纹理/状态变化都会冲刷，批次不会跨绘制段。
     // 显示列表编译期间：录制快照，编译期不真正绘制
     if(fp_dl_capture_client_draw(mode, first, count, false, 0, NULL)) return;
     if(ltw_quads_draw_arrays(mode, first, count)) return;
