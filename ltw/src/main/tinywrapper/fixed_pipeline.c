@@ -477,6 +477,17 @@ static void fp_ge_chk(const char* tag, const char* fmt, ...) {
         e = es3_functions.glGetError();
     }
 }
+
+// MathCode: 2026-08-25 buffer 失效诊断——参数合法却报 1282 时，
+// 查预期 buffer 是否仍有效、当前实际绑定、以及 LTW 认知的 context 指针
+static void fp_ge_diag_buffer(const char* tag, GLuint expect) {
+    if(!ltw_glerr_trace) return;
+    GLint bound = -1;
+    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &bound);
+    GLboolean isb = es3_functions.glIsBuffer(expect);
+    LTW_ERROR_PRINTF("[GE] %s BUF-DIAG expect=%u actual_bound=%d isBuffer=%d ctx=%p",
+                     tag, expect, bound, (int)isb, (void*)current_context);
+}
 static GLint fp_client_color_size = 0;
 static GLenum fp_client_color_type = GL_FLOAT;
 static GLsizei fp_client_color_stride = 0;
@@ -740,6 +751,12 @@ static void fp_ensure_program(void) {
     es3_functions.glGenVertexArrays(1, &fp_vao);
     es3_functions.glGenBuffers(1, &fp_index_ebo);
     es3_functions.glGenBuffers(1, &fp_batch_ebo);
+    // MathCode: 2026-08-25 句柄失效诊断——每次 program/对象重建打印句柄与 context
+    if(ltw_glerr_trace) {
+        LTW_ERROR_PRINTF("[GE] ctx_objs program=%u vao=%u vbo=%u idxebo=%u batchebo=%u ctx=%p",
+                         fp_program, fp_vao, fp_vbo, fp_index_ebo, fp_batch_ebo,
+                         (void*)current_context);
+    }
 
     es3_functions.glDeleteShader(vs);
     es3_functions.glDeleteShader(fs);
@@ -1836,6 +1853,7 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count,
                                fp_client_vertex_ptr, GL_STREAM_DRAW);
     fp_ge_chk("upl_buf", "cnt=%d vsize=%d", count, (int)vsize);
+    fp_ge_diag_buffer("upl_buf", fp_vbo);
 
     // 位置 attribute：offset 0
     {
@@ -2565,6 +2583,7 @@ static bool fp_dl_build_client_cache(dl_op_entry_t* op, const dl_client_draw_pay
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)p->vertex_len, vdata, GL_STATIC_DRAW);
     fp_ge_chk("cache_buf", "vlen=%u need=%d cnt=%d vsz=%d",
               p->vertex_len, (int)(vsize * p->count), p->count, (int)vsize);
+    fp_ge_diag_buffer("cache_buf", vbo);
 
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
     es3_functions.glVertexAttribPointer(FP_ATTR_POS, snap->vertex_size, snap->vertex_type,
