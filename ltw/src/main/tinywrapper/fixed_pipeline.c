@@ -838,11 +838,13 @@ static void fp_flush_immediate(void) {
     fp_gl_bind_vao(fp_vao);
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
+    fp_ge_check("imm_useprog");
     // 即时模式（GUI 文字/矩形）不带 unit1 坐标：禁用残留的 UV1 属性并
     // 关闭 lightmap 采样（含实体常量分支），防止文字被 lightmap 调制
     fp_client_uv1_active = false;
     fp_lightmap_const_active = false;
     fp_set_default_uniforms();
+    fp_ge_check("imm_uni");
     {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
@@ -1773,6 +1775,9 @@ static void fp_set_default_uniforms(void) {
     }
     if(!fp_uniforms_initialized || fp_last_uselightmap != uselightmap) {
         if(fp_uselightmap_loc >= 0) es3_functions.glUniform1i(fp_uselightmap_loc, uselightmap);
+        fp_ge_chk("uni_uselm", "val=%d uv1act=%d const=%d tex1=%u",
+                  uselightmap, fp_client_uv1_active ? 1 : 0,
+                  fp_lightmap_const_active ? 1 : 0, fp_bound_texture1);
         fp_last_uselightmap = uselightmap;
     }
     // 实体常量 lightmap UV（归一化 0-1）
@@ -1781,6 +1786,8 @@ static void fp_set_default_uniforms(void) {
        memcmp(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv)) != 0)) {
         if(fp_lightmap_const_active) {
             es3_functions.glUniform2fv(fp_lightmapuv_loc, 1, fp_last_lightmap_uv_snap);
+            fp_ge_chk("uni_luv", "u=%.3f v=%.3f",
+                      fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1]);
             memcpy(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv));
         }
         fp_last_lightmapuv_set = fp_lightmap_const_active ? 1 : 0;
@@ -1807,12 +1814,15 @@ static void fp_set_default_uniforms(void) {
 // 若应用通过固定管线 API（glVertexPointer 等）提供了客户端数组/VBO 偏移，
 // 这里把它们设置成 attribute；否则用即时模式缓冲/默认值。
 bool fp_bind_default_program(void) {
+    fp_ge_check("bdp_entry");
     fp_ensure_program();
     if(!fp_program) return false;
     fp_refresh_bound_texture();
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;
+    fp_ge_check("bdp_useprog");
     fp_set_default_uniforms();
+    fp_ge_check("bdp_uniforms");
 
     // 使用私有 VAO，避免污染应用绑定的 VAO 的 attribute 状态
     fp_saved_vao = fp_app_vao;
