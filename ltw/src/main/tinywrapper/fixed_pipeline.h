@@ -63,6 +63,9 @@ void fp_end(void);
 // 把已累积的连续 glBegin/glEnd 顶点以“录制时的状态快照”一次性提交。
 // 应用绘制/清屏/读回/帧切换等会改变绘制顺序的入口必须调用它。
 void fp_flush_immediate_batch(void);
+// [GE] GL 错误定位探针：检查并消费积压错误，有错则打 "[GE] <tag>" 日志。
+// 开关 = config.json glerrTrace / 环境变量 LTW_GLERR_TRACE，默认关（零开销）。
+void fp_ge_check(const char* tag);
 // 是否还有未提交的即时模式批次（诊断用：帧首 glClear 时若仍为 true，
 // 说明帧切换入口没有拦截到，文字会被清屏清掉）。
 bool fp_immediate_batch_pending(void);

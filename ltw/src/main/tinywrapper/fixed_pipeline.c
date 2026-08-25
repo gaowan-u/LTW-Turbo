@@ -447,6 +447,20 @@ static GLfloat fp_last_lightmap_uv_snap[2] = {0.0f, 0.0f};
 // （定位掉落物/手持物品昼夜亮度问题的临时探针，定位后移除）
 static bool ltw_lightmap_trace = false;
 static int ltw_lm_trace_state = -1;
+// [GE] GL 错误定位探针开关（glerrTrace / LTW_GLERR_TRACE），默认关
+static bool ltw_glerr_trace = false;
+
+// MathCode: 2026-08-12 天空闪烁+1282刷屏定位探针。在关键绘制/状态提交点后
+// 调用：有积压 GL 错误则打标签日志并消费掉（定位期兼做防刷屏）。错误是
+// sticky 的——在产生点之后最近的一个检查点捕获，标签即近似归因。
+void fp_ge_check(const char* tag) {
+    if(!ltw_glerr_trace) return;
+    GLenum e = es3_functions.glGetError();
+    while(e != GL_NO_ERROR) {
+        LTW_ERROR_PRINTF("[GE] %s err=0x%04X", tag, e);
+        e = es3_functions.glGetError();
+    }
+}
 static GLint fp_client_color_size = 0;
 static GLenum fp_client_color_type = GL_FLOAT;
 static GLsizei fp_client_color_stride = 0;
@@ -821,6 +835,7 @@ static void fp_flush_immediate(void) {
         }
         es3_functions.glDrawElements(fp_immediate_mode, fp_submit_index_count,
                                      GL_UNSIGNED_INT, NULL);
+        fp_ge_check("imm_de");
         if(fp_restart_enabled) {
             es3_functions.glDisable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
             fp_restart_enabled = false;
@@ -829,6 +844,7 @@ static void fp_flush_immediate(void) {
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     } else {
         es3_functions.glDrawArrays(mode, 0, count);
+        fp_ge_check("imm_da");
     }
 
     // 恢复状态
@@ -1146,6 +1162,13 @@ void fp_init(void) {
         ltw_lightmap_trace = ltw_config_get_bool("lightmapTrace", false);
     }
     ltw_lm_trace_state = -1;
+    // [GE] 探针开关优先级 = LTW_GLERR_TRACE 环境变量 > 共享配置 glerrTrace > 默认关
+    if(getenv("LTW_GLERR_TRACE")) {
+        ltw_glerr_trace = env_istrue("LTW_GLERR_TRACE");
+    } else {
+        ltw_config_init();
+        ltw_glerr_trace = ltw_config_get_bool("glerrTrace", false);
+    }
     fp_client_active_texture = GL_TEXTURE0;
     fp_active_texture = GL_TEXTURE0;
     fp_texture_enabled[0] = fp_texture_enabled[1] = fp_texture_enabled[2] = false;
@@ -1976,6 +1999,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
         }
         if(v1bo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
     }
+    fp_ge_check("prep_arrays");
     // attribute 启用情况影响 uUseColor，这里重设 uniforms（bind 先于 prepare）
     fp_set_default_uniforms();
     return true;
@@ -2003,6 +2027,7 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
     es3_functions.glDrawArrays(mode, first, count);
+    fp_ge_check("try_da");
     fp_unbind_default_program();
     return true;
 }
@@ -2039,6 +2064,7 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     }
     fp_prepare_client_arrays(count);
     es3_functions.glDrawElements(mode, count, type, indices);
+    fp_ge_check(eab == 0 ? "try_de_noeab" : "try_de_eab");
     fp_unbind_default_program();
     return true;
 }
@@ -2348,6 +2374,7 @@ static void fp_dl_play_client_draw(const fp_dl_client_snapshot_t* snap, GLenum m
             es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indices_ebo);
             restore_eab = true;
             glDrawElements(mode, count, itype, (const void*)(intptr_t)indices_off);
+            fp_ge_check("dl_play_de_ebo");
         } else if(indices_cpu && indices_len > 0) {
             // GLES 禁止客户端索引指针：上传到内部 scratch EBO
             es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &old_eab);
@@ -2363,14 +2390,18 @@ static void fp_dl_play_client_draw(const fp_dl_client_snapshot_t* snap, GLenum m
                 }
                 restore_eab = true;
                 glDrawElements(mode, count, itype, NULL);
+                fp_ge_check("dl_play_de_scratch");
             } else {
                 glDrawElements(mode, count, itype, indices_cpu);
+                fp_ge_check("dl_play_de_cpuptr");
             }
         } else {
             glDrawElements(mode, count, itype, NULL);
+            fp_ge_check("dl_play_de_null");
         }
     } else {
         glDrawArrays(mode, first, count);
+        fp_ge_check("dl_play_da");
     }
     if(restore_eab) {
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)old_eab);
@@ -2653,8 +2684,10 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
     }
     if(op->cache_indexed) {
         es3_functions.glDrawElements(op->cache_mode, op->cache_count, op->cache_itype, NULL);
+        fp_ge_check("dl_cached_de");
     } else {
         es3_functions.glDrawArrays(op->cache_mode, op->cache_first, op->cache_count);
+        fp_ge_check("dl_cached_da");
     }
     // MathCode: 不再每 op 切回 fp_vao；列表结束/遇到非缓存路径时再恢复，
     // 生物密集场景每个缓存 op 省一次 VAO 绑定。
@@ -2913,6 +2946,7 @@ static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
     }
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, l->merge.ebo);
     es3_functions.glDrawElements(GL_TRIANGLES, l->merge.draw_count, GL_UNSIGNED_INT, NULL);
+    fp_ge_check("dl_merged_de");
     return true;
 }
 
@@ -3339,6 +3373,7 @@ static void dl_execute_list(GLuint list) {
             dl_replay_active = false;
             fp_end_dl_replay();
         }
+        fp_ge_check("dl_list_end");
     }
 }
 

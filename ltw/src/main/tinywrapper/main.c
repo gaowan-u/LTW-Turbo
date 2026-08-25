@@ -1128,6 +1128,7 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     if(ltw_quads_draw_arrays(mode, first, count)) return;
     if(fp_try_draw_arrays(mode, first, count)) return;
     current_context->fast_gl.glDrawArrays(mode, first, count);
+    fp_ge_check("app_da");
 }
 
 void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
@@ -1137,6 +1138,7 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices
     if(ltw_quads_draw_elements(mode, count, type, indices)) return;
     if(fp_try_draw_elements(mode, count, type, indices)) return;
     current_context->fast_gl.glDrawElements(mode, count, type, indices);
+    fp_ge_check("app_de");
 }
 
 void glLTWBeginBatchUpdate(void) {

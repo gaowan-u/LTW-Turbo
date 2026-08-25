@@ -289,9 +289,11 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint 
     if(fp_bound) {
         fp_prepare_client_arrays(quads * 4);
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+        fp_ge_check("quads_de_bound");
         fp_unbind_default_program();
     } else {
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+        fp_ge_check("quads_de_nobound");
     }
 
     // fp_unbind_default_program 已恢复应用 VAO，这里恢复它原来的 EAB 绑定。
