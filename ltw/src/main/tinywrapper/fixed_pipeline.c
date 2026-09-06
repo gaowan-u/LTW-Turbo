@@ -1826,7 +1826,10 @@ bool fp_bind_default_program(void) {
 
     // 使用私有 VAO，避免污染应用绑定的 VAO 的 attribute 状态
     fp_saved_vao = fp_app_vao;
-    if(fp_vao) fp_gl_bind_vao(fp_vao);
+    if(fp_vao) {
+        fp_gl_bind_vao(fp_vao);
+        fp_ge_check("bdp_vao");
+    }
     return true;
 }
 
@@ -1860,6 +1863,7 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
 
     // 一次上传整个交错数组
     glBindBuffer(GL_ARRAY_BUFFER, fp_vbo);
+    fp_ge_check("upl_bind");
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count,
                                fp_client_vertex_ptr, GL_STREAM_DRAW);
     fp_ge_chk("upl_buf", "cnt=%d vsize=%d", count, (int)vsize);
@@ -2080,6 +2084,7 @@ void fp_unbind_default_program(void) {
     dl_current_vao = (GLuint)fp_saved_vao;
     es3_functions.glUseProgram(0);
     if(current_context) current_context->program = 0;
+    fp_ge_check("unb_end");
 }
 
 // 无 program 时用默认 shader 绘制。应用已设置好 VAO attribute（MC 1.12
