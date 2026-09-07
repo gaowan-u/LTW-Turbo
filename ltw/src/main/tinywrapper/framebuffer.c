@@ -15,6 +15,7 @@
 #include "egl.h"
 #include "mempool.h"
 #include "debug.h"
+#include "fixed_pipeline.h"
 #include <string.h>
 
 static framebuffer_t* get_framebuffer(GLenum target) {
@@ -132,38 +133,42 @@ void rebind_framebuffer(GLenum target, framebuffer_t *framebuffer, GLenum virt_a
 void glClearBufferiv( 	GLenum buffer,
                          GLint drawBuffer,
                          const GLint * value) {
+    fp_flush_immediate_batch();
     framebuffer_t *framebuffer = get_framebuffer(GL_DRAW_FRAMEBUFFER);
     if(framebuffer && buffer == GL_COLOR) {
         GLenum attachment = map_attachment(framebuffer, GL_COLOR_ATTACHMENT0 + drawBuffer);
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
-    GLTRACE_CALL(glClearBufferiv, es3_functions.glClearBufferiv(buffer, drawBuffer, value));
+    es3_functions.glClearBufferiv(buffer, drawBuffer, value);
 }
 
 void glClearBufferuiv( 	GLenum buffer,
                           GLint drawBuffer,
                           const GLuint * value) {
+    fp_flush_immediate_batch();
     framebuffer_t *framebuffer = get_framebuffer(GL_DRAW_FRAMEBUFFER);
     if(framebuffer && buffer == GL_COLOR) {
         GLenum attachment = map_attachment(framebuffer, GL_COLOR_ATTACHMENT0 + drawBuffer);
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
-    GLTRACE_CALL(glClearBufferuiv, es3_functions.glClearBufferuiv(buffer, drawBuffer, value));
+    es3_functions.glClearBufferuiv(buffer, drawBuffer, value);
 }
 
 void glClearBufferfv( 	GLenum buffer,
                          GLint drawBuffer,
                          const GLfloat * value) {
+    fp_flush_immediate_batch();
     framebuffer_t *framebuffer = get_framebuffer(GL_DRAW_FRAMEBUFFER);
     if(framebuffer && buffer == GL_COLOR) {
         GLenum attachment = map_attachment(framebuffer, GL_COLOR_ATTACHMENT0 + drawBuffer);
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
-    GLTRACE_CALL(glClearBufferfv, es3_functions.glClearBufferfv(buffer, drawBuffer, value));
+    es3_functions.glClearBufferfv(buffer, drawBuffer, value);
 }
 
 void glDrawBuffers(GLsizei n, const GLenum* buffers) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     if(n > MAX_DRAWBUFFERS) {
         LTW_ERROR_PRINTF("LTW: glDrawBuffers n=%d exceeds MAX_DRAWBUFFERS=%d", n, MAX_DRAWBUFFERS);
         return;
@@ -182,7 +187,7 @@ void glDrawBuffers(GLsizei n, const GLenum* buffers) {
         if(buffer != GL_NONE) phys_drawbuffers[i] = GL_COLOR_ATTACHMENT0+i;
         else phys_drawbuffers[i] = GL_NONE;
     }
-    GLTRACE_CALL(glDrawBuffers, es3_functions.glDrawBuffers(n, phys_drawbuffers));
+    es3_functions.glDrawBuffers(n, phys_drawbuffers);
 }
 
 void glDrawBuffer(GLenum buffer) {
@@ -366,7 +371,8 @@ void glDeleteFramebuffers(GLsizei n, const GLuint* framebuffers) {
 
 void glBindFramebuffer(GLenum target, GLuint framebuffer) {
     if(!current_context) return;
-    GLTRACE_CALL(glBindFramebuffer, es3_functions.glBindFramebuffer(target, framebuffer));
+    fp_flush_immediate_batch();
+    es3_functions.glBindFramebuffer(target, framebuffer);
     switch (target) {
         case GL_FRAMEBUFFER:
             current_context->read_framebuffer = current_context->draw_framebuffer = framebuffer;

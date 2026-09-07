@@ -263,7 +263,9 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint 
         skip_upload = false;
     }
     if(!skip_upload) {
-        es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)tri_count * 4, indices, GL_STREAM_DRAW);
+        es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                                   (GLsizeiptr)tri_count * 4,
+                                   indices, GL_STREAM_DRAW);
         if(src_ebo != 0) {
             ctx->quads_last_ebo = src_ebo;
             ctx->quads_last_gen = src_gen;
@@ -287,9 +289,11 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint 
     if(fp_bound) {
         fp_prepare_client_arrays(quads * 4);
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+        fp_ge_check("quads_de_bound");
         fp_unbind_default_program();
     } else {
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+        fp_ge_check("quads_de_nobound");
     }
 
     // fp_unbind_default_program 已恢复应用 VAO，这里恢复它原来的 EAB 绑定。
