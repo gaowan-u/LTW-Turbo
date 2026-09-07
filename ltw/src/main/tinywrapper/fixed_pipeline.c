@@ -487,6 +487,34 @@ static void fp_ge_diag_buffer(const char* tag, GLuint expect) {
     GLboolean isb = es3_functions.glIsBuffer(expect);
     LTW_ERROR_PRINTF("[GE] %s BUF-DIAG expect=%u actual_bound=%d isBuffer=%d ctx=%p",
                      tag, expect, bound, (int)isb, (void*)current_context);
+    // MathCode: 2026-09-07 就地实验（每500次错误做一次，首个必做）：
+    // a) 全新临时 buffer 上 glBufferData —— 错 → 全局状态问题
+    // b) 对 expect 重绑后小尺寸 glBufferData —— 错 → buffer 本身异常
+    // c) 查 TF 绑定 / buffer mapped / usage / immutable 标志
+    static int exp_counter = 0;
+    if(exp_counter++ % 500 != 0) return;
+    GLint tfb = -1, mapped = -1, access = -1, usage = -1, bufsize = -1;
+    es3_functions.glGetIntegerv(GL_TRANSFORM_FEEDBACK_BUFFER_BINDING, &tfb);
+    es3_functions.glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_MAPPED, &mapped);
+    es3_functions.glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_ACCESS_FLAGS, &access);
+    es3_functions.glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_USAGE, &usage);
+    es3_functions.glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bufsize);
+    GLenum e1 = es3_functions.glGetError();
+    GLuint tmp = 0;
+    es3_functions.glGenBuffers(1, &tmp);
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, tmp);
+    es3_functions.glBufferData(GL_ARRAY_BUFFER, 16, NULL, GL_STREAM_DRAW);
+    GLenum e_newbuf = es3_functions.glGetError();
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, expect);
+    es3_functions.glBufferData(GL_ARRAY_BUFFER, 16, NULL, GL_STREAM_DRAW);
+    GLenum e_expbuf = es3_functions.glGetError();
+    LTW_ERROR_PRINTF("[GE] %s EXP pre=0x%04X tfb=%d mapped=%d access=0x%x usage=0x%x size=%d "
+                     "newbuf(id=%u)=0x%04X expbuf=0x%04X",
+                     tag, e1, tfb, mapped, access, usage, bufsize,
+                     tmp, e_newbuf, e_expbuf);
+    es3_functions.glDeleteBuffers(1, &tmp);
+    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)bound);
+    es3_functions.glGetError();
 }
 static GLint fp_client_color_size = 0;
 static GLenum fp_client_color_type = GL_FLOAT;
