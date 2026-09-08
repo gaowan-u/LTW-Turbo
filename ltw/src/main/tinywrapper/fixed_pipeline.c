@@ -10,6 +10,7 @@
  *  - 纹理/程序/缓冲绑定的 CPU 跟踪，减少每帧驱动查询
  *  - 所有状态都是 context 无关的进程级状态（固定管线只有一个）
  */
+#define _GNU_SOURCE
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
