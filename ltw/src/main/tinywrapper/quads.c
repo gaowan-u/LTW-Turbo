@@ -87,6 +87,7 @@ void ltw_ebo_shadow_upload(GLenum target, GLsizeiptr size, const void* data, GLi
 
     GLint eab = 0;
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
+    fp_ge_check("fq_glGetIntegerv");
     if(eab == 0) return;
     // LTW 自己的 scratch/multidraw 缓冲不影子化（内容由展开/拷贝生成，无同步收益）
     if((GLuint)eab == current_context->quads_scratch_buffer ||
@@ -178,6 +179,7 @@ static uint32_t* quads_read_indices(GLenum type, GLsizei count, const void* indi
 
     GLint eab = 0;
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
+    fp_ge_check("fq_glGetIntegerv");
 
     const void* src = indices;
     void* mapped = NULL;
@@ -192,6 +194,7 @@ static uint32_t* quads_read_indices(GLenum type, GLsizei count, const void* indi
             src = shadow;
         } else {
             es3_functions.glGetIntegerv(GL_COPY_READ_BUFFER_BINDING, &copy_ebo);
+            fp_ge_check("fq_glGetIntegerv");
             es3_functions.glBindBuffer(GL_COPY_READ_BUFFER, (GLuint)eab);
             mapped = es3_functions.glMapBufferRange(GL_COPY_READ_BUFFER,
                                                     (GLintptr)indices,
@@ -199,6 +202,7 @@ static uint32_t* quads_read_indices(GLenum type, GLsizei count, const void* indi
                                                     GL_MAP_READ_BIT);
             if(!mapped) {
                 es3_functions.glBindBuffer(GL_COPY_READ_BUFFER, (GLuint)copy_ebo);
+                fp_ge_check("fq_glBindBuffer");
                 return NULL;
             }
             src = mapped;
@@ -221,6 +225,7 @@ static uint32_t* quads_read_indices(GLenum type, GLsizei count, const void* indi
 
     if(mapped) {
         es3_functions.glUnmapBuffer(GL_COPY_READ_BUFFER);
+        fp_ge_check("fq_glUnmapBuffer");
         es3_functions.glBindBuffer(GL_COPY_READ_BUFFER, (GLuint)copy_ebo);
     }
     return out;
@@ -239,6 +244,7 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint 
     GLsizei tri_count = quads * 6;
     GLint eab = 0;
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
+    fp_ge_check("fq_glGetIntegerv");
 
     // 无 program 时用固定管线默认 shader（MC 1.12 GUI 的 QUADS 即时模式路径）
     bool fp_bound = fp_bind_default_program();
@@ -246,6 +252,7 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint 
     // 私有 fp_vao，必须在这里把 scratch EBO 绑进 fp_vao，再上传索引并绘制，
     // 否则 glDrawElements 会读到 fp_vao 里残留的旧 EBO（时序相关，偶发黑块）。
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ctx->quads_scratch_buffer);
+    fp_ge_check("fq_glBindBuffer");
     // 同一来源 EBO + 同一数据版本 + 同样顶点数时，scratch 内容未变，跳过重新上传
     bool skip_upload;
     if(src_ebo != 0) {
@@ -289,15 +296,18 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint 
     if(fp_bound) {
         fp_prepare_client_arrays(quads * 4);
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+        fp_ge_check("fq_glDrawElements");
         fp_ge_check("quads_de_bound");
         fp_unbind_default_program();
     } else {
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+        fp_ge_check("fq_glDrawElements");
         fp_ge_check("quads_de_nobound");
     }
 
     // fp_unbind_default_program 已恢复应用 VAO，这里恢复它原来的 EAB 绑定。
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
+    fp_ge_check("fq_glBindBuffer");
 }
 
 // 确保展开用的可复用缓冲区容量足够

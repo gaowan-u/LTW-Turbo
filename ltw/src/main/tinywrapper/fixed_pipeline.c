@@ -484,6 +484,7 @@ static void fp_ge_diag_buffer(const char* tag, GLuint expect) {
     if(!ltw_glerr_trace) return;
     GLint bound = -1;
     es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &bound);
+    fp_ge_check("fp_glGetIntegerv");
     GLboolean isb = es3_functions.glIsBuffer(expect);
     LTW_ERROR_PRINTF("[GE] %s BUF-DIAG expect=%u actual_bound=%d isBuffer=%d ctx=%p",
                      tag, expect, bound, (int)isb, (void*)current_context);
@@ -495,17 +496,23 @@ static void fp_ge_diag_buffer(const char* tag, GLuint expect) {
     if(exp_counter++ % 500 != 0) return;
     GLint tfb = -1, mapped = -1, access = -1, usage = -1, bufsize = -1;
     es3_functions.glGetIntegerv(GL_TRANSFORM_FEEDBACK_BUFFER_BINDING, &tfb);
+    fp_ge_check("fp_glGetIntegerv");
     es3_functions.glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_MAPPED, &mapped);
     es3_functions.glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_ACCESS_FLAGS, &access);
+    fp_ge_check("fp_glGetBufferParameteriv");
     es3_functions.glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_USAGE, &usage);
     es3_functions.glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bufsize);
+    fp_ge_check("fp_glGetBufferParameteriv");
     GLenum e1 = es3_functions.glGetError();
     GLuint tmp = 0;
     es3_functions.glGenBuffers(1, &tmp);
+    fp_ge_check("fp_glGenBuffers");
     es3_functions.glBindBuffer(GL_ARRAY_BUFFER, tmp);
     es3_functions.glBufferData(GL_ARRAY_BUFFER, 16, NULL, GL_STREAM_DRAW);
+    fp_ge_check("fp_glBufferData");
     GLenum e_newbuf = es3_functions.glGetError();
     es3_functions.glBindBuffer(GL_ARRAY_BUFFER, expect);
+    fp_ge_check("fp_glBindBuffer");
     es3_functions.glBufferData(GL_ARRAY_BUFFER, 16, NULL, GL_STREAM_DRAW);
     GLenum e_expbuf = es3_functions.glGetError();
     LTW_ERROR_PRINTF("[GE] %s EXP pre=0x%04X tfb=%d mapped=%d access=0x%x usage=0x%x size=%d "
@@ -513,6 +520,7 @@ static void fp_ge_diag_buffer(const char* tag, GLuint expect) {
                      tag, e1, tfb, mapped, access, usage, bufsize,
                      tmp, e_newbuf, e_expbuf);
     es3_functions.glDeleteBuffers(1, &tmp);
+    fp_ge_check("fp_glDeleteBuffers");
     es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)bound);
     es3_functions.glGetError();
 }
@@ -714,71 +722,97 @@ static void fp_ensure_program(void) {
     if(!current_context) return;
 
     GLuint vs = es3_functions.glCreateShader(GL_VERTEX_SHADER);
+    fp_ge_check("fp_glCreateShader");
     GLuint fs = es3_functions.glCreateShader(GL_FRAGMENT_SHADER);
     if(!vs || !fs) { es3_functions.glDeleteShader(vs); es3_functions.glDeleteShader(fs); return; }
 
     es3_functions.glShaderSource(vs, 1, &fp_vertex_shader_src, NULL);
+    fp_ge_check("fp_glShaderSource");
     es3_functions.glCompileShader(vs);
     GLint ok = 0;
     es3_functions.glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+    fp_ge_check("fp_glGetShaderiv");
     if(!ok) {
         GLchar log[512] = {0};
         es3_functions.glGetShaderInfoLog(vs, sizeof(log), NULL, log);
+        fp_ge_check("fp_glGetShaderInfoLog");
         LTW_ERROR_PRINTF("fp: vertex shader compile failed: %s", log);
         es3_functions.glDeleteShader(vs);
+        fp_ge_check("fp_glDeleteShader");
         es3_functions.glDeleteShader(fs);
         return;
     }
 
     es3_functions.glShaderSource(fs, 1, &fp_fragment_shader_src, NULL);
+    fp_ge_check("fp_glShaderSource");
     es3_functions.glCompileShader(fs);
     es3_functions.glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+    fp_ge_check("fp_glGetShaderiv");
     if(!ok) {
         GLchar log[512] = {0};
         es3_functions.glGetShaderInfoLog(fs, sizeof(log), NULL, log);
+        fp_ge_check("fp_glGetShaderInfoLog");
         LTW_ERROR_PRINTF("fp: fragment shader compile failed: %s", log);
         es3_functions.glDeleteShader(vs);
+        fp_ge_check("fp_glDeleteShader");
         es3_functions.glDeleteShader(fs);
         return;
     }
 
     GLuint prog = es3_functions.glCreateProgram();
+    fp_ge_check("fp_glCreateProgram");
     es3_functions.glAttachShader(prog, vs);
     es3_functions.glAttachShader(prog, fs);
+    fp_ge_check("fp_glAttachShader");
     es3_functions.glLinkProgram(prog);
     es3_functions.glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    fp_ge_check("fp_glGetProgramiv");
     if(!ok) {
         GLchar log[512] = {0};
         es3_functions.glGetProgramInfoLog(prog, sizeof(log), NULL, log);
+        fp_ge_check("fp_glGetProgramInfoLog");
         LTW_ERROR_PRINTF("fp: program link failed: %s", log);
         es3_functions.glDeleteProgram(prog);
+        fp_ge_check("fp_glDeleteProgram");
         es3_functions.glDeleteShader(vs);
         es3_functions.glDeleteShader(fs);
+        fp_ge_check("fp_glDeleteShader");
         return;
     }
 
     fp_program = prog;
     fp_mvp_loc = es3_functions.glGetUniformLocation(prog, "uMVP");
+    fp_ge_check("fp_glGetUniformLocation");
     fp_tex_loc = es3_functions.glGetUniformLocation(prog, "uTex");
     fp_usetex_loc = es3_functions.glGetUniformLocation(prog, "uUseTex");
+    fp_ge_check("fp_glGetUniformLocation");
     fp_usecolor_loc = es3_functions.glGetUniformLocation(prog, "uUseColor");
     fp_alphafunc_loc = es3_functions.glGetUniformLocation(prog, "uAlphaFunc");
+    fp_ge_check("fp_glGetUniformLocation");
     fp_alpharef_loc = es3_functions.glGetUniformLocation(prog, "uAlphaRef");
     fp_single_loc = es3_functions.glGetUniformLocation(prog, "uSingle");
+    fp_ge_check("fp_glGetUniformLocation");
     fp_color_loc = es3_functions.glGetUniformLocation(prog, "uColor");
     fp_lighttint_loc = es3_functions.glGetUniformLocation(prog, "uLightTint");
+    fp_ge_check("fp_glGetUniformLocation");
     fp_lightcolor_loc = es3_functions.glGetUniformLocation(prog, "uLightColor");
     fp_lightmap_loc = es3_functions.glGetUniformLocation(prog, "uLightMap");
+    fp_ge_check("fp_glGetUniformLocation");
     fp_uselightmap_loc = es3_functions.glGetUniformLocation(prog, "uUseLightMap");
     fp_lightmapuv_loc = es3_functions.glGetUniformLocation(prog, "uLightMapUV");
+    fp_ge_check("fp_glGetUniformLocation");
 
     es3_functions.glGenBuffers(1, &fp_vbo);
+    fp_ge_check("fp_glGenBuffers");
     es3_functions.glGenBuffers(1, &fp_vbo_pos);
     es3_functions.glGenBuffers(1, &fp_vbo_color);
+    fp_ge_check("fp_glGenBuffers");
     es3_functions.glGenBuffers(1, &fp_vbo_uv);
     es3_functions.glGenVertexArrays(1, &fp_vao);
+    fp_ge_check("fp_glGenVertexArrays");
     es3_functions.glGenBuffers(1, &fp_index_ebo);
     es3_functions.glGenBuffers(1, &fp_batch_ebo);
+    fp_ge_check("fp_glGenBuffers");
     // MathCode: 2026-08-25 句柄失效诊断——每次 program/对象重建打印句柄与 context
     if(ltw_glerr_trace) {
         LTW_ERROR_PRINTF("[GE] ctx_objs program=%u vao=%u vbo=%u idxebo=%u batchebo=%u ctx=%p",
@@ -787,12 +821,14 @@ static void fp_ensure_program(void) {
     }
 
     es3_functions.glDeleteShader(vs);
+    fp_ge_check("fp_glDeleteShader");
     es3_functions.glDeleteShader(fs);
 }
 
 // 绑定 VAO 并同步 CPU 跟踪（替代绘制前的 glGetIntegerv(GL_VERTEX_ARRAY_BINDING)）
 static void fp_gl_bind_vao(GLuint vao) {
     es3_functions.glBindVertexArray(vao);
+    fp_ge_check("fp_glBindVertexArray");
     fp_app_vao = vao;
 }
 
@@ -855,6 +891,7 @@ static void fp_flush_immediate(void) {
             memcpy(t + 5 * FP_STRIDE, d, FP_VERTEX_BYTES);
         }
         es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)tri_count * FP_VERTEX_BYTES, expanded, GL_STREAM_DRAW);
+        fp_ge_check("fp_glBufferData");
         count = tri_count;
         mode = GL_TRIANGLES;
     } else {
@@ -865,6 +902,7 @@ static void fp_flush_immediate(void) {
     // 绑定默认 program + 属性（使用私有 VAO，避免污染应用绑定的 VAO）
     fp_gl_bind_vao(fp_vao);
     es3_functions.glUseProgram(fp_program);
+    fp_ge_check("fp_glUseProgram");
     if(current_context) current_context->program = fp_program;
     fp_ge_check("imm_useprog");
     // 即时模式（GUI 文字/矩形）不带 unit1 坐标：禁用残留的 UV1 属性并
@@ -875,10 +913,13 @@ static void fp_flush_immediate(void) {
     fp_ge_check("imm_uni");
     {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+        fp_ge_check("fp_glEnableVertexAttribArray");
         es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
         es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+        fp_ge_check("fp_glEnableVertexAttribArray");
         es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
         es3_functions.glVertexAttribPointer(FP_ATTR_POS, 3, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES, NULL);
+        fp_ge_check("fp_glVertexAttribPointer");
         es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, 4, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
                                             (const void*)(3 * sizeof(GLfloat)));
         es3_functions.glVertexAttribPointer(FP_ATTR_UV, 2, GL_FLOAT, GL_FALSE, FP_VERTEX_BYTES,
@@ -889,11 +930,13 @@ static void fp_flush_immediate(void) {
         // 批处理 strip：把多段 TRIANGLE_STRIP/LINE_STRIP 用固定重启索引
         // （0xFFFFFFFF）连成一次 glDrawElements，段与段之间不会生成多余三角形。
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, fp_batch_ebo);
+        fp_ge_check("fp_glBindBuffer");
         es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER,
                                    (GLsizeiptr)fp_submit_index_count * sizeof(uint32_t),
                                    fp_submit_indices, GL_STREAM_DRAW);
         if(!fp_restart_enabled) {
             es3_functions.glEnable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+            fp_ge_check("fp_glEnable");
             fp_restart_enabled = true;
         }
         es3_functions.glDrawElements(fp_immediate_mode, fp_submit_index_count,
@@ -901,12 +944,15 @@ static void fp_flush_immediate(void) {
         fp_ge_check("imm_de");
         if(fp_restart_enabled) {
             es3_functions.glDisable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+            fp_ge_check("fp_glDisable");
             fp_restart_enabled = false;
         }
         // 清掉 fp_vao 上的 EBO，避免影响后续非索引路径
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        fp_ge_check("fp_glBindBuffer");
     } else {
         es3_functions.glDrawArrays(mode, 0, count);
+        fp_ge_check("fp_glDrawArrays");
         fp_ge_check("imm_da");
     }
 
@@ -919,6 +965,7 @@ static void fp_flush_immediate(void) {
     dl_current_vao = (GLuint)old_vao;
     if(old_program != (GLint)fp_program) {
         es3_functions.glUseProgram((GLuint)old_program);
+        fp_ge_check("fp_glUseProgram");
         if(current_context) current_context->program = (GLuint)old_program;
     }
 
@@ -1021,6 +1068,7 @@ void fp_flush_immediate_batch(void) {
 
     // 应用批次快照：绑定录制时的纹理，并把矩阵栈临时变成“MVP=快照”
     es3_functions.glBindTexture(GL_TEXTURE_2D, fp_batch_texture);
+    fp_ge_check("fp_glBindTexture");
     fp_bound_texture = fp_batch_texture;
     fp_bound_single_channel = fp_batch_single;
     fp_bound_texture_valid = true;
@@ -1036,6 +1084,7 @@ void fp_flush_immediate_batch(void) {
     // 已被行间 drawRect 的 enableBlend 打开，若不还原，文字会带着混合画。
     if(fp_batch_blend_enabled) es3_functions.glEnable(GL_BLEND);
     else es3_functions.glDisable(GL_BLEND);
+    fp_ge_check("fp_glBlend2");
     es3_functions.glBlendFuncSeparate(fp_batch_blend_sfactor_rgb,
                                       fp_batch_blend_dfactor_rgb,
                                       fp_batch_blend_sfactor_alpha,
@@ -1106,6 +1155,7 @@ void fp_flush_immediate_batch(void) {
     // 如果这里把字形纹理留在 unit0，下一帧它会以为没换纹理而直接绘制，
     // 导致世界/HUD 采样到字体贴图。
     es3_functions.glBindTexture(GL_TEXTURE_2D, saved_tex);
+    fp_ge_check("fp_glBindTexture");
     fp_bound_texture = saved_tex;
     fp_bound_single_channel = saved_single;
     fp_bound_texture_valid = true;
@@ -1119,6 +1169,7 @@ void fp_flush_immediate_batch(void) {
     // 恢复应用侧混合状态（GL + CPU）
     if(saved_blend_enabled) es3_functions.glEnable(GL_BLEND);
     else es3_functions.glDisable(GL_BLEND);
+    fp_ge_check("fp_glBlend2");
     es3_functions.glBlendFuncSeparate(saved_blend_sfactor_rgb,
                                       saved_blend_dfactor_rgb,
                                       saved_blend_sfactor_alpha,
@@ -1470,6 +1521,7 @@ static GLint fp_client_color_abo = 0;
 static GLint fp_current_abo(void) {
     GLint abo = 0;
     es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &abo);
+    fp_ge_check("fp_glGetIntegerv");
     return abo;
 }
 
@@ -1679,13 +1731,16 @@ static void fp_refresh_bound_texture(void) {
     // 把光照贴图当成方块纹理。
     GLint old_active = 0;
     es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active);
+    fp_ge_check("fp_glGetIntegerv");
     if(old_active != GL_TEXTURE0) es3_functions.glActiveTexture(GL_TEXTURE0);
     GLint tex = 0;
     es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+    fp_ge_check("fp_glGetIntegerv");
     fp_bound_texture = (GLuint)tex;
     fp_bound_single_channel = (tex != 0) && fp_texfmt_resolve((GLuint)tex);
     fp_bound_texture_valid = true;
     if(old_active != GL_TEXTURE0) es3_functions.glActiveTexture((GLenum)old_active);
+    fp_ge_check("fp_glActiveTexture");
     // 同步内部活动单元跟踪（refresh 结束后活动单元即 old_active）
     fp_active_texture = (GLenum)old_active;
 }
@@ -1719,6 +1774,7 @@ void fp_texture_upload_invalidate(void) {
 static void fp_set_default_uniforms(void) {
     GLint curprog = -1;
     es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &curprog);
+    fp_ge_check("fp_glGetIntegerv");
     fp_ge_chk("sduni_prog", "curprog=%d fpprog=%u init=%d",
               curprog, fp_program, fp_uniforms_initialized ? 1 : 0);
     GLfloat mvp[FP_MATRIX_SIZE];
@@ -1729,41 +1785,49 @@ static void fp_set_default_uniforms(void) {
     if(!fp_uniforms_initialized ||
        memcmp(fp_last_mvp, mvp, sizeof(fp_last_mvp)) != 0) {
         if(fp_mvp_loc >= 0) es3_functions.glUniformMatrix4fv(fp_mvp_loc, 1, GL_FALSE, mvp);
+        fp_ge_check("fp_glUniformMatrix4fv");
         memcpy(fp_last_mvp, mvp, sizeof(fp_last_mvp));
     }
     GLint usetex = (fp_bound_texture != 0 && fp_texture_enabled[0]) ? 1 : 0;
     if(!fp_uniforms_initialized || fp_last_tex != 0) {
         if(fp_tex_loc >= 0) es3_functions.glUniform1i(fp_tex_loc, 0);
+        fp_ge_check("fp_glUniform1i");
         fp_last_tex = 0;
     }
     // 有顶点色用顶点色，否则用当前色（glColor4f 状态）——固定管线语义
     GLint usecolor = fp_immediate_active ? 1 : (fp_client_color_active ? 1 : 0);
     if(!fp_uniforms_initialized || fp_last_usetex != usetex) {
         if(fp_usetex_loc >= 0) es3_functions.glUniform1i(fp_usetex_loc, usetex);
+        fp_ge_check("fp_glUniform1i");
         fp_last_usetex = usetex;
     }
     if(!fp_uniforms_initialized || fp_last_usecolor != usecolor) {
         if(fp_usecolor_loc >= 0) es3_functions.glUniform1i(fp_usecolor_loc, usecolor);
+        fp_ge_check("fp_glUniform1i");
         fp_last_usecolor = usecolor;
     }
     if(!fp_uniforms_initialized ||
        memcmp(fp_last_color, fp_current_color, sizeof(fp_last_color)) != 0) {
         if(fp_color_loc >= 0) es3_functions.glUniform4fv(fp_color_loc, 1, fp_current_color);
+        fp_ge_check("fp_glUniform4fv");
         memcpy(fp_last_color, fp_current_color, sizeof(fp_last_color));
     }
     GLint single = fp_bound_single_channel ? 1 : 0;
     if(!fp_uniforms_initialized || fp_last_single != single) {
         if(fp_single_loc >= 0) es3_functions.glUniform1i(fp_single_loc, single);
+        fp_ge_check("fp_glUniform1i");
         fp_last_single = single;
     }
     GLint lighttint = fp_light_tint ? 1 : 0;
     if(!fp_uniforms_initialized || fp_last_lighttint != lighttint) {
         if(fp_lighttint_loc >= 0) es3_functions.glUniform1i(fp_lighttint_loc, lighttint);
+        fp_ge_check("fp_glUniform1i");
         fp_last_lighttint = lighttint;
     }
     if(!fp_uniforms_initialized ||
        memcmp(fp_last_lightcolor, fp_texenv_state[1].color, sizeof(fp_last_lightcolor)) != 0) {
         if(fp_lightcolor_loc >= 0) es3_functions.glUniform4fv(fp_lightcolor_loc, 1, fp_texenv_state[1].color);
+        fp_ge_check("fp_glUniform4fv");
         memcpy(fp_last_lightcolor, fp_texenv_state[1].color, sizeof(fp_last_lightcolor));
     }
     // shader 里用 0..7 表示 GL_NEVER..GL_ALWAYS，不能直接传原始 GLenum
@@ -1784,11 +1848,13 @@ static void fp_set_default_uniforms(void) {
     }
     if(!fp_uniforms_initialized || fp_last_alphafunc != alpha_mode) {
         if(fp_alphafunc_loc >= 0) es3_functions.glUniform1i(fp_alphafunc_loc, alpha_mode);
+        fp_ge_check("fp_glUniform1i");
         fp_last_alphafunc = alpha_mode;
     }
     GLfloat alpha_ref = fp_alpha_test ? fp_alpha_ref : 0.0f;
     if(!fp_uniforms_initialized || fp_last_alpharef != alpha_ref) {
         if(fp_alpharef_loc >= 0) es3_functions.glUniform1f(fp_alpharef_loc, alpha_ref);
+        fp_ge_check("fp_glUniform1f");
         fp_last_alpharef = alpha_ref;
     }
     // 昼夜亮度开关：0=关，1=顶点 UV1（方块），2=常量 UV（实体/掉落物）。
@@ -1809,6 +1875,7 @@ static void fp_set_default_uniforms(void) {
     }
     if(!fp_uniforms_initialized || fp_last_uselightmap != uselightmap) {
         if(fp_uselightmap_loc >= 0) es3_functions.glUniform1i(fp_uselightmap_loc, uselightmap);
+        fp_ge_check("fp_glUniform1i");
         fp_ge_chk("uni_uselm", "val=%d uv1act=%d const=%d tex1=%u",
                   uselightmap, fp_client_uv1_active ? 1 : 0,
                   fp_lightmap_const_active ? 1 : 0, fp_bound_texture1);
@@ -1820,6 +1887,7 @@ static void fp_set_default_uniforms(void) {
        memcmp(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv)) != 0)) {
         if(fp_lightmap_const_active) {
             es3_functions.glUniform2fv(fp_lightmapuv_loc, 1, fp_last_lightmap_uv_snap);
+            fp_ge_check("fp_glUniform2fv");
             fp_ge_chk("uni_luv", "u=%.3f v=%.3f",
                       fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1]);
             memcpy(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv));
@@ -1833,11 +1901,14 @@ static void fp_set_default_uniforms(void) {
         GLenum old_active = fp_active_texture;
         if(old_active != GL_TEXTURE1) {
             es3_functions.glActiveTexture(GL_TEXTURE1);
+            fp_ge_check("fp_glActiveTexture");
             fp_active_texture = GL_TEXTURE1;
         }
         es3_functions.glUniform1i(fp_lightmap_loc, 1);
+        fp_ge_check("fp_glUniform1i");
         if(old_active != GL_TEXTURE1) {
             es3_functions.glActiveTexture(old_active);
+            fp_ge_check("fp_glActiveTexture");
             fp_active_texture = old_active;
         }
     }
@@ -1854,6 +1925,7 @@ bool fp_bind_default_program(void) {
     if(!fp_program) return false;
     fp_refresh_bound_texture();
     es3_functions.glUseProgram(fp_program);
+    fp_ge_check("fp_glUseProgram");
     if(current_context) current_context->program = fp_program;
     fp_ge_check("bdp_useprog");
     fp_set_default_uniforms();
@@ -1907,6 +1979,7 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
     // 位置 attribute：offset 0
     {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+        fp_ge_check("fp_glEnableVertexAttribArray");
         es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
                                             GL_FALSE, fp_client_vertex_stride, NULL);
         fp_ge_chk("upl_pos", "sz=%d ty=0x%x st=%d",
@@ -1917,15 +1990,18 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
             ptrdiff_t off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
             if(off >= 0 && (size_t)off < vsize) {
                 es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+                fp_ge_check("fp_glEnableVertexAttribArray");
                 es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
                                                     GL_FALSE, fp_client_vertex_stride, (const void*)off);
                 fp_ge_chk("upl_uv", "off=%d sz=%d ty=0x%x st=%d",
                           (int)off, fp_client_texcoord_size, fp_client_texcoord_type, fp_client_vertex_stride);
             } else {
                 es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+                fp_ge_check("fp_glDisableVertexAttribArray");
             }
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+            fp_ge_check("fp_glDisableVertexAttribArray");
         }
         // 颜色 attribute：偏移 = color 指针 - 顶点指针
         fp_client_color_active = (fp_client_color_enabled && fp_client_color_size > 0 && fp_client_color_ptr);
@@ -1933,6 +2009,7 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
             ptrdiff_t off = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
             if(off >= 0 && (size_t)off < vsize) {
                 es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+                fp_ge_check("fp_glEnableVertexAttribArray");
                 es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
                                                     GL_TRUE, fp_client_vertex_stride, (const void*)off);
                 fp_ge_chk("upl_col", "off=%d sz=%d ty=0x%x st=%d",
@@ -1940,9 +2017,11 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
             } else {
                 fp_client_color_active = false;
                 es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+                fp_ge_check("fp_glDisableVertexAttribArray");
             }
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+            fp_ge_check("fp_glDisableVertexAttribArray");
         }
         // unit1（光照贴图）坐标 attribute：偏移 = 指针差（交错缓冲内）。
         // MathCode: 2026-08-11 掉落物闪烁/GUI 变色根因修复——条件改为
@@ -1954,6 +2033,7 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
             ptrdiff_t off = (const uint8_t*)fp_client_texcoord1_ptr - (const uint8_t*)fp_client_vertex_ptr;
             if(off >= 0 && (size_t)off < vsize) {
                 es3_functions.glEnableVertexAttribArray(FP_ATTR_UV1);
+                fp_ge_check("fp_glEnableVertexAttribArray");
                 es3_functions.glVertexAttribPointer(FP_ATTR_UV1, fp_client_texcoord1_size,
                                                     fp_client_texcoord1_type, GL_FALSE,
                                                     fp_client_vertex_stride, (const void*)off);
@@ -1977,10 +2057,12 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
                 }
             } else {
                 es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
+                fp_ge_check("fp_glDisableVertexAttribArray");
                 fp_client_uv1_active = false;
             }
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
+            fp_ge_check("fp_glDisableVertexAttribArray");
             fp_client_uv1_active = false;
         }
     }
@@ -2038,6 +2120,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
         if(vbo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)vbo);
         if(fp_client_vertex_enabled && fp_client_vertex_size > 0) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+            fp_ge_check("fp_glEnableVertexAttribArray");
             es3_functions.glVertexAttribPointer(FP_ATTR_POS, fp_client_vertex_size, fp_client_vertex_type,
                                                 GL_FALSE, fp_client_vertex_stride, fp_client_vertex_ptr);
             fp_ge_chk("vbo_pos", "sz=%d ty=0x%x st=%d off=%d cnt=%d",
@@ -2050,6 +2133,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
         if(fp_client_color_enabled && fp_client_color_size > 0) {
             fp_client_color_active = true;
             es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+            fp_ge_check("fp_glEnableVertexAttribArray");
             es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, fp_client_color_size, fp_client_color_type,
                                                 GL_TRUE, fp_client_color_stride, fp_client_color_ptr);
             fp_ge_chk("vbo_col", "sz=%d ty=0x%x st=%d off=%d",
@@ -2058,12 +2142,14 @@ bool fp_prepare_client_arrays(GLsizei count) {
         } else {
             fp_client_color_active = false;
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+            fp_ge_check("fp_glDisableVertexAttribArray");
         }
         if(cbo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
         GLint ubo = fp_client_texcoord_abo ? fp_client_texcoord_abo : old_abo;
         if(ubo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)ubo);
         if(fp_client_texcoord_enabled && fp_client_texcoord_size > 0) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+            fp_ge_check("fp_glEnableVertexAttribArray");
             es3_functions.glVertexAttribPointer(FP_ATTR_UV, fp_client_texcoord_size, fp_client_texcoord_type,
                                                 GL_FALSE, fp_client_texcoord_stride, fp_client_texcoord_ptr);
             fp_ge_chk("vbo_uv", "sz=%d ty=0x%x st=%d off=%d",
@@ -2071,6 +2157,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
                       (int)(intptr_t)fp_client_texcoord_ptr);
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+            fp_ge_check("fp_glDisableVertexAttribArray");
         }
         if(ubo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
         // unit1（光照贴图）坐标：与 unit0 UV 同缓冲（交错布局），各自绑定
@@ -2090,6 +2177,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
            v1off > 0 && v1stride > 0 &&
             (size_t)v1off + v1stride <= (size_t)count * v1stride) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_UV1);
+            fp_ge_check("fp_glEnableVertexAttribArray");
             es3_functions.glVertexAttribPointer(FP_ATTR_UV1, fp_client_texcoord1_size,
                                                 fp_client_texcoord1_type, GL_FALSE,
                                                 fp_client_texcoord1_stride, fp_client_texcoord1_ptr);
@@ -2099,6 +2187,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
             fp_client_uv1_active = true;
         } else {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
+            fp_ge_check("fp_glDisableVertexAttribArray");
             fp_client_uv1_active = false;
         }
         if(v1bo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
@@ -2118,6 +2207,7 @@ void fp_unbind_default_program(void) {
     // 避免显示列表合并路径基于过期值跳过自己的 VAO 绑定。
     dl_current_vao = (GLuint)fp_saved_vao;
     es3_functions.glUseProgram(0);
+    fp_ge_check("fp_glUseProgram");
     if(current_context) current_context->program = 0;
     fp_ge_check("unb_end");
 }
@@ -2132,6 +2222,7 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
     es3_functions.glDrawArrays(mode, first, count);
+    fp_ge_check("fp_glDrawArrays");
     fp_ge_check("try_da");
     fp_unbind_default_program();
     return true;
@@ -2145,6 +2236,7 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     // indices 会被当作 fp_vao 里残留 EBO 的偏移，画出垃圾几何。
     GLint eab = 0;
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
+    fp_ge_check("fp_glGetIntegerv");
     if(!fp_bind_default_program()) return false;
     if(eab == 0) {
         // GLES 禁止客户端索引指针（桌面 GL 1.x 允许）：无 EBO 时直接把
@@ -2155,20 +2247,25 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
             GLsizeiptr isize = (GLsizeiptr)count * (GLsizeiptr)fp_type_bytes(type);
             if(fp_index_ebo != 0) {
                 es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, fp_index_ebo);
+                fp_ge_check("fp_glBindBuffer");
                 if(isize > fp_index_ebo_cap) {
                     es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, isize, indices, GL_STREAM_DRAW);
+                    fp_ge_check("fp_glBufferData");
                     fp_index_ebo_cap = isize;
                 } else {
                     es3_functions.glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, isize, indices);
+                    fp_ge_check("fp_glBufferSubData");
                 }
                 indices = NULL;
             }
         }
     } else {
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)eab);
+        fp_ge_check("fp_glBindBuffer");
     }
     fp_prepare_client_arrays(count);
     es3_functions.glDrawElements(mode, count, type, indices);
+    fp_ge_check("fp_glDrawElements");
     fp_ge_check(eab == 0 ? "try_de_noeab" : "try_de_eab");
     fp_unbind_default_program();
     return true;
@@ -2349,6 +2446,7 @@ bool fp_dl_capture_client_draw(GLenum mode, GLint first, GLsizei count,
     if(indexed) {
         GLint eab = 0;
         es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &eab);
+        fp_ge_check("fp_glGetIntegerv");
         if(eab != 0) {
             indices_ebo = (GLuint)eab;
             indices_off = (GLintptr)(intptr_t)indices;
@@ -2476,6 +2574,7 @@ static void fp_dl_play_client_draw(const fp_dl_client_snapshot_t* snap, GLenum m
         if(indices_ebo != 0) {
             // 源 EBO 直通
             es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &old_eab);
+            fp_ge_check("fp_glGetIntegerv");
             es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indices_ebo);
             restore_eab = true;
             glDrawElements(mode, count, itype, (const void*)(intptr_t)indices_off);
@@ -2483,8 +2582,10 @@ static void fp_dl_play_client_draw(const fp_dl_client_snapshot_t* snap, GLenum m
         } else if(indices_cpu && indices_len > 0) {
             // GLES 禁止客户端索引指针：上传到内部 scratch EBO
             es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &old_eab);
+            fp_ge_check("fp_glGetIntegerv");
             if(fp_index_ebo != 0) {
                 es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, fp_index_ebo);
+                fp_ge_check("fp_glBindBuffer");
                 if((GLsizeiptr)indices_len > fp_index_ebo_cap) {
                     es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)indices_len,
                                                indices_cpu, GL_STREAM_DRAW);
@@ -2510,6 +2611,7 @@ static void fp_dl_play_client_draw(const fp_dl_client_snapshot_t* snap, GLenum m
     }
     if(restore_eab) {
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)old_eab);
+        fp_ge_check("fp_glBindBuffer");
     }
 
     // 恢复调用前的客户端数组状态
@@ -2537,8 +2639,10 @@ static bool fp_begin_dl_replay(void) {
     fp_ensure_program();
     if(!fp_program || !fp_vao) return false;
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &dl_saved_vao);
+    fp_ge_check("fp_glGetIntegerv");
     es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &dl_saved_abo);
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &dl_saved_eab);
+    fp_ge_check("fp_glGetIntegerv");
     dl_saved_program = current_context ? (GLint)current_context->program : 0;
 
     // 固定管线只消费 unit0 的纹理；先记录应用的活动单元与 unit0 绑定
@@ -2557,6 +2661,7 @@ static bool fp_begin_dl_replay(void) {
                                 fp_bound_texture1 != 0);
 
     es3_functions.glUseProgram(fp_program);
+    fp_ge_check("fp_glUseProgram");
     if(current_context) current_context->program = fp_program;
     fp_gl_bind_vao(fp_vao);
     dl_current_vao = fp_vao;
@@ -2569,10 +2674,12 @@ static bool fp_begin_dl_replay(void) {
 static void fp_end_dl_replay(void) {
     if(dl_saved_texture_valid) {
         es3_functions.glActiveTexture(GL_TEXTURE0);
+        fp_ge_check("fp_glActiveTexture");
         es3_functions.glBindTexture(GL_TEXTURE_2D, (GLuint)dl_saved_bound_tex);
         fp_bound_texture = (GLuint)dl_saved_bound_tex; // unit0 绑定已还原，同步跟踪
     }
     es3_functions.glActiveTexture((GLenum)dl_saved_active_tex);
+    fp_ge_check("fp_glActiveTexture");
     // 同步内部活动单元跟踪，避免后续 glBindTexture 的刷新判断用旧值
     fp_active_texture = (GLenum)dl_saved_active_tex;
     // EAB 属于 VAO：先切回应用 VAO（含默认 VAO 0）再恢复 EAB，
@@ -2584,9 +2691,11 @@ static void fp_end_dl_replay(void) {
     }
     dl_current_vao = (GLuint)dl_saved_vao;
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)dl_saved_eab);
+    fp_ge_check("fp_glBindBuffer");
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
     if((GLint)fp_program != dl_saved_program) {
         es3_functions.glUseProgram((GLuint)dl_saved_program);
+        fp_ge_check("fp_glUseProgram");
         if(current_context) current_context->program = (GLuint)dl_saved_program;
     }
     fp_ge_check("dlreplay_end");
@@ -2618,8 +2727,10 @@ static bool fp_dl_build_client_cache(dl_op_entry_t* op, const dl_client_draw_pay
 
     GLuint vao = 0, vbo = 0, ebo = 0;
     es3_functions.glGenVertexArrays(1, &vao);
+    fp_ge_check("fp_glGenVertexArrays");
     if(vao == 0) return false;
     es3_functions.glGenBuffers(1, &vbo);
+    fp_ge_check("fp_glGenBuffers");
     if(vbo == 0) { es3_functions.glDeleteVertexArrays(1, &vao); return false; }
 
     GLenum draw_mode = p->mode;
@@ -2632,11 +2743,13 @@ static bool fp_dl_build_client_cache(dl_op_entry_t* op, const dl_client_draw_pay
     fp_gl_bind_vao(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)p->vertex_len, vdata, GL_STATIC_DRAW);
+    fp_ge_check("fp_glBufferData");
     fp_ge_chk("cache_buf", "vlen=%u need=%d cnt=%d vsz=%d",
               p->vertex_len, (int)(vsize * p->count), p->count, (int)vsize);
     fp_ge_diag_buffer("cache_buf", vbo);
 
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+    fp_ge_check("fp_glEnableVertexAttribArray");
     es3_functions.glVertexAttribPointer(FP_ATTR_POS, snap->vertex_size, snap->vertex_type,
                                         GL_FALSE, snap->vertex_stride, NULL);
     fp_ge_chk("cache_pos", "sz=%d ty=0x%x st=%d",
@@ -2644,20 +2757,24 @@ static bool fp_dl_build_client_cache(dl_op_entry_t* op, const dl_client_draw_pay
     if(snap->texcoord_enabled && snap->texcoord_size > 0 && snap->texcoord_off >= 0 &&
        (size_t)snap->texcoord_off < vsize) {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+        fp_ge_check("fp_glEnableVertexAttribArray");
         es3_functions.glVertexAttribPointer(FP_ATTR_UV, snap->texcoord_size, snap->texcoord_type,
                                             GL_FALSE, snap->vertex_stride,
                                             (const void*)(intptr_t)snap->texcoord_off);
     } else {
         es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+        fp_ge_check("fp_glDisableVertexAttribArray");
     }
     if(snap->color_enabled && snap->color_size > 0 && snap->color_off >= 0 &&
        (size_t)snap->color_off < vsize) {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+        fp_ge_check("fp_glEnableVertexAttribArray");
         es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, snap->color_size, snap->color_type,
                                             GL_TRUE, snap->vertex_stride,
                                             (const void*)(intptr_t)snap->color_off);
     } else {
         es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+        fp_ge_check("fp_glDisableVertexAttribArray");
     }
 
     if(p->indexed) {
@@ -2722,8 +2839,10 @@ static bool fp_dl_build_client_cache(dl_op_entry_t* op, const dl_client_draw_pay
             isize = (GLsizeiptr)p->indices_len;
         }
         es3_functions.glGenBuffers(1, &ebo);
+        fp_ge_check("fp_glGenBuffers");
         if(ebo == 0) goto fail;
         es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+        fp_ge_check("fp_glBindBuffer");
         es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, isize, idata, GL_STATIC_DRAW);
     }
 
@@ -2736,8 +2855,10 @@ fail:
     fp_gl_bind_vao(0);
     if(!ok) {
         if(ebo) es3_functions.glDeleteBuffers(1, &ebo);
+        fp_ge_check("fp_glDeleteBuffers");
         es3_functions.glDeleteBuffers(1, &vbo);
         es3_functions.glDeleteVertexArrays(1, &vao);
+        fp_ge_check("fp_glDeleteVertexArrays");
         return false;
     }
     op->cache_vao = vao;
@@ -2795,10 +2916,12 @@ static void fp_dl_play_client_cached(dl_op_entry_t* op, const dl_client_draw_pay
     }
     if(op->cache_indexed) {
         es3_functions.glDrawElements(op->cache_mode, op->cache_count, op->cache_itype, NULL);
+        fp_ge_check("fp_glDrawElements");
         fp_ge_chk("dl_cached_de", "cnt=%d mode=0x%x ity=0x%x",
                   op->cache_count, op->cache_mode, op->cache_itype);
     } else {
         es3_functions.glDrawArrays(op->cache_mode, op->cache_first, op->cache_count);
+        fp_ge_check("fp_glDrawArrays");
         fp_ge_chk("dl_cached_da", "cnt=%d first=%d mode=0x%x",
                   op->cache_count, op->cache_first, op->cache_mode);
     }
@@ -2973,39 +3096,49 @@ static bool fp_dl_build_merged_cache(fp_dl_list_t* l) {
 
     GLuint vao = 0, vbo = 0, ebo = 0;
     es3_functions.glGenVertexArrays(1, &vao);
+    fp_ge_check("fp_glGenVertexArrays");
     if(vao == 0) goto fail;
     es3_functions.glGenBuffers(1, &vbo);
+    fp_ge_check("fp_glGenBuffers");
     if(vbo == 0) goto fail;
     es3_functions.glGenBuffers(1, &ebo);
+    fp_ge_check("fp_glGenBuffers");
     if(ebo == 0) goto fail;
 
     fp_gl_bind_vao(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)total_vertex_bytes, vdata, GL_STATIC_DRAW);
+    fp_ge_check("fp_glBufferData");
 
     es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
+    fp_ge_check("fp_glEnableVertexAttribArray");
     es3_functions.glVertexAttribPointer(FP_ATTR_POS, first_snap->vertex_size, first_snap->vertex_type,
                                         GL_FALSE, first_snap->vertex_stride, NULL);
     if(first_snap->texcoord_enabled && first_snap->texcoord_size > 0 &&
        first_snap->texcoord_off >= 0 && (size_t)first_snap->texcoord_off < vsize) {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_UV);
+        fp_ge_check("fp_glEnableVertexAttribArray");
         es3_functions.glVertexAttribPointer(FP_ATTR_UV, first_snap->texcoord_size, first_snap->texcoord_type,
                                             GL_FALSE, first_snap->vertex_stride,
                                             (const void*)(intptr_t)first_snap->texcoord_off);
     } else {
         es3_functions.glDisableVertexAttribArray(FP_ATTR_UV);
+        fp_ge_check("fp_glDisableVertexAttribArray");
     }
     if(first_snap->color_enabled && first_snap->color_size > 0 &&
        first_snap->color_off >= 0 && (size_t)first_snap->color_off < vsize) {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_COLOR);
+        fp_ge_check("fp_glEnableVertexAttribArray");
         es3_functions.glVertexAttribPointer(FP_ATTR_COLOR, first_snap->color_size, first_snap->color_type,
                                             GL_TRUE, first_snap->vertex_stride,
                                             (const void*)(intptr_t)first_snap->color_off);
     } else {
         es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
+        fp_ge_check("fp_glDisableVertexAttribArray");
     }
 
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    fp_ge_check("fp_glBindBuffer");
     es3_functions.glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(total_indices * sizeof(uint32_t)),
                                idata, GL_STATIC_DRAW);
 
@@ -3026,8 +3159,10 @@ static bool fp_dl_build_merged_cache(fp_dl_list_t* l) {
 
 fail:
     if(ebo) es3_functions.glDeleteBuffers(1, &ebo);
+    fp_ge_check("fp_glDeleteBuffers");
     if(vbo) es3_functions.glDeleteBuffers(1, &vbo);
     if(vao) es3_functions.glDeleteVertexArrays(1, &vao);
+    fp_ge_check("fp_glDeleteVertexArrays");
     free(vdata);
     free(idata);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)dl_saved_abo);
@@ -3058,6 +3193,7 @@ static bool fp_dl_try_play_merged(fp_dl_list_t* l) {
         dl_current_vao = l->merge.vao;
     }
     es3_functions.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, l->merge.ebo);
+    fp_ge_check("fp_glBindBuffer");
     es3_functions.glDrawElements(GL_TRIANGLES, l->merge.draw_count, GL_UNSIGNED_INT, NULL);
     fp_ge_chk("dl_merged_de", "cnt=%d", l->merge.draw_count);
     return true;
@@ -3068,13 +3204,16 @@ static void fp_dl_free_merged(fp_dl_list_t* l) {
     if(l->merge.vao) {
         GLint bound_vao = 0;
         es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
+        fp_ge_check("fp_glGetIntegerv");
         if((GLuint)bound_vao == l->merge.vao) {
             fp_gl_bind_vao(0);
             dl_current_vao = 0;
         }
         if(l->merge.ebo) es3_functions.glDeleteBuffers(1, &l->merge.ebo);
+        fp_ge_check("fp_glDeleteBuffers");
         if(l->merge.vbo) es3_functions.glDeleteBuffers(1, &l->merge.vbo);
         es3_functions.glDeleteVertexArrays(1, &l->merge.vao);
+        fp_ge_check("fp_glDeleteVertexArrays");
     }
     l->merge.vao = l->merge.vbo = l->merge.ebo = 0;
     l->merge.valid = false;
@@ -3089,13 +3228,16 @@ static void fp_dl_free_cache(dl_op_entry_t* op) {
     if(!op || !op->cache_vao) return;
     GLint bound_vao = 0;
     es3_functions.glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &bound_vao);
+    fp_ge_check("fp_glGetIntegerv");
     if((GLuint)bound_vao == op->cache_vao) {
         fp_gl_bind_vao(0);
         dl_current_vao = 0;
     }
     if(op->cache_ebo) es3_functions.glDeleteBuffers(1, &op->cache_ebo);
+    fp_ge_check("fp_glDeleteBuffers");
     if(op->cache_vbo) es3_functions.glDeleteBuffers(1, &op->cache_vbo);
     es3_functions.glDeleteVertexArrays(1, &op->cache_vao);
+    fp_ge_check("fp_glDeleteVertexArrays");
     op->cache_vao = 0;
     op->cache_vbo = 0;
     op->cache_ebo = 0;
@@ -3301,6 +3443,7 @@ void fp_dl_capture_bind_texture(GLenum target, GLuint texture) {
     if(!dl_is_compiling() || target != GL_TEXTURE_2D) return;
     GLint unit = GL_TEXTURE0;
     es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &unit);
+    fp_ge_check("fp_glGetIntegerv");
     dl_bind_texture_payload_t p;
     p.target = target;
     p.texture = texture;
