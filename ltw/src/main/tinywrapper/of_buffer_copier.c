@@ -23,12 +23,16 @@ void buffer_copier_init(context_t* context) {
     framebuffer_copier_t* copier = &context->framebuffer_copier;
     while(es3_functions.glGetError() != 0) {}
     es3_functions.glGenTextures(1, &copier->temp_texture);
+    fp_ge_check("fo_glGenTextures");
     es3_functions.glGenFramebuffers(1, &copier->tempfb);
     es3_functions.glGenFramebuffers(1, &copier->destfb);
+    fp_ge_check("fo_glGenFramebuffers");
     es3_functions.glBindTexture(GL_TEXTURE_2D, copier->temp_texture);
     es3_functions.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    fp_ge_check("fo_glTexParameteri");
     es3_functions.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     es3_functions.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    fp_ge_check("fo_glTexParameteri");
     es3_functions.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     GLenum error = es3_functions.glGetError();
     if(error != 0) {
@@ -43,12 +47,16 @@ static void buffer_copier_store(GLint x, GLint y, GLsizei w, GLsizei h) {
     if(!copier->ready) return;
     GLint current_texbind;
     es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &current_texbind);
+    fp_ge_check("fo_glGetIntegerv");
     es3_functions.glBindTexture(GL_TEXTURE_2D, copier->temp_texture);
     es3_functions.glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    fp_ge_check("fo_glTexImage2D");
     es3_functions.glBindTexture(GL_TEXTURE_2D, current_texbind);
     es3_functions.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copier->tempfb);
+    fp_ge_check("fo_glBindFramebuffer");
     es3_functions.glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, copier->temp_texture, 0);
     es3_functions.glBlitFramebuffer(x, y, x+w, y+h, 0, 0, w, h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    fp_ge_check("fo_glBlitFramebuffer");
     es3_functions.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, current_context->draw_framebuffer);
 }
 
@@ -59,12 +67,16 @@ static void buffer_copier_release(GLenum target, GLint level, GLint x, GLint y, 
     GLenum target_query = get_textarget_query_param(target);
     if(target_query == GL_NONE) return;
     es3_functions.glGetIntegerv(target_query, &current_texbind);
+    fp_ge_check("fo_glGetIntegerv");
     es3_functions.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copier->destfb);
     es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, copier->tempfb);
+    fp_ge_check("fo_glBindFramebuffer");
     es3_functions.glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, target, current_texbind, level);
     es3_functions.glBlitFramebuffer(0, 0, w, h, x, y, x+w, y+h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    fp_ge_check("fo_glBlitFramebuffer");
     es3_functions.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, current_context->draw_framebuffer);
     es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, current_context->read_framebuffer);
+    fp_ge_check("fo_glBindFramebuffer");
 }
 
 // MathCode: 把 GLES 的 RGBA/UNSIGNED_BYTE 读回结果转换成 MC 截图用的
@@ -77,6 +89,7 @@ static bool bgra_rev_readback(GLint x, GLint y, GLsizei w, GLsizei h, void* data
         return false;
     }
     es3_functions.glReadPixels(x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
+    fp_ge_check("fo_glReadPixels");
     GLenum read_err = es3_functions.glGetError();
     if(read_err != GL_NO_ERROR) {
         LTW_ERROR_PRINTF("LTW: BGRA+REV glReadPixels err 0x%x (w=%d h=%d)", read_err, w, h);
@@ -111,21 +124,27 @@ void glGetTexImage( 	GLenum target,
     framebuffer_copier_t* copier = &current_context->framebuffer_copier;
     GLint texture;
     es3_functions.glGetIntegerv(get_textarget_query_param(target), &texture);
+    fp_ge_check("fo_glGetIntegerv");
     GLint old_read_fb;
     es3_functions.glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_fb);
+    fp_ge_check("fo_glGetIntegerv");
     es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, copier->tempfb);
     // MathCode: tempfb 同时被深度拷贝路径（buffer_copier_store/release）复用，
     // 可能残留尺寸不匹配的深度/模板附件；先清空旧附件再挂颜色纹理，否则
     // FBO 不完整，glReadPixels 失败 → 截图/世界缩略图全黑。
     es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+    fp_ge_check("fo_glFramebufferTexture2D");
     es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
     es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
+    fp_ge_check("fo_glFramebufferRenderbuffer");
     es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
     es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
+    fp_ge_check("fo_glFramebufferRenderbuffer");
     es3_functions.glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, target, texture, level);
     GLint w, h;
     if(texture != 0) {
         es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &w);
+        fp_ge_check("fo_glGetTexLevelParameteriv");
         es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_HEIGHT, &h);
         GLenum query_err = es3_functions.glGetError();
         if(query_err != GL_NO_ERROR) {
@@ -137,6 +156,7 @@ void glGetTexImage( 	GLenum target,
         // 用视口尺寸兜底，避免在纹理查询上留 GL 错误。
         GLint vp[4] = {0, 0, 0, 0};
         es3_functions.glGetIntegerv(GL_VIEWPORT, vp);
+        fp_ge_check("fo_glGetIntegerv");
         w = vp[2];
         h = vp[3];
     }
@@ -146,19 +166,23 @@ void glGetTexImage( 	GLenum target,
         // MathCode: 兜底路径——截图时当前读帧缓冲通常仍是主 FBO，
         // 直接对它 glReadPixels，不再依赖临时 FBO 是否完整。
         es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+        fp_ge_check("fo_glFramebufferRenderbuffer");
         if(old_read_fb != 0 && pixels && bgra_rev) {
             es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
+            fp_ge_check("fo_glBindFramebuffer");
             if(es3_functions.glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
                 bgra_rev_readback(0, 0, w, h, pixels);
                 return;
             }
         }
         es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
+        fp_ge_check("fo_glBindFramebuffer");
         return;
     }
     if(!pixels) {
         LTW_ERROR_PRINTF("LTW: glGetTexImage called with NULL pixels");
         es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+        fp_ge_check("fo_glFramebufferRenderbuffer");
         es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
         return;
     }
@@ -166,8 +190,10 @@ void glGetTexImage( 	GLenum target,
         bgra_rev_readback(0, 0, w, h, pixels);
     } else {
         es3_functions.glReadPixels(0, 0, w, h, format, type, pixels);
+        fp_ge_check("fo_glReadPixels");
     }
     es3_functions.glFramebufferRenderbuffer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+    fp_ge_check("fo_glFramebufferRenderbuffer");
     es3_functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
     return;
     unsupported_esver:
@@ -195,6 +221,7 @@ void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format
         return;
     }
     es3_functions.glReadPixels(x, y, width, height, format, type, data);
+    fp_ge_check("fo_glReadPixels");
 }
 
 void glTexSubImage2D(GLenum target,
@@ -274,10 +301,13 @@ void texture_blit_framebuffer(GLenum target,
 
     GLint texture;
     es3_functions.glGetIntegerv(get_textarget_query_param(target), &texture);
+    fp_ge_check("fo_glGetIntegerv");
     es3_functions.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copier->destfb);
     es3_functions.glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, fb_attachment, target, texture, level);
+    fp_ge_check("fo_glFramebufferTexture2D");
     es3_functions.glBlitFramebuffer(x, y, width+x, height+y, xoffset, yoffset, width+xoffset, height+yoffset, fb_blit_bit, GL_NEAREST);
     es3_functions.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, current_context->draw_framebuffer);
+    fp_ge_check("fo_glBindFramebuffer");
 }
 
 void glCopyTexSubImage2D(GLenum target,
@@ -291,6 +321,7 @@ void glCopyTexSubImage2D(GLenum target,
     if(current_context->es31) {
         GLint depthtype;
         es3_functions.glGetTexLevelParameteriv(target, level, GL_TEXTURE_DEPTH_TYPE, &depthtype);
+        fp_ge_check("fo_glGetTexLevelParameteriv");
         if(depthtype != GL_NONE) {
             texture_blit_framebuffer(target, level, xoffset, yoffset, x, y, width, height, true);
         }else {
@@ -299,6 +330,7 @@ void glCopyTexSubImage2D(GLenum target,
     } else {
         es3_functions.glGetError();
         es3_functions.glCopyTexSubImage2D(target, level, xoffset, yoffset, x, y, width, height);
+        fp_ge_check("fo_glCopyTexSubImage2D");
         // The QCOM driver is a pathological liar and emits wrong GL errors. Abuse this to decide when we actually need to at least try copying depth.
         if(es3_functions.glGetError() == GL_INVALID_OPERATION) {
             texture_blit_framebuffer(target, level, xoffset, yoffset, x, y, width, height, true);

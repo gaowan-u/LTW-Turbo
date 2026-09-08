@@ -131,6 +131,7 @@ static void free_context(context_t* tw_context) {
 
 void init_extra_extensions(context_t* context, int* length) {
     const char* es_extensions = (const char*)es3_functions.glGetString(GL_EXTENSIONS);
+    fp_ge_check("fe_glGetString");
     *length = (int)strlen(es_extensions);
     // 预分配额外512字节的空间，减少后续realloc次数
     size_t capacity = *length + 512 + 1;
@@ -279,6 +280,7 @@ void build_extension_string(context_t* context) {
 
 static void find_esversion(context_t* context) {
     const char* version = (const char*) es3_functions.glGetString(GL_VERSION);
+    fp_ge_check("fe_glGetString");
     const char* shader_version = (const char*) es3_functions.glGetString(GL_SHADING_LANGUAGE_VERSION);
 
     int esmajor = 0, esminor = 0, shadermajor = 3, shaderminor = 0;
@@ -299,6 +301,7 @@ static void find_esversion(context_t* context) {
     }
 
     const char* extensions = (const char*) es3_functions.glGetString(GL_EXTENSIONS);
+    fp_ge_check("fe_glGetString");
     if(strstr(extensions, "GL_EXT_buffer_storage")) context->buffer_storage = true;
     if(strstr(extensions, "GL_EXT_texture_buffer")) context->buffer_texture_ext = true;
     if(strstr(extensions, "GL_EXT_multi_draw_indirect")) context->multidraw_indirect = true;
@@ -322,8 +325,10 @@ void buffer_copier_init(context_t* context);
 
 static void init_incontext(context_t* tw_context) {
     es3_functions.glGetIntegerv(GL_MAX_TEXTURE_SIZE, &tw_context->maxTextureSize);
+    fp_ge_check("fe_glGetIntegerv");
     es3_functions.glGetIntegerv(GL_MAX_DRAW_BUFFERS, &tw_context->max_drawbuffers);
     es3_functions.glGetIntegerv(GL_NUM_EXTENSIONS, &tw_context->nextensions_es);
+    fp_ge_check("fe_glGetIntegerv");
     if(tw_context->max_drawbuffers > MAX_DRAWBUFFERS) {
         tw_context->max_drawbuffers = MAX_DRAWBUFFERS;
     }
@@ -333,6 +338,7 @@ static void init_incontext(context_t* tw_context) {
     basevertex_init(tw_context);
     buffer_copier_init(tw_context);
     es3_functions.glGenBuffers(1, &tw_context->multidraw_element_buffer);
+    fp_ge_check("fe_glGenBuffers");
     es3_functions.glGenBuffers(1, &tw_context->quads_scratch_buffer);
 
     // 初始化格式缓存
@@ -354,8 +360,10 @@ static void init_incontext(context_t* tw_context) {
     }
 
     es3_functions.glBindBuffer(GL_COPY_WRITE_BUFFER, tw_context->multidraw_element_buffer);
+    fp_ge_check("fe_glBindBuffer");
     es3_functions.glBufferData(GL_COPY_WRITE_BUFFER, tw_context->multidraw_buffer_size, NULL, GL_STREAM_DRAW);
     es3_functions.glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+    fp_ge_check("fe_glBindBuffer");
 
     // 初始化 swizzle 批量更新相关字段
     tw_context->pending_swizzle_count = 0;

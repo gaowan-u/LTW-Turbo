@@ -109,9 +109,11 @@ void rebind_framebuffer(GLenum target, framebuffer_t *framebuffer, GLenum virt_a
     switch (framebuffer->color_targets[virt_index]) {
         case GL_NONE:
             es3_functions.glFramebufferRenderbuffer(target, phys_attachment, GL_RENDERBUFFER, 0);
+            fp_ge_check("ff_glFramebufferRenderbuffer");
             break;
         case GL_RENDERBUFFER:
             es3_functions.glFramebufferRenderbuffer(target, phys_attachment, GL_RENDERBUFFER, framebuffer->color_objects[virt_index]);
+            fp_ge_check("ff_glFramebufferRenderbuffer");
             break;
         case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER:
             es3_functions.glFramebufferTextureLayer(target, phys_attachment,
@@ -140,6 +142,7 @@ void glClearBufferiv( 	GLenum buffer,
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
     es3_functions.glClearBufferiv(buffer, drawBuffer, value);
+    fp_ge_check("ff_glClearBufferiv");
 }
 
 void glClearBufferuiv( 	GLenum buffer,
@@ -152,6 +155,7 @@ void glClearBufferuiv( 	GLenum buffer,
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
     es3_functions.glClearBufferuiv(buffer, drawBuffer, value);
+    fp_ge_check("ff_glClearBufferuiv");
 }
 
 void glClearBufferfv( 	GLenum buffer,
@@ -164,6 +168,7 @@ void glClearBufferfv( 	GLenum buffer,
         drawBuffer = attachment - GL_COLOR_ATTACHMENT0;
     }
     es3_functions.glClearBufferfv(buffer, drawBuffer, value);
+    fp_ge_check("ff_glClearBufferfv");
 }
 
 void glDrawBuffers(GLsizei n, const GLenum* buffers) {
@@ -176,6 +181,7 @@ void glDrawBuffers(GLsizei n, const GLenum* buffers) {
     framebuffer_t *framebuffer = get_framebuffer(GL_DRAW_FRAMEBUFFER);
     if(!framebuffer) {
         es3_functions.glDrawBuffers(n, buffers);
+        fp_ge_check("ff_glDrawBuffers");
         return;
     }
     framebuffer->nbuffers = n;
@@ -188,6 +194,7 @@ void glDrawBuffers(GLsizei n, const GLenum* buffers) {
         else phys_drawbuffers[i] = GL_NONE;
     }
     es3_functions.glDrawBuffers(n, phys_drawbuffers);
+    fp_ge_check("ff_glDrawBuffers");
 }
 
 void glDrawBuffer(GLenum buffer) {
@@ -197,6 +204,7 @@ void glDrawBuffer(GLenum buffer) {
 GLenum glCheckFramebufferStatus( 	GLenum target) {
     if(!current_context) return GL_FRAMEBUFFER_UNDEFINED;
     GLenum framebuffer_status = es3_functions.glCheckFramebufferStatus(target);
+    fp_ge_check("ff_glCheckFramebufferStatus");
     if(framebuffer_status == GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT) {
         framebuffer_t *framebuffer = get_framebuffer(target);
         for(GLint i = 0; i < MAX_FBTARGETS; i++) {
@@ -219,6 +227,7 @@ void glFramebufferTexture2D( 	GLenum target,
     GLuint attachment_idx = get_attachment_idx(attachment);
     if(!framebuffer || attachment_idx == -1) {
         es3_functions.glFramebufferTexture2D(target, attachment, textarget, texture, level);
+        fp_ge_check("ff_glFramebufferTexture2D");
         return;
     }
     if(texture == 0) {
@@ -241,6 +250,7 @@ void glFramebufferTextureLayer( 	GLenum target,
     GLuint attachment_idx = get_attachment_idx(attachment);
     if(!framebuffer || attachment_idx == -1) {
         es3_functions.glFramebufferTextureLayer(target, attachment, texture, level, layer);
+        fp_ge_check("ff_glFramebufferTextureLayer");
         return;
     }
     if(texture == 0) {
@@ -265,6 +275,7 @@ void glFramebufferRenderbuffer( 	GLenum target,
     GLuint attachment_idx = get_attachment_idx(attachment);
     if(!framebuffer || attachment_idx == -1) {
         es3_functions.glFramebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer);
+        fp_ge_check("ff_glFramebufferRenderbuffer");
         return;
     }
     if(renderbuffer == 0) {
@@ -287,6 +298,7 @@ void glGetFramebufferAttachmentParameteriv(GLenum target,
     GLuint attachment_idx = get_attachment_idx(attachment);
     if(!framebuffer || attachment_idx == -1) {
         es3_functions.glGetFramebufferAttachmentParameteriv(target, attachment, pname, params);
+        fp_ge_check("ff_glGetFramebufferAttachmentParameteriv");
         return;
     }
     GLenum fb_target = framebuffer->color_targets[attachment_idx];
@@ -337,6 +349,7 @@ void glGetFramebufferAttachmentParameteriv(GLenum target,
 void glGenFramebuffers(GLsizei n, GLuint* framebuffers) {
     if(!current_context) return;
     es3_functions.glGenFramebuffers(n, framebuffers);
+    fp_ge_check("ff_glGenFramebuffers");
     framebuffer_t* fb;
     for(GLsizei i = 0; i < n; i++) {
         fb = mempool_alloc(current_context->framebuffer_pool);
@@ -354,6 +367,7 @@ void glGenFramebuffers(GLsizei n, GLuint* framebuffers) {
 void glDeleteFramebuffers(GLsizei n, const GLuint* framebuffers) {
     if(!current_context) return;
     es3_functions.glDeleteFramebuffers(n, framebuffers);
+    fp_ge_check("ff_glDeleteFramebuffers");
     framebuffer_t* fb;
     for(GLsizei i = 0; i < n; i++) {
         fb = unordered_map_remove(current_context->framebuffer_map, (void*)framebuffers[i]);
@@ -373,6 +387,7 @@ void glBindFramebuffer(GLenum target, GLuint framebuffer) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glBindFramebuffer(target, framebuffer);
+    fp_ge_check("ff_glBindFramebuffer");
     switch (target) {
         case GL_FRAMEBUFFER:
             current_context->read_framebuffer = current_context->draw_framebuffer = framebuffer;
