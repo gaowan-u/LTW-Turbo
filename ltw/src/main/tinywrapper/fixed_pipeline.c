@@ -1717,6 +1717,10 @@ void fp_texture_upload_invalidate(void) {
 // MathCode: 黑框修复——纹理采样必须同时满足“绑定了纹理”和
 // “GL_TEXTURE_2D 已启用”（桌面固定管线语义）。
 static void fp_set_default_uniforms(void) {
+    GLint curprog = -1;
+    es3_functions.glGetIntegerv(GL_CURRENT_PROGRAM, &curprog);
+    fp_ge_chk("sduni_prog", "curprog=%d fpprog=%u init=%d",
+              curprog, fp_program, fp_uniforms_initialized ? 1 : 0);
     GLfloat mvp[FP_MATRIX_SIZE];
     fp_mat_mul(mvp, fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
                fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
