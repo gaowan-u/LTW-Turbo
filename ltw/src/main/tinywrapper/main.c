@@ -38,6 +38,7 @@ void glClearDepth(GLdouble depth) {
     if(!current_context) return;    // 无当前 GL 上下文（线程局部指针为空）时直接返回
     // 转发到 GLES 的 glClearDepthf（函数指针来自 es3_functions.h）
     es3_functions.glClearDepthf((GLfloat) depth);
+    fp_ge_check("st_cdf");
 }
 
 // 桌面 glMapBuffer：把 GLES 的 glMapBufferRange 包装成桌面语义
@@ -233,6 +234,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
         if(data != NULL) swizzle_process_upload(target, &format, &type);
         pick_internalformat(&internalformat, &type, &format, &data);
         es3_functions.glTexImage2D(target, level, internalformat, width, height, border, format, type, data);
+        fp_ge_check("st_txi2d");
         // 内部格式可能变化：固定管线纹理格式缓存失效
         fp_texture_upload_invalidate();
     }
@@ -271,6 +273,7 @@ void glTexParameterf( 	GLenum target,
     if(!filter_params_float(target, pname, param)) return;
     param = (GLfloat)sanitize_texparam_value(pname, (GLint)param);
     es3_functions.glTexParameterf(target, pname, param);
+    fp_ge_check("st_tpf");
 }
 void glTexParameteri( 	GLenum target,
                          GLenum pname,
@@ -281,6 +284,7 @@ void glTexParameteri( 	GLenum target,
     param = sanitize_texparam_value(pname, param);
     swizzle_process_swizzle_param(target, pname, &param);
     es3_functions.glTexParameteri(target, pname, param);
+    fp_ge_check("st_tpi");
 }
 
 void glTexParameterfv( 	GLenum target,
@@ -295,6 +299,7 @@ void glTexParameterfv( 	GLenum target,
         for(int i = 0; i < 4; i++) sanitized[i] = (GLfloat)sanitize_texparam_value(pname, (GLint)sanitized[i]);
     }
     es3_functions.glTexParameterfv(target, pname, sanitized);
+    fp_ge_check("st_tpfv");
 }
 void glTexParameteriv( 	GLenum target,
                           GLenum pname,
@@ -309,6 +314,7 @@ void glTexParameteriv( 	GLenum target,
     }
     swizzle_process_swizzle_param(target, pname, (const GLenum*)sanitized);
     es3_functions.glTexParameteriv(target, pname, sanitized);
+    fp_ge_check("st_tpiv");
 }
 static bool trigger_gltexparameteri = false;
 void glTexParameterIiv( 	GLenum target,
@@ -346,6 +352,7 @@ void glRenderbufferStorage(	GLenum target,
     if(!current_context) return;
     if(internalformat == GL_DEPTH_COMPONENT) internalformat = GL_DEPTH_COMPONENT16;
     es3_functions.glRenderbufferStorage(target, internalformat, width, height);
+    fp_ge_check("st_rbs");
 }
 
 static bool never_flush_buffers;
@@ -479,7 +486,10 @@ void glEnable(GLenum cap) {
         } else {
             fp_set_blend_enabled(true);
         }
-        if(!is_fixed_function_cap(cap)) es3_functions.glEnable(cap);
+        if(!is_fixed_function_cap(cap)) {
+            es3_functions.glEnable(cap);
+            fp_ge_check("st_en");
+        }
         return;
     }
     fp_flush_immediate_batch();
@@ -498,6 +508,7 @@ void glEnable(GLenum cap) {
     // glEnable(GL_POLYGON_OFFSET_FILL) + glPolygonOffset(-1,-10) 把裂纹推离
     // 方块面，否则裂纹与方块面 z-fighting，出现“贴图穿透”闪烁。
     es3_functions.glEnable(cap);
+    fp_ge_check("st_en");
 }
 
 void glDisable(GLenum cap) {
@@ -511,7 +522,10 @@ void glDisable(GLenum cap) {
         } else {
             fp_set_blend_enabled(false);
         }
-        if(!is_fixed_function_cap(cap)) es3_functions.glDisable(cap);
+        if(!is_fixed_function_cap(cap)) {
+            es3_functions.glDisable(cap);
+            fp_ge_check("st_dis");
+        }
         return;
     }
     fp_flush_immediate_batch();
@@ -525,12 +539,14 @@ void glDisable(GLenum cap) {
     }
     if(cap == GL_PRIMITIVE_RESTART_FIXED_INDEX) fp_set_restart_enabled(false);
     es3_functions.glDisable(cap);
+    fp_ge_check("st_dis");
 }
 
 void glBindTexture(GLenum target, GLuint texture) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glBindTexture(target, texture);
+    fp_ge_check("st_bindtex");
     // unit0 绑定用 CPU 维护（免去每次绑定的驱动查询），单通道格式走本地缓存
     if(target == GL_TEXTURE_2D) fp_notify_texture_bind_tex(texture);
     // 显示列表编译期间：记录纹理绑定，回放时按录制单元恢复
@@ -540,6 +556,7 @@ void glActiveTexture(GLenum texture) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glActiveTexture(texture);
+    fp_ge_check("st_at");
     fp_set_active_texture(texture);
 }
 void glActiveTextureARB(GLenum texture) {
@@ -548,16 +565,19 @@ void glActiveTextureARB(GLenum texture) {
 void glPixelStorei(GLenum pname, GLint param) {
     if(!current_context) return;
     es3_functions.glPixelStorei(pname, param);
+    fp_ge_check("st_ps");
 }
 void glGenerateMipmap(GLenum target) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glGenerateMipmap(target);
+    fp_ge_check("st_genmip");
 }
 void glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glViewport(x, y, width, height);
+    fp_ge_check("st_vp");
 }
 void glBlendFunc(GLenum sfactor, GLenum dfactor) {
     if(!current_context) return;
@@ -565,46 +585,55 @@ void glBlendFunc(GLenum sfactor, GLenum dfactor) {
     // tryBlendFuncSeparate，冲刷会把 F3 文字段拆成一行一提交）。
     fp_set_blend_func(sfactor, dfactor);
     es3_functions.glBlendFunc(sfactor, dfactor);
+    fp_ge_check("st_bf");
 }
 void glBlendFuncSeparate(GLenum sfactorRGB, GLenum dfactorRGB, GLenum sfactorAlpha, GLenum dfactorAlpha) {
     if(!current_context) return;
     fp_set_blend_func_separate(sfactorRGB, dfactorRGB, sfactorAlpha, dfactorAlpha);
     es3_functions.glBlendFuncSeparate(sfactorRGB, dfactorRGB, sfactorAlpha, dfactorAlpha);
+    fp_ge_check("st_bfs");
 }
 void glDepthFunc(GLenum func) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glDepthFunc(func);
+    fp_ge_check("st_df");
 }
 void glDepthMask(GLboolean flag) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glDepthMask(flag);
+    fp_ge_check("st_dm");
 }
 void glColorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glColorMask(red, green, blue, alpha);
+    fp_ge_check("st_cm");
 }
 void glCullFace(GLenum mode) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glCullFace(mode);
+    fp_ge_check("st_cf");
 }
 void glStencilFunc(GLenum func, GLint ref, GLuint mask) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glStencilFunc(func, ref, mask);
+    fp_ge_check("st_sf");
 }
 void glStencilMask(GLuint mask) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glStencilMask(mask);
+    fp_ge_check("st_sm");
 }
 void glLineWidth(GLfloat width) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glLineWidth(width);
+    fp_ge_check("st_lw");
 }
 void glHint(GLenum target, GLenum mode) {
     if(!current_context) return;
@@ -614,15 +643,18 @@ void glHint(GLenum target, GLenum mode) {
     // "@ Pre startup 1280" 的来源），这里把桌面 hint 吞掉。
     if(target != GL_GENERATE_MIPMAP_HINT && target != GL_FRAGMENT_SHADER_DERIVATIVE_HINT) return;
     es3_functions.glHint(target, mode);
+    fp_ge_check("st_hint");
 }
 void glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum usage) {
     if(!current_context) return;
     es3_functions.glBufferData(target, size, data, usage);
+    fp_ge_check("st_bd");
     ltw_ebo_shadow_upload(target, size, data, 0, true);
 }
 void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void* data) {
     if(!current_context) return;
     es3_functions.glBufferSubData(target, offset, size, data);
+    fp_ge_check("st_bsd");
     ltw_ebo_shadow_upload(target, size, data, offset, false);
 }
 void glDeleteBuffers(GLsizei n, const GLuint* buffers) {
@@ -639,90 +671,110 @@ void glCompileShader(GLuint shader) {
 void glUniform1i(GLint location, GLint v0) {
     if(!current_context) return;
     es3_functions.glUniform1i(location, v0);
+    fp_ge_check("st_u1i");
 }
 void glUniform4f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3) {
     if(!current_context) return;
     es3_functions.glUniform4f(location, v0, v1, v2, v3);
+    fp_ge_check("st_u4f");
 }
 void glUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) {
     if(!current_context) return;
     es3_functions.glUniformMatrix4fv(location, count, transpose, value);
+    fp_ge_check("st_um4fv");
 }
 void glStencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glStencilOp(sfail, dpfail, dppass);
+    fp_ge_check("st_so");
 }
 void glStencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glStencilFuncSeparate(face, func, ref, mask);
+    fp_ge_check("st_sfs");
 }
 void glStencilOpSeparate(GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glStencilOpSeparate(face, sfail, dpfail, dppass);
+    fp_ge_check("st_sos");
 }
 void glStencilMaskSeparate(GLenum face, GLuint mask) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glStencilMaskSeparate(face, mask);
+    fp_ge_check("st_sms");
 }
 void glPolygonOffset(GLfloat factor, GLfloat units) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glPolygonOffset(factor, units);
+    fp_ge_check("st_po");
 }
 void glScissor(GLint x, GLint y, GLsizei width, GLsizei height) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glScissor(x, y, width, height);
+    fp_ge_check("st_sc");
 }
 void glClearDepthf(GLclampf d) {
     if(!current_context) return;
     es3_functions.glClearDepthf(d);
+    fp_ge_check("st_cdf");
 }
 void glClearStencil(GLint s) {
     if(!current_context) return;
     es3_functions.glClearStencil(s);
+    fp_ge_check("st_cs");
 }
 void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei primcount) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glDrawArraysInstanced(mode, first, count, primcount);
+    fp_ge_check("st_dai");
 }
 void glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei primcount) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glDrawElementsInstanced(mode, count, type, indices, primcount);
+    fp_ge_check("st_dei");
 }
 void glVertexAttribDivisor(GLuint index, GLuint divisor) {
     if(!current_context) return;
     es3_functions.glVertexAttribDivisor(index, divisor);
+    fp_ge_check("st_vad");
 }
 void glEnableVertexAttribArray(GLuint index) {
     if(!current_context) return;
     es3_functions.glEnableVertexAttribArray(index);
+    fp_ge_check("st_eva");
 }
 void glDisableVertexAttribArray(GLuint index) {
     if(!current_context) return;
     es3_functions.glDisableVertexAttribArray(index);
+    fp_ge_check("st_dva");
 }
 void glUniform2f(GLint location, GLfloat v0, GLfloat v1) {
     if(!current_context) return;
     es3_functions.glUniform2f(location, v0, v1);
+    fp_ge_check("st_u2f");
 }
 void glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2) {
     if(!current_context) return;
     es3_functions.glUniform3f(location, v0, v1, v2);
+    fp_ge_check("st_u3f");
 }
 void glUniform2fv(GLint location, GLsizei count, const GLfloat* value) {
     if(!current_context) return;
     es3_functions.glUniform2fv(location, count, value);
+    fp_ge_check("st_u2fv");
 }
 void glUniform3fv(GLint location, GLsizei count, const GLfloat* value) {
     if(!current_context) return;
     es3_functions.glUniform3fv(location, count, value);
+    fp_ge_check("st_u3fv");
 }
 GLint glGetUniformLocation(GLuint program, const GLchar* name) {
     GLint ret = -1;
@@ -733,15 +785,18 @@ GLint glGetUniformLocation(GLuint program, const GLchar* name) {
 void glTexImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const void* pixels) {
     if(!current_context) return;
     es3_functions.glTexImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels);
+    fp_ge_check("st_txi3d");
 }
 void glTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void* pixels) {
     if(!current_context) return;
     es3_functions.glTexSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels);
+    fp_ge_check("st_txi3sub");
 }
 void glCopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glCopyTexImage2D(target, level, internalformat, x, y, width, height, border);
+    fp_ge_check("st_cti2d");
     fp_texture_upload_invalidate();
 }
 void glBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) {
@@ -1110,6 +1165,7 @@ void glClear(GLbitfield mask) {
     }
     fp_flush_immediate_batch();
     es3_functions.glClear(mask);
+    fp_ge_check("st_clr");
 }
 
 void glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
