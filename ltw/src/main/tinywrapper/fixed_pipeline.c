@@ -927,6 +927,7 @@ static void fp_flush_immediate(void) {
     if(dl_replay_active) dl_replay_dirty = true;
 
     fp_immediate_count = 0;
+    fp_ge_check("imm_end");
 }
 
 // ---- 即时模式批量合并 ----
@@ -1131,6 +1132,7 @@ void fp_flush_immediate_batch(void) {
            saved_proj, sizeof(saved_proj));
     memcpy(fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]],
            saved_model, sizeof(saved_model));
+    fp_ge_check("batch_restore");
 
     fp_batch_active = false;
     fp_batch_prim_count = 0;
@@ -1836,6 +1838,7 @@ static void fp_set_default_uniforms(void) {
         }
     }
     fp_uniforms_initialized = true;
+    fp_ge_check("sduni_end");
 }
 
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
@@ -2582,6 +2585,7 @@ static void fp_end_dl_replay(void) {
         es3_functions.glUseProgram((GLuint)dl_saved_program);
         if(current_context) current_context->program = (GLuint)dl_saved_program;
     }
+    fp_ge_check("dlreplay_end");
     // MathCode: 2026-08-11 GUI 灰色修复——实体段结束必须清除常量 lightmap，
     // 否则 const_active 残留到 GUI 矩形（客户端数组绘制，touched=0 无 uv1），
     // uselightmap 落到 const 分支（2）→ GUI 整体被 lightmap 调制变灰。

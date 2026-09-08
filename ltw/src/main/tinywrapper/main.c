@@ -486,10 +486,7 @@ void glEnable(GLenum cap) {
         } else {
             fp_set_blend_enabled(true);
         }
-        if(!is_fixed_function_cap(cap)) {
-            es3_functions.glEnable(cap);
-            fp_ge_check("st_en");
-        }
+        if(!is_fixed_function_cap(cap)) es3_functions.glEnable(cap);
         return;
     }
     fp_flush_immediate_batch();
@@ -522,10 +519,7 @@ void glDisable(GLenum cap) {
         } else {
             fp_set_blend_enabled(false);
         }
-        if(!is_fixed_function_cap(cap)) {
-            es3_functions.glDisable(cap);
-            fp_ge_check("st_dis");
-        }
+        if(!is_fixed_function_cap(cap)) es3_functions.glDisable(cap);
         return;
     }
     fp_flush_immediate_batch();
