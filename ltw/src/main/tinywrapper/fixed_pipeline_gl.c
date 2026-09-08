@@ -14,68 +14,87 @@
 #include "debug.h"
 
 // ---- 矩阵栈 ----
+// 任何矩阵变化都先冲刷批次：批次按录制时的 MVP 快照提交，矩阵一变
+// 快照即失效。F3 段内矩阵不变，文字攒到段末 popMatrix 一次性提交
+// （docs/f3-overlay-single-submit-plan.md 阶段 A）。
 void glMatrixMode(GLenum mode) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_matrix_mode(mode);
 }
 void glLoadIdentity(void) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_load_identity();
 }
 void glLoadMatrixf(const GLfloat* m) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_load_matrixf(m);
 }
 void glLoadMatrixd(const GLdouble* m) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_load_matrixd(m);
 }
 void glMultMatrixf(const GLfloat* m) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_mult_matrixf(m);
 }
 void glMultMatrixd(const GLdouble* m) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_mult_matrixd(m);
 }
 void glPushMatrix(void) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_push_matrix();
 }
 void glPopMatrix(void) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_pop_matrix();
 }
 void glOrtho(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_ortho(left, right, bottom, top, zNear, zFar);
 }
 void glFrustum(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_frustum(left, right, bottom, top, zNear, zFar);
 }
 void glTranslatef(GLfloat x, GLfloat y, GLfloat z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_translatef(x, y, z);
 }
 void glTranslated(GLdouble x, GLdouble y, GLdouble z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_translated(x, y, z);
 }
 void glScalef(GLfloat x, GLfloat y, GLfloat z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_scalef(x, y, z);
 }
 void glScaled(GLdouble x, GLdouble y, GLdouble z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_scaled(x, y, z);
 }
 void glRotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_rotatef(angle, x, y, z);
 }
 void glRotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_rotated(angle, x, y, z);
 }
 
@@ -242,18 +261,22 @@ void glNormalPointer(GLenum type, GLsizei stride, const void* pointer) {
 // 光照贴图坐标；这里记录单元选择，fixed_pipeline.c 只消费 unit0 的坐标。
 void glClientActiveTexture(GLenum texture) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_set_client_active_texture(texture);
 }
 void glClientActiveTextureARB(GLenum texture) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_set_client_active_texture(texture);
 }
 void glEnableClientState(GLenum cap) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_enable_client_state(cap);
 }
 void glDisableClientState(GLenum cap) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_disable_client_state(cap);
 }
 void glArrayElement(GLint i) {
@@ -269,6 +292,7 @@ GLuint glGenLists(GLsizei range) {
 }
 void glNewList(GLuint list, GLenum mode) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     dl_new(list, mode);
 }
 void glEndList(void) {
@@ -277,10 +301,12 @@ void glEndList(void) {
 }
 void glCallList(GLuint list) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     dl_call(list);
 }
 void glCallLists(GLsizei n, GLenum type, const void* lists) {
     if(!current_context || n <= 0 || !lists) return;
+    fp_flush_immediate_batch();
     dl_calls(n, type, lists);
 }
 void glDeleteLists(GLuint list, GLsizei range) {
@@ -301,6 +327,36 @@ void glShadeModel(GLenum mode) {
     if(!current_context) return;
     (void)mode;
 }
+
+// MathCode: 纹理环境（桌面 GL_TEXTURE_ENV；GLES 无对应物，2026-08 新增）
+// MC 1.12 生物受伤红闪依赖 RenderLivingBase.setBrightness 在光照贴图单元
+// 上设置 GL_COMBINE/GL_INTERPOLATE + GL_TEXTURE_ENV_COLOR=(1,0,0,0.3)。
+// 状态由固定管线记录，默认 shader 在绘制时模拟，不透传宿主机。
+void glTexEnvi(GLenum target, GLenum pname, GLint param) {
+    if(!current_context) return;
+    fp_flush_immediate_batch();
+    fp_texenv(target, pname, NULL, &param, true);
+}
+void glTexEnvf(GLenum target, GLenum pname, GLfloat param) {
+    if(!current_context) return;
+    fp_flush_immediate_batch();
+    fp_texenv(target, pname, &param, NULL, false);
+}
+void glTexEnvfv(GLenum target, GLenum pname, const GLfloat* params) {
+    if(!current_context) return;
+    fp_flush_immediate_batch();
+    fp_texenv(target, pname, params, NULL, false);
+}
+void glTexEnviv(GLenum target, GLenum pname, const GLint* params) {
+    if(!current_context) return;
+    fp_flush_immediate_batch();
+    fp_texenv(target, pname, NULL, params, true);
+}
+void glTexEnv(GLenum target, GLenum pname, const GLfloat* params) {
+    if(!current_context) return;
+    fp_flush_immediate_batch();
+    fp_texenv(target, pname, params, NULL, false);
+}
 void glPushAttrib(GLbitfield mask) {
     if(!current_context) return;
     (void)mask;
@@ -312,6 +368,7 @@ void glPopAttrib(void) {
 // alpha test（MC 1.12 文字渲染依赖；GLES 无此功能，由默认 shader discard 模拟）
 void glAlphaFunc(GLenum func, GLfloat ref) {
     if(!current_context) return;
+    fp_flush_immediate_batch();
     fp_alpha_func(func, ref);
 }
 

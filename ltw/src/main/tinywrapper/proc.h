@@ -20,6 +20,12 @@
 
 typedef void (*eglMustCastToProperFunctionPointerType)(void); //通用的 EGL 函数指针类型，用于兼容 eglGetProcAddress 返回值
 
+// KHR_debug 回调类型（GLES 3.0 头缺失，KHR_debug 扩展提供）
+typedef void (*LTW_DEBUGPROC)(GLenum source, GLenum type, GLuint id, GLenum severity,
+                              GLsizei length, const GLchar *message, const void *userParam);
+typedef void (*LTW_DEBUGCALLBACKPROC)(LTW_DEBUGPROC, const void *);
+typedef void (*LTW_DEBUGCONTROLPROC)(GLenum, GLenum, GLenum, GLsizei, const GLuint *, GLboolean);
+
 typedef struct {
 #define GLESFUNC(name, type) type name; //展开成结构体成员声明
 #include "es3_functions.h"

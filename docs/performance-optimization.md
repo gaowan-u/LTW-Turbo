@@ -133,3 +133,33 @@ MC 1.12 的影子、方块裂纹等非索引 QUADS 绘制，原来每次调用�
   不影响正确性；
 - `glBindBuffer` 跟踪在应用绑定非法 buffer 时可能与真实状态不一致
   （应用侧错误，固定管线读取前会先绑定自己的缓冲，不产生错误绘制）。
+
+## 9. 实验性：显示列表整表合并（LTW_DL_MERGE）
+
+在显示列表批量回放之上再进一步：如果整个列表全部是“可缓存 CLIENT_DRAW
+op、顶点格式完全一致、中间没有任何纹理/开关/嵌套/即时模式 op”，就把所有
+op 的顶点拼进一个大 VBO、索引拼进一个大 EBO，回放时一次
+`glDrawElements(GL_TRIANGLES)` 画完整个列表；不满足条件自动回退原每 op
+缓存路径。
+
+- 开关：`LTW_DL_MERGE`（默认 `1`，设为 `0` 关闭）；
+- 缓存首次建立时一次性 CPU 拼接 + GPU 上传，之后每帧只有一次绘制；
+- 合并缓存随列表删除/EGL context 重建释放或失效，与原有每 op 缓存一致。
+
+> **2026-08-08 状态**：合并路径仍在实验期。实测日志曾出现
+> `LTW: merged display list draw err 0x502`（即 MC 帧末
+> “Post render 1282”）刷屏与生物贴图错乱。已修复：
+> 内部 VAO 跟踪（`dl_current_vao`）被即时模式/默认 program 路径绑定解绑后
+> 不同步，导致合并绘制用错误 VAO 执行 `glDrawElements`；合并路径改为每次
+> 绘制前强制绑定自己的 VAO + EBO，并限制 UV/COLOR 必须与顶点同 stride
+> 才允许合并。默认保持开启，继续实验验证。
+
+### 9.1 应用侧桥接（参考 MobileGlues 思路，实现独立）
+
+设置 App 会把配置写到共享文件 `/sdcard/LTW-Turbo/config.json`
+（目录可用环境变量 `LTW_CONFIG_DIR` 覆盖），LTW 渲染库启动时自己读取：
+
+- `dlMerge`：整表合并开关（`true`/`false`）；
+- 优先级：`LTW_DL_MERGE` 环境变量 > 共享配置 > 内置默认值；
+- 不依赖启动器注入环境变量；`ltw_config.c` 是轻量扁平 JSON 读取器，
+  只解析本应用生成的 int/bool/string 字段。

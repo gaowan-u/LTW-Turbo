@@ -414,6 +414,7 @@ LOCAL_SRC_FILES := \
     swizzle.c \
     license_notice.c \
     env.c \
+    ltw_config.c \
     mempool.c \
     vgpu_shaderconv/shaderconv.c \
     unordered_map/unordered_map.c \
