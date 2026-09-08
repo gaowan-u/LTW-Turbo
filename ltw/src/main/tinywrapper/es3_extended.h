@@ -11,6 +11,8 @@
  * 等），与 es3_functions.h 一样被 proc.h/proc.c 展开；解析失败不报错。
  */
 // Added manually as needed
+GLESFUNC(glDebugMessageCallback, LTW_DEBUGCALLBACKPROC)
+GLESFUNC(glDebugMessageControl, LTW_DEBUGCONTROLPROC)
 GLESFUNC(glDrawElementsIndirect,PFNGLDRAWELEMENTSINDIRECTPROC)
 GLESFUNC(glMultiDrawArraysEXT,PFNGLMULTIDRAWARRAYSEXTPROC)
 GLESFUNC(glMultiDrawElementsEXT,PFNGLMULTIDRAWELEMENTSEXTPROC)

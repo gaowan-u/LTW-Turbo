@@ -16,6 +16,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <math.h>
+#include <dlfcn.h>
+#include <execinfo.h>
 #include <GLES3/gl3.h>
 #include "GL/gl.h"
 #include "fixed_pipeline.h"
@@ -309,6 +311,50 @@ static GLuint fp_app_vao = 0;
 // GL_PRIMITIVE_RESTART_FIXED_INDEX 是否已启用（CPU 跟踪，替代 glIsEnabled 查询）
 static bool fp_restart_enabled = false;
 static bool fp_init_done = false;
+
+// KHR_debug 枚举（GLES 3.0 头缺失，KHR_debug 扩展提供）
+#ifndef GL_DEBUG_OUTPUT_SYNCHRONOUS
+#define GL_DEBUG_OUTPUT_SYNCHRONOUS 0x8242
+#endif
+#ifndef GL_DEBUG_OUTPUT
+#define GL_DEBUG_OUTPUT 0x92E0
+#endif
+#ifndef GL_DEBUG_TYPE_ERROR
+#define GL_DEBUG_TYPE_ERROR 0x824C
+#endif
+#ifndef GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR
+#define GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR 0x824D
+#endif
+static bool ltw_dbg_cb_installed = false;
+
+// MathCode: 2026-09-08 KHR_debug 驱动回调——错误发生瞬间由驱动报案并抓
+// backtrace，直接点名产生调用的调用方，终结 sticky 队列的错误搬移迷局。
+static void fp_debug_cb(GLenum source, GLenum type, GLuint id, GLenum severity,
+                        GLsizei length, const GLchar* message, const void* userParam) {
+    (void)source; (void)severity; (void)userParam;
+    if(type != GL_DEBUG_TYPE_ERROR && type != GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR) return;
+    void* bt[24];
+    int n = backtrace(bt, 24);
+    char** syms = n > 0 ? backtrace_symbols(bt, n) : NULL;
+    LTW_ERROR_PRINTF("[KDBG] type=0x%x id=%u msg=%.120s", type, id, message ? message : "");
+    for(int i = 0; i < n && i < 16; i++) {
+        LTW_ERROR_PRINTF("[KDBG] bt[%d] %s", i, syms ? syms[i] : "?");
+    }
+    free(syms);
+}
+
+static void fp_debug_install(void) {
+    if(ltw_dbg_cb_installed || !es3_functions.glDebugMessageCallback) return;
+    ltw_dbg_cb_installed = true;
+    es3_functions.glDebugMessageCallback(fp_debug_cb, NULL);
+    if(es3_functions.glDebugMessageControl) {
+        es3_functions.glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE,
+                                            0, NULL, GL_TRUE);
+    }
+    es3_functions.glEnable(GL_DEBUG_OUTPUT);
+    es3_functions.glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+    LTW_ERROR_PRINTF("[KDBG] KHR_debug callback installed");
+}
 
 // 默认 shader uniform 缓存：值没变就不重传（每次批次提交省约 10 次 glUniform）
 static bool fp_uniforms_initialized = false;
@@ -781,6 +827,7 @@ static void fp_ensure_program(void) {
     }
 
     fp_program = prog;
+    fp_debug_install();
     fp_mvp_loc = es3_functions.glGetUniformLocation(prog, "uMVP");
     fp_ge_check("fp_glGetUniformLocation");
     fp_tex_loc = es3_functions.glGetUniformLocation(prog, "uTex");
