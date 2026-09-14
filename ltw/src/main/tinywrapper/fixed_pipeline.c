@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <math.h>
 #include <dlfcn.h>
-#include <execinfo.h>
+#include <unwind.h>
 #include <GLES3/gl3.h>
 #include "GL/gl.h"
 #include "fixed_pipeline.h"
@@ -720,21 +720,28 @@ static void fp_immediate_push(GLfloat x, GLfloat y, GLfloat z) {
 // ---- 驱动级错误定位回调（KHR_debug）----
 static bool ltw_dbg_installed = false;
 
+struct ltw_bt_ctx { void* pcs[12]; int n; };
+static _Unwind_Reason_Code ltw_bt_cb(struct _Unwind_Context* uc, void* data) {
+    struct ltw_bt_ctx* c = (struct ltw_bt_ctx*)data;
+    if(c->n < 12) c->pcs[c->n++] = (void*)_Unwind_GetIP(uc);
+    return _URC_NO_REASON;
+}
+
 static void ltw_debug_cb(GLenum source, GLenum type, GLuint id, GLenum severity,
                          GLsizei length, const GLchar *message, const void *userParam) {
     (void)source; (void)id; (void)severity; (void)length; (void)userParam;
     if(type != GL_DEBUG_TYPE_ERROR && type != GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR) return;
     LTW_ERROR_PRINTF("[DBG] drv: %s", message);
-    void* bt[12];
-    int n = backtrace(bt, 12);
-    for(int i = 0; i < n; i++) {
+    struct ltw_bt_ctx ctx = { {0}, 0 };
+    _Unwind_Backtrace(ltw_bt_cb, &ctx);
+    for(int i = 0; i < ctx.n; i++) {
         Dl_info info;
-        if(dladdr(bt[i], &info) && info.dli_fname) {
+        if(dladdr(ctx.pcs[i], &info) && info.dli_fname) {
             LTW_ERROR_PRINTF("[DBG]   #%d %s %s+%#lx", i, info.dli_fname,
                              info.dli_sname ? info.dli_sname : "?",
-                             (unsigned long)((char*)bt[i] - (char*)info.dli_fbase));
+                             (unsigned long)((char*)ctx.pcs[i] - (char*)info.dli_fbase));
         } else {
-            LTW_ERROR_PRINTF("[DBG]   #%d %p", i, bt[i]);
+            LTW_ERROR_PRINTF("[DBG]   #%d %p", i, ctx.pcs[i]);
         }
     }
 }
