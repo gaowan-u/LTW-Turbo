@@ -13,6 +13,27 @@
  */
 #include <stdbool.h>
 #include <stdio.h>
+#include <GLES3/gl3.h>
+
+// MathCode: 桌面 GL 固定管线光照/雾函数——GLES 无此 API。MC 1.12 每帧
+// 调用（GlStateManager 光照/雾系统），此前无 override 穿透到 Mali 驱动
+// 的桌面兼容层，每次调用报 GL_INVALID_OPERATION（"OpenGL ES API version
+// mismatch"），即 1282 刷屏真凶（KHR_debug 驱动回调实锤：
+// glLightfv 124k / glFogfv 33k / glLightModelfv 15k / glFogf 7k）。
+// 固定管线 shader 不消费这些状态，no-op 与"调用失败被忽略"的既有
+// 视觉完全一致；将来实现逐顶点光照/雾时在此记录状态。
+void glLightf(GLenum light, GLenum pname, GLfloat param) { (void)light; (void)pname; (void)param; }
+void glLightfv(GLenum light, GLenum pname, const GLfloat *params) { (void)light; (void)pname; (void)params; }
+void glLighti(GLenum light, GLenum pname, GLint param) { (void)light; (void)pname; (void)param; }
+void glLightiv(GLenum light, GLenum pname, const GLint *params) { (void)light; (void)pname; (void)params; }
+void glLightModelf(GLenum pname, GLfloat param) { (void)pname; (void)param; }
+void glLightModelfv(GLenum pname, const GLfloat *params) { (void)pname; (void)params; }
+void glLightModeli(GLenum pname, GLint param) { (void)pname; (void)param; }
+void glLightModeliv(GLenum pname, const GLint *params) { (void)pname; (void)params; }
+void glFogf(GLenum pname, GLfloat param) { (void)pname; (void)param; }
+void glFogfv(GLenum pname, const GLfloat *params) { (void)pname; (void)params; }
+void glFogi(GLenum pname, GLint param) { (void)pname; (void)param; }
+void glFogiv(GLenum pname, const GLint *params) { (void)pname; (void)params; }
 void stub_glCullFace() {
 }
 void stub_glFrontFace() {
