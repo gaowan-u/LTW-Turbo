@@ -2060,8 +2060,10 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
                 if(ny < ndcminy) ndcminy = ny;
                 if(ny > ndcmaxy) ndcmaxy = ny;
             }
+            bool ortho_proj = (P[3] == 0.f && P[7] == 0.f && P[11] == 0.f);
             bool bad = badw || ndcminx < -1.02f || ndcmaxx > 1.02f || ndcminy < -1.02f || ndcmaxy > 1.02f;
-            if(dump_all || bad) {
+            // 透视投影（panorama/3D 场景）超界属正常，只报正交（GUI）绘制
+            if((dump_all || (bad && ortho_proj))) {
                 LTW_ERROR_PRINTF("[VD] n=%d cnt=%d ndc=[%g..%g, %g..%g]%s "
                                  "v0=[%g %g %g] v1=[%g %g %g] v2=[%g %g %g] v3=[%g %g %g] "
                                  "P=[%g %g %g %g|%g %g %g %g|%g %g %g %g|%g %g %g %g] "
