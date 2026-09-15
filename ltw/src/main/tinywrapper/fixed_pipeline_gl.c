@@ -60,6 +60,11 @@ void glPopMatrix(void) {
 void glOrtho(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar) {
     if(!current_context) return;
     fp_flush_immediate_batch();
+    // MathCode: Mojang黑框诊断——ortho 参数决定 quad 逻辑坐标范围
+    {
+        static int ologs = 0;
+        if(ologs++ < 20) LTW_ERROR_PRINTF("[VP] glOrtho l=%g r=%g b=%g t=%g", left, right, bottom, top);
+    }
     fp_ortho(left, right, bottom, top, zNear, zFar);
 }
 void glFrustum(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar) {

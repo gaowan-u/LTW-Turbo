@@ -2030,6 +2030,23 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count,
                                fp_client_vertex_ptr, GL_STREAM_DRAW);
     fp_ge_chk("upl_buf", "cnt=%d vsize=%d", count, (int)vsize);
+    // MathCode: Mojang黑框诊断——启动前60次绘制dump矩阵与顶点原始数据
+    {
+        static int vdump = 0;
+        if(vdump++ < 60 && fp_client_vertex_type == GL_FLOAT) {
+            const GLfloat* vv = (const GLfloat*)fp_client_vertex_ptr;
+            const GLfloat* P = fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]];
+            const GLfloat* M = fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]];
+            GLsizei nv = vsize >= 24 ? 2 : 1;
+            LTW_ERROR_PRINTF("[VD] n=%d cnt=%d vstride=%g f=[%g %g %g %g %g %g]v0[%g %g %g %g %g %g]v1 P=[%g %g %g %g|%g %g %g %g] M=[%g %g %g %g|%g %g %g %g]",
+                             vdump, count, (double)vsize,
+                             vv[0], vv[1], vv[2], vv[3], vv[4], vv[5],
+                             nv > 1 ? vv[6] : 0.f, nv > 1 ? vv[7] : 0.f, nv > 1 ? vv[8] : 0.f,
+                             nv > 1 ? vv[9] : 0.f, nv > 1 ? vv[10] : 0.f, nv > 1 ? vv[11] : 0.f,
+                             P[0], P[1], P[2], P[3], P[4], P[5], P[6], P[7],
+                             M[0], M[1], M[2], M[3], M[4], M[5], M[6], M[7]);
+        }
+    }
     fp_ge_diag_buffer("upl_buf", fp_vbo);
 
     // 位置 attribute：offset 0

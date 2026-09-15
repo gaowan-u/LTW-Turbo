@@ -601,6 +601,11 @@ void glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
     es3_functions.glViewport(x, y, width, height);
     fp_ge_check("fm_glViewport");
     fp_ge_check("st_vp");
+    // MathCode: Mojang黑框诊断——viewport 尺寸与 quad 覆盖对比
+    {
+        static int vp_logs = 0;
+        if(vp_logs++ < 30) LTW_ERROR_PRINTF("[VP] glViewport x=%d y=%d w=%d h=%d", x, y, width, height);
+    }
 }
 void glBlendFunc(GLenum sfactor, GLenum dfactor) {
     if(!current_context) return;
