@@ -494,6 +494,7 @@ static bool is_fixed_function_cap(GLenum cap) {
 
 void glEnable(GLenum cap) {
     if(!current_context) return;
+    if(cap == GL_DEPTH_TEST) fp_set_depth_test(true);
     // 批次内状态（GL_TEXTURE_2D/GL_ALPHA_TEST/GL_BLEND）：只更新 CPU 跟踪，
     // 不冲刷批次。F3 每行 drawRect 会开关纹理/混合，若每次都冲刷，
     // 整段文字无法合并成一次提交（见 docs/f3-overlay-single-submit-plan.md）。
@@ -532,6 +533,7 @@ void glEnable(GLenum cap) {
 
 void glDisable(GLenum cap) {
     if(!current_context) return;
+    if(cap == GL_DEPTH_TEST) fp_set_depth_test(false);
     if(cap == GL_TEXTURE_2D || cap == GL_ALPHA_TEST || cap == GL_BLEND) {
         if(cap == GL_TEXTURE_2D) {
             fp_set_texture_enabled(false);
@@ -634,6 +636,7 @@ void glDepthMask(GLboolean flag) {
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glDepthMask(flag);
+    fp_set_depth_mask(flag != GL_FALSE);
     fp_ge_check("fm_glDepthMask");
     fp_ge_check("st_dm");
 }
@@ -641,6 +644,7 @@ void glColorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha
     if(!current_context) return;
     fp_flush_immediate_batch();
     es3_functions.glColorMask(red, green, blue, alpha);
+    fp_set_color_mask(red != GL_FALSE, green != GL_FALSE, blue != GL_FALSE, alpha != GL_FALSE);
     fp_ge_check("fm_glColorMask");
     fp_ge_check("st_cm");
 }

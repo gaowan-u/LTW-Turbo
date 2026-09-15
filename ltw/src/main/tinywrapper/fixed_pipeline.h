@@ -118,6 +118,9 @@ void fp_set_client_active_texture(GLenum unit);
 
 // 纹理状态
 void fp_set_texture_enabled(bool enabled);
+void fp_set_depth_test(bool on);
+void fp_set_depth_mask(bool on);
+void fp_set_color_mask(bool r, bool g, bool b, bool a);
 // 显示列表回放专用：TEXTURE_ENABLE op 固定写入 unit0 的 GL_TEXTURE_2D 状态。
 void fp_set_unit0_texture_enabled(bool enabled);
 void fp_set_active_texture(GLuint unit);

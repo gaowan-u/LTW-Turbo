@@ -336,6 +336,18 @@ static GLfloat fp_alpha_ref = 0.0f;
 // 是 (ONE, ZERO)；MC 的 GlStateManager 总在 enableBlend 前显式设置，
 // 这里主要用于批次快照的对比/应用/恢复。
 static bool fp_blend_enabled = false;
+// MathCode: depth/colorMask 的 CPU 跟踪（wrapper 维护），批次快照用。
+// 40369cc 的批次快照只补了混合状态——若 flush 发生在 depth-on 状态
+// （如主菜单 panorama 之后），攒的 GUI 文字会被深度剔除/画错一帧，
+// 表现为所有界面偶发"抽一下"（撕裂感）。
+static bool fp_depth_test = false;
+static bool fp_depth_mask = true;
+static bool fp_color_mask[4] = {true, true, true, true};
+void fp_set_depth_test(bool on) { fp_depth_test = on; }
+void fp_set_depth_mask(bool on) { fp_depth_mask = on; }
+void fp_set_color_mask(bool r, bool g, bool b, bool a) {
+    fp_color_mask[0] = r; fp_color_mask[1] = g; fp_color_mask[2] = b; fp_color_mask[3] = a;
+}
 static GLenum fp_blend_sfactor_rgb = GL_ONE;
 static GLenum fp_blend_dfactor_rgb = GL_ZERO;
 static GLenum fp_blend_sfactor_alpha = GL_ONE;
@@ -382,6 +394,9 @@ static GLfloat fp_batch_alpha_ref = 0.0f;
 // func，提交时（popMatrix）必须用录制时的混合状态绘制，否则文字会不带
 // 混合画出（黑块）。
 static bool fp_batch_blend_enabled = false;
+static bool fp_batch_depth_test = false;
+static bool fp_batch_depth_mask = true;
+static bool fp_batch_color_mask[4] = {true, true, true, true};
 static GLenum fp_batch_blend_sfactor_rgb = GL_ONE;
 static GLenum fp_batch_blend_dfactor_rgb = GL_ZERO;
 static GLenum fp_batch_blend_sfactor_alpha = GL_ONE;
@@ -1053,6 +1068,9 @@ static void fp_batch_begin(void) {
     fp_batch_blend_dfactor_rgb = fp_blend_dfactor_rgb;
     fp_batch_blend_sfactor_alpha = fp_blend_sfactor_alpha;
     fp_batch_blend_dfactor_alpha = fp_blend_dfactor_alpha;
+    fp_batch_depth_test = fp_depth_test;
+    fp_batch_depth_mask = fp_depth_mask;
+    memcpy(fp_batch_color_mask, fp_color_mask, sizeof(fp_batch_color_mask));
     fp_mat_mul(fp_batch_mvp,
                fp_matrix_stack[FP_MATRIX_PROJECTION][fp_matrix_top[FP_MATRIX_PROJECTION]],
                fp_matrix_stack[FP_MATRIX_MODELVIEW][fp_matrix_top[FP_MATRIX_MODELVIEW]]);
@@ -1140,6 +1158,12 @@ void fp_flush_immediate_batch(void) {
     if(fp_batch_blend_enabled) es3_functions.glEnable(GL_BLEND);
     else es3_functions.glDisable(GL_BLEND);
     fp_ge_check("fp_glBlend2");
+    // MathCode: 批内按录制时的 depth/colorMask 状态绘制
+    if(fp_batch_depth_test) es3_functions.glEnable(GL_DEPTH_TEST);
+    else es3_functions.glDisable(GL_DEPTH_TEST);
+    es3_functions.glDepthMask(fp_batch_depth_mask ? GL_TRUE : GL_FALSE);
+    es3_functions.glColorMask(fp_batch_color_mask[0], fp_batch_color_mask[1],
+                              fp_batch_color_mask[2], fp_batch_color_mask[3]);
     es3_functions.glBlendFuncSeparate(fp_batch_blend_sfactor_rgb,
                                       fp_batch_blend_dfactor_rgb,
                                       fp_batch_blend_sfactor_alpha,
@@ -1225,6 +1249,12 @@ void fp_flush_immediate_batch(void) {
     if(saved_blend_enabled) es3_functions.glEnable(GL_BLEND);
     else es3_functions.glDisable(GL_BLEND);
     fp_ge_check("fp_glBlend2");
+    // MathCode: 恢复 flush 时刻的 depth/colorMask（与混合状态同批处理）
+    if(fp_depth_test) es3_functions.glEnable(GL_DEPTH_TEST);
+    else es3_functions.glDisable(GL_DEPTH_TEST);
+    es3_functions.glDepthMask(fp_depth_mask ? GL_TRUE : GL_FALSE);
+    es3_functions.glColorMask(fp_color_mask[0], fp_color_mask[1],
+                              fp_color_mask[2], fp_color_mask[3]);
     es3_functions.glBlendFuncSeparate(saved_blend_sfactor_rgb,
                                       saved_blend_dfactor_rgb,
                                       saved_blend_sfactor_alpha,
