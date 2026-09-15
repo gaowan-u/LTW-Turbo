@@ -39,6 +39,7 @@ jobs:
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+      continue-on-error: true
 
     - name: Cache Android NDK
       uses: actions/cache@v4
