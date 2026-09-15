@@ -11,6 +11,7 @@
  * glLTWBeginBatchUpdate/EndBatchUpdate 批量应用，减少每帧状态抖动。
  */
 #include "proc.h"
+#include "fixed_pipeline.h"
 #include "egl.h"
 #include "mempool.h"
 #include "debug.h"
@@ -93,8 +94,10 @@ INTERNAL void swizzle_reset_texture(GLenum target) {
     memcpy(track->pending_swizzle, track->original_swizzle, sizeof(track->pending_swizzle));
 
     es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, GL_RED);
+    fp_ge_check("fs_glTexParameteri");
     es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_G, GL_GREEN);
     es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, GL_BLUE);
+    fp_ge_check("fs_glTexParameteri");
     es3_functions.glTexParameteri(target, GL_TEXTURE_SWIZZLE_A, GL_ALPHA);
 }
 

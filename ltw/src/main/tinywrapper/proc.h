@@ -20,6 +20,11 @@
 
 typedef void (*eglMustCastToProperFunctionPointerType)(void); //通用的 EGL 函数指针类型，用于兼容 eglGetProcAddress 返回值
 
+// KHR_debug：诊断用（驱动主动报告哪个调用产生 GL 错误），gl31.h 无此 typedef
+typedef void (*LTWDEBUGPROCPTR)(GLenum, GLenum, GLuint, GLenum, GLsizei, const GLchar *, const void *);
+typedef void (*LTWDEBUGCALLBACKPTR)(LTWDEBUGPROCPTR, const void *);
+typedef void (*LTWDEBUGCONTROLPTR)(GLenum, GLenum, GLenum, GLsizei, const GLuint *, GLboolean);
+
 typedef struct {
 #define GLESFUNC(name, type) type name; //展开成结构体成员声明
 #include "es3_functions.h"

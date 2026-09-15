@@ -43,6 +43,14 @@ void glGetQueryObjectiv( 	GLuint id,
 // 设置当前视口的深度范围
 void glDepthRange(GLdouble nearVal,
                   GLdouble farVal);
+// MathCode: 桌面纹理环境（GL_TEXTURE_ENV / GL_COMBINE / GL_INTERPOLATE /
+// GL_TEXTURE_ENV_COLOR）：GLES 无对应物，固定管线记录状态供默认 shader
+// 模拟（MC 1.12 生物受伤红闪、亮度调整）。
+void glTexEnv(GLenum target, GLenum pname, const GLfloat *params);
+void glTexEnvf(GLenum target, GLenum pname, GLfloat param);
+void glTexEnvi(GLenum target, GLenum pname, GLint param);
+void glTexEnvfv(GLenum target, GLenum pname, const GLfloat *params);
+void glTexEnviv(GLenum target, GLenum pname, const GLint *params);
 
 // GL_ARB_shader_objects / GL_ARB_vertex_shader / GL_ARB_fragment_shader
 // entry points are declared in GL/glext.h (included via proc.c). LWJGL2-era
@@ -105,6 +113,7 @@ GLESOVERRIDE(glDrawElementsInstanced)
 GLESOVERRIDE(glVertexAttribDivisor)
 GLESOVERRIDE(glEnableVertexAttribArray)
 GLESOVERRIDE(glDisableVertexAttribArray)
+GLESOVERRIDE(glBindVertexArray)
 GLESOVERRIDE(glUniform2f)
 GLESOVERRIDE(glUniform3f)
 GLESOVERRIDE(glUniform2fv)
@@ -119,6 +128,20 @@ GLESOVERRIDE(glDrawArrays)
 GLESOVERRIDE(glDrawElements)
 GLESOVERRIDE(glSampleCoverage)
 GLESOVERRIDE(glFlush)
+// 桌面固定管线光照/雾——GLES 无此 API，MC 每帧调用的穿透调用是
+// 1282 刷屏真凶（见 stubs.c 顶部注释），no-op 硬拦截。
+GLESOVERRIDE(glLightf)
+GLESOVERRIDE(glLightfv)
+GLESOVERRIDE(glLighti)
+GLESOVERRIDE(glLightiv)
+GLESOVERRIDE(glLightModelf)
+GLESOVERRIDE(glLightModelfv)
+GLESOVERRIDE(glLightModeli)
+GLESOVERRIDE(glLightModeliv)
+GLESOVERRIDE(glFogf)
+GLESOVERRIDE(glFogfv)
+GLESOVERRIDE(glFogi)
+GLESOVERRIDE(glFogiv)
 GLESOVERRIDE(glFinish)
 GLESOVERRIDE(glGetTexParameteriv)
 GLESOVERRIDE(glGetTexParameterfv)
@@ -225,6 +248,12 @@ GLESOVERRIDE(glBindFragDataLocation)
 GLESOVERRIDE(glGetTexImage)
 GLESOVERRIDE(glGetQueryObjectiv)
 GLESOVERRIDE(glDepthRange)
+// MathCode: 纹理环境入口（生物受伤红闪）
+GLESOVERRIDE(glTexEnv)
+GLESOVERRIDE(glTexEnvf)
+GLESOVERRIDE(glTexEnvi)
+GLESOVERRIDE(glTexEnvfv)
+GLESOVERRIDE(glTexEnviv)
 GLESOVERRIDE(glVertexAttrib1d)
 GLESOVERRIDE(glVertexAttrib1dv)
 GLESOVERRIDE(glVertexAttrib1s)

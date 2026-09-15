@@ -11,6 +11,7 @@
  * 归一化（normalized）场景使用 ARM NEON（simd_utils.h）批量转换。
  */
 #include <proc.h>
+#include "fixed_pipeline.h"
 #include <egl.h>
 #include <stdio.h>
 #include "simd_utils.h"
@@ -23,18 +24,21 @@ static void normalize_4values(const float* src, float* dst, float scale_pos, flo
 void glVertexAttrib1s( 	GLuint index,
                           GLshort v0) {
     es3_functions.glVertexAttrib1f(index, (GLfloat) v0);
+    fp_ge_check("fv_glVertexAttrib1f");
 }
 
 void glVertexAttrib2s( 	GLuint index,
                           GLshort v0,
                           GLshort v1) {
     es3_functions.glVertexAttrib2f(index, (GLfloat) v0, (GLfloat) v1);
+    fp_ge_check("fv_glVertexAttrib2f");
 }
 void glVertexAttrib3s( 	GLuint index,
                           GLshort v0,
                           GLshort v1,
                           GLshort v2) {
     es3_functions.glVertexAttrib3f(index, (GLfloat) v0, (GLfloat) v1, (GLfloat) v2);
+    fp_ge_check("fv_glVertexAttrib3f");
 }
 void glVertexAttrib4s( 	GLuint index,
                           GLshort v0,
@@ -42,6 +46,7 @@ void glVertexAttrib4s( 	GLuint index,
                           GLshort v2,
                           GLshort v3) {
     es3_functions.glVertexAttrib4f(index, (GLfloat) v0, (GLfloat) v1, (GLfloat) v2, (GLfloat) v3);
+    fp_ge_check("fv_glVertexAttrib4f");
 }
 
 /* glVertexAttribXsv family */
@@ -66,18 +71,21 @@ void glVertexAttrib4sv( 	GLuint index,
 void glVertexAttrib1d( 	GLuint index,
                           GLdouble v0) {
     es3_functions.glVertexAttrib1f(index, (GLfloat) v0);
+    fp_ge_check("fv_glVertexAttrib1f");
 }
 
 void glVertexAttrib2d( 	GLuint index,
                           GLdouble v0,
                           GLdouble v1) {
     es3_functions.glVertexAttrib2f(index, (GLfloat) v0, (GLfloat) v1);
+    fp_ge_check("fv_glVertexAttrib2f");
 }
 void glVertexAttrib3d( 	GLuint index,
                           GLdouble v0,
                           GLdouble v1,
                           GLdouble v2) {
     es3_functions.glVertexAttrib3f(index, (GLfloat) v0, (GLfloat) v1, (GLfloat) v2);
+    fp_ge_check("fv_glVertexAttrib3f");
 }
 void glVertexAttrib4d( 	GLuint index,
                           GLdouble v0,
@@ -85,6 +93,7 @@ void glVertexAttrib4d( 	GLuint index,
                           GLdouble v2,
                           GLdouble v3) {
     es3_functions.glVertexAttrib4f(index, (GLfloat) v0, (GLfloat) v1, (GLfloat) v2, (GLfloat) v3);
+    fp_ge_check("fv_glVertexAttrib4f");
 }
 
 /* glVertexAttribXdv family */
@@ -109,17 +118,20 @@ void glVertexAttrib4dv( 	GLuint index,
 void glVertexAttribI1i( 	GLuint index,
                            GLint v0) {
     es3_functions.glVertexAttribI4i(index, v0, 0, 0, 1);
+    fp_ge_check("fv_glVertexAttribI4i");
 }
 void glVertexAttribI2i( 	GLuint index,
                            GLint v0,
                            GLint v1) {
     es3_functions.glVertexAttribI4i(index, v0, v1, 0, 1);
+    fp_ge_check("fv_glVertexAttribI4i");
 }
 void glVertexAttribI3i( 	GLuint index,
                            GLint v0,
                            GLint v1,
                            GLint v2) {
     es3_functions.glVertexAttribI4i(index, v0, v1, v2, 1);
+    fp_ge_check("fv_glVertexAttribI4i");
 }
 // glVertexAttribI4i is natively implemented in OpenGL ES
 
@@ -142,35 +154,42 @@ void glVertexAttribI3iv( 	GLuint index,
 void glVertexAttribI4bv( 	GLuint index,
                             const GLbyte *v) {
     es3_functions.glVertexAttribI4i(index, (GLint)v[0], (GLint)v[1], (GLint)v[2], (GLint)v[3]);
+    fp_ge_check("fv_glVertexAttribI4i");
 }
 void glVertexAttribI4ubv( 	GLuint index,
                             const GLubyte *v) {
     es3_functions.glVertexAttribI4ui(index, (GLuint)v[0], (GLuint)v[1], (GLuint)v[2], (GLuint)v[3]);
+    fp_ge_check("fv_glVertexAttribI4ui");
 }
 void glVertexAttribI4sv( 	GLuint index,
                             const GLshort *v) {
     es3_functions.glVertexAttribI4i(index, (GLint)v[0], (GLint)v[1], (GLint)v[2], (GLint)v[3]);
+    fp_ge_check("fv_glVertexAttribI4i");
 }
 void glVertexAttribI4usv( 	GLuint index,
                              const GLushort *v) {
     es3_functions.glVertexAttribI4ui(index, (GLuint)v[0], (GLuint)v[1], (GLuint)v[2], (GLuint)v[3]);
+    fp_ge_check("fv_glVertexAttribI4ui");
 }
 
 /* glVertexAttribIXui family */
 void glVertexAttribI1ui( 	GLuint index,
                             GLuint v0) {
     es3_functions.glVertexAttribI4ui(index, v0, 0, 0, 1);
+    fp_ge_check("fv_glVertexAttribI4ui");
 }
 void glVertexAttribI2ui( 	GLuint index,
                             GLuint v0,
                             GLuint v1) {
     es3_functions.glVertexAttribI4ui(index, v0, v1, 0, 1);
+    fp_ge_check("fv_glVertexAttribI4ui");
 }
 void glVertexAttribI3ui( 	GLuint index,
                             GLuint v0,
                             GLuint v1,
                             GLuint v2) {
     es3_functions.glVertexAttribI4ui(index, v0, v1, v2, 1);
+    fp_ge_check("fv_glVertexAttribI4ui");
 }
 // glVertexAttibI4ui is natively implemented in OpenGL ES
 
@@ -200,6 +219,7 @@ void glVertexAttrib4Nub( 	GLuint index,
     GLfloat fv2 = ((GLfloat)v2 / 255.0f);
     GLfloat fv3 = ((GLfloat)v3 / 255.0f);
     es3_functions.glVertexAttrib4f(index, fv0, fv1, fv2, fv3);
+    fp_ge_check("fv_glVertexAttrib4f");
 }
 
 void glVertexAttrib4Nubv( 	GLuint index,
@@ -208,6 +228,7 @@ void glVertexAttrib4Nubv( 	GLuint index,
     float dst[4];
     normalize_4values(src, dst, 1.0f/255.0f, 1.0f/255.0f);
     es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
+    fp_ge_check("fv_glVertexAttrib4f");
 }
 
 void glVertexAttrib4Nusv( 	GLuint index,
@@ -216,6 +237,7 @@ void glVertexAttrib4Nusv( 	GLuint index,
     float dst[4];
     normalize_4values(src, dst, 1.0f/65535.0f, 1.0f/65535.0f);
     es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
+    fp_ge_check("fv_glVertexAttrib4f");
 }
 
 void glVertexAttrib4Nuiv( 	GLuint index,
@@ -225,6 +247,7 @@ void glVertexAttrib4Nuiv( 	GLuint index,
     float dst[4];
     normalize_4values(src, dst, 1.0f/4294967295.0f, 1.0f/4294967295.0f);
     es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
+    fp_ge_check("fv_glVertexAttrib4f");
 }
 
 static float bnormalize(GLbyte x) {
@@ -259,6 +282,7 @@ void glVertexAttrib4Nbv( 	GLuint index,
     float dst[4];
     normalize_4values(src, dst, 1.0f/127.0f, 1.0f/128.0f);
     es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
+    fp_ge_check("fv_glVertexAttrib4f");
 }
 
 void glVertexAttrib4Nsv( 	GLuint index,
@@ -267,6 +291,7 @@ void glVertexAttrib4Nsv( 	GLuint index,
     float dst[4];
     normalize_4values(src, dst, 1.0f/32767.0f, 1.0f/32768.0f);
     es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
+    fp_ge_check("fv_glVertexAttrib4f");
 }
 
 void glVertexAttrib4Niv( 	GLuint index,
@@ -275,9 +300,11 @@ void glVertexAttrib4Niv( 	GLuint index,
     float dst[4];
     normalize_4values(src, dst, 1.0f/2147483647.0f, 1.0f/2147483648.0f);
     es3_functions.glVertexAttrib4f(index, dst[0], dst[1], dst[2], dst[3]);
+    fp_ge_check("fv_glVertexAttrib4f");
 }
 
 void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer) {
     // 在初期，为了保持程序能运行，我们先直接调用底层的 GLES 函数
     es3_functions.glVertexAttribPointer(index, size, type, normalized, stride, pointer);
+    fp_ge_check("fv_glVertexAttribPointer");
 }

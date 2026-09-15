@@ -15,6 +15,7 @@
 #include "egl.h"
 #include "main.h"
 #include "debug.h"
+#include "fixed_pipeline.h"
 
 typedef struct {
     GLuint count;
@@ -35,6 +36,7 @@ void basevertex_init(context_t* context) {
         return;
     }
     es3_functions.glGenBuffers(1, &renderer->indirectRenderBuffer);
+    fp_ge_check("fb_glGenBuffers");
     GLenum error = es3_functions.glGetError();
     if(error != GL_NO_ERROR) {
         LTW_ERROR_PRINTF("LTW: Failed to initialize indirect buffers: %x", error);
@@ -54,11 +56,12 @@ GLint type_bytes(GLenum type) {
 
 static void restore_state(GLuint element_buffer) {
     es3_functions.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, current_context->bound_buffers[get_buffer_index(GL_DRAW_INDIRECT_BUFFER)]);
+    fp_ge_check("fb_glBindBuffer");
 }
 
 void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLint basevertex) {
-    LTW_ENTER("glDrawElementsBaseVertex");
-    if(!current_context) { LTW_EXIT(); return; }
+    if(!current_context) return;
+    fp_flush_immediate_batch();
     if(current_context->drawelementsbasevertex != NULL) {
         current_context->drawelementsbasevertex(mode, count, type, indices, basevertex);
         return;
@@ -67,6 +70,7 @@ void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const voi
     if(!renderer->ready) return;
     GLint elementbuffer;
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementbuffer);
+    fp_ge_check("fb_glGetIntegerv");
     if(elementbuffer == 0) {
         // I am not bothered enough to implement this.
         LTW_ERROR_PRINTF("LTW: Base vertex draws without element buffer are not supported");
@@ -89,8 +93,10 @@ void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const voi
     indirect_pass.instanceCount = 1;
     indirect_pass.reservedMustBeZero = 0;
     es3_functions.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, renderer->indirectRenderBuffer);
+    fp_ge_check("fb_glBindBuffer");
     es3_functions.glBufferData(GL_DRAW_INDIRECT_BUFFER, sizeof(indirect_pass_t), &indirect_pass, GL_STREAM_DRAW);
     es3_functions.glDrawElementsIndirect(mode, type, 0);
+    fp_ge_check("fb_glDrawElementsIndirect");
     restore_state(elementbuffer);
 }
 
@@ -102,8 +108,8 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
                                    const void * const *indices,
                                    GLsizei drawcount,
                                    const GLint *basevertex) {
-    LTW_ENTER("glMultiDrawElementsBaseVertex");
-    if(!current_context) { LTW_EXIT(); return; }
+    if(!current_context) return;
+    fp_flush_immediate_batch();
     // 添加参数验证
     if(!count || !indices || !basevertex) {
         LTW_ERROR_PRINTF("LTW: NULL pointer passed to glMultiDrawElementsBaseVertex");
@@ -119,6 +125,7 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
     if(!renderer->ready) return;
     GLint elementbuffer;
     es3_functions.glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementbuffer);
+    fp_ge_check("fb_glGetIntegerv");
     if(elementbuffer == 0) {
         // I am not bothered enough to implement this.
         LTW_ERROR_PRINTF("LTW: Base vertex draws without element buffer are not supported");
@@ -166,11 +173,14 @@ void glMultiDrawElementsBaseVertex(GLenum mode,
         pass->reservedMustBeZero = 0;
     }
     es3_functions.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, renderer->indirectRenderBuffer);
+    fp_ge_check("fb_glBindBuffer");
     es3_functions.glBufferData(GL_DRAW_INDIRECT_BUFFER, alloc_size, indirect_passes, GL_STREAM_DRAW);
     if(current_context->multidraw_indirect) {
         es3_functions.glMultiDrawElementsIndirectEXT(mode, type, 0, drawcount, 0);
+        fp_ge_check("fb_glMultiDrawElementsIndirectEXT");
     } else for(GLsizei i = 0; i < drawcount; i++) {
         es3_functions.glDrawElementsIndirect(mode, type, (void*)(sizeof(indirect_pass_t) * i));
+        fp_ge_check("fb_glDrawElementsIndirect");
     }
     free(indirect_passes);
     restore_state(elementbuffer);

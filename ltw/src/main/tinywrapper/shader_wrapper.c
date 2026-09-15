@@ -19,6 +19,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdbool.h>
+#include "fixed_pipeline.h"
 #include <stdint.h>
 #include <inttypes.h>
 #include "string_utils.h"
@@ -285,6 +286,7 @@ static GLchar* rewrite_frag_outputs(const GLchar* src) {
 GLuint glCreateProgram(void) {
     if(!current_context) return 0;
     GLuint phys_program = es3_functions.glCreateProgram();
+    fp_ge_check("fw_glCreateProgram");
     if(phys_program == 0) return phys_program;
     program_info_t *prog_info = mempool_alloc(current_context->program_info_pool);
     if(prog_info == NULL) {
@@ -298,7 +300,8 @@ GLuint glCreateProgram(void) {
 
 void glDeleteProgram(GLuint program) {
     if(!current_context) return;
-    GLTRACE_CALL(glDeleteProgram, es3_functions.glDeleteProgram(program));
+    es3_functions.glDeleteProgram(program);
+    fp_ge_check("fw_glDeleteProgram");
     program_info_t *old_programinfo = unordered_map_remove(current_context->program_map, (void*)program);
     if(old_programinfo == NULL) return;
     for(GLuint i = 0; i < MAX_DRAWBUFFERS; i++) {
@@ -311,7 +314,8 @@ void glDeleteProgram(GLuint program) {
 void glAttachShader( 	GLuint program,
                         GLuint shader) {
     if(!current_context) return;
-    GLTRACE_CALL(glAttachShader, es3_functions.glAttachShader(program, shader));
+    es3_functions.glAttachShader(program, shader);
+    fp_ge_check("fw_glAttachShader");
     program_info_t* program_info = unordered_map_get(current_context->program_map, (void*)program);
     shader_info_t* shader_info = unordered_map_get(current_context->shader_map, (void*)shader);
     if(program_info == NULL || shader_info == NULL || shader_info->shader_type != GL_FRAGMENT_SHADER) return;
@@ -340,7 +344,8 @@ void glGetShaderiv(GLuint shader, GLenum pname, GLint* params) {
         *params = GL_TRUE;
         return;
     }
-    GLTRACE_CALL(glGetShaderiv, es3_functions.glGetShaderiv(shader, pname, params));
+    es3_functions.glGetShaderiv(shader, pname, params);
+    fp_ge_check("fw_glGetShaderiv");
 }
 
 static void insert_fragout_pos(char* source, int* size, const char* name, GLuint pos) {
@@ -388,43 +393,53 @@ void glLinkProgram(GLuint program) {
     }
     const GLchar* const_source = (const GLchar*)new_source;
     GLuint patched_shader = es3_functions.glCreateShader(GL_FRAGMENT_SHADER);
+    fp_ge_check("fw_glCreateShader");
     if(patched_shader == 0) {
         free(new_source);
         LTW_ERROR_PRINTF("LTWShdrWp: failed to initialize patched shader");
         goto fallthrough;
     }
     es3_functions.glShaderSource(patched_shader, 1, &const_source, NULL);
+    fp_ge_check("fw_glShaderSource");
     es3_functions.glCompileShader(patched_shader);
     free(new_source);
     GLint compileStatus;
     es3_functions.glGetShaderiv(patched_shader, GL_COMPILE_STATUS, &compileStatus);
+    fp_ge_check("fw_glGetShaderiv");
     if(compileStatus != GL_TRUE) {
         GLint logSize;
         es3_functions.glGetShaderiv(patched_shader, GL_INFO_LOG_LENGTH, &logSize);
+        fp_ge_check("fw_glGetShaderiv");
         if(logSize > 0) {
             GLchar* log = (GLchar*)malloc(logSize + 1);
             if(log) {
                 es3_functions.glGetShaderInfoLog(patched_shader, logSize, NULL, log);
+                fp_ge_check("fw_glGetShaderInfoLog");
                 LTW_ERROR_PRINTF("LTWShdrWp: failed to compile patched fragment shader, using default. Log:\n\n%s\n\nShader content:\n\n%s\n\n", log, const_source);
                 free(log);
             }
         }
         es3_functions.glDeleteShader(patched_shader);
+        fp_ge_check("fw_glDeleteShader");
         goto fallthrough;
     }
     es3_functions.glDetachShader(program, program_info->frag_shader);
+    fp_ge_check("fw_glDetachShader");
     es3_functions.glAttachShader(program, patched_shader);
     es3_functions.glLinkProgram(program);
+    fp_ge_check("fw_glLinkProgram");
     es3_functions.glDeleteShader(patched_shader);
     return;
     fallthrough:
-    GLTRACE_CALL(glLinkProgram, es3_functions.glLinkProgram(program));
+    es3_functions.glLinkProgram(program);
+    fp_ge_check("fw_glLinkProgram");
 }
 
 GLuint glCreateShader(GLenum shaderType) {
     if(!current_context) return 0;
     GLuint phys_shader;
-    GLTRACE_CALL(glCreateShader, phys_shader = es3_functions.glCreateShader(shaderType));
+    phys_shader = es3_functions.glCreateShader(shaderType);
+    fp_ge_check("fw_glCreateShader");
     if(phys_shader == 0) return 0;
     shader_info_t* info_struct = mempool_alloc(current_context->shader_info_pool);
     if(info_struct == NULL) {
@@ -439,7 +454,8 @@ GLuint glCreateShader(GLenum shaderType) {
 
 void glDeleteShader(GLuint shader) {
     if(!current_context) return;
-    GLTRACE_CALL(glDeleteShader, es3_functions.glDeleteShader(shader));
+    es3_functions.glDeleteShader(shader);
+    fp_ge_check("fw_glDeleteShader");
     shader_info_t * old_shaderinfo = unordered_map_remove(current_context->shader_map, (void*)shader);
     if(old_shaderinfo == NULL) return;
     if(old_shaderinfo->source != NULL) free((void*)old_shaderinfo->source);
@@ -452,6 +468,7 @@ void glShaderSource(GLuint shader, GLsizei count, const GLchar *const*string, co
     if(shader_info == NULL) {
         LTW_ERROR_PRINTF("LTWShdrWp: shader_info missing for shader %u", shader);
         es3_functions.glShaderSource(shader, count, string, length);
+        fp_ge_check("fw_glShaderSource");
         return;
     }
 
@@ -482,6 +499,7 @@ void glShaderSource(GLuint shader, GLsizei count, const GLchar *const*string, co
         }
         shader_info->source = new_source;
         es3_functions.glShaderSource(shader, 1, &shader_info->source, 0);
+        fp_ge_check("fw_glShaderSource");
         free(target_string);
 
         #ifdef SHADER_CACHE_STATS
@@ -514,7 +532,8 @@ void glShaderSource(GLuint shader, GLsizei count, const GLchar *const*string, co
     }
     if(shader_info->source != NULL) free((void*)shader_info->source);
     shader_info->source = new_source;
-    GLTRACE_CALL(glShaderSource, es3_functions.glShaderSource(shader, 1, &shader_info->source, 0));
+    es3_functions.glShaderSource(shader, 1, &shader_info->source, 0);
+    fp_ge_check("fw_glShaderSource");
     free(target_string);
 }
 
@@ -557,6 +576,7 @@ void glDeleteObjectARB(GLhandleARB obj) {
 void glGetObjectParameterivARB(GLhandleARB obj, GLenum pname, GLint *params) {
     if(ltws_is_program((GLuint)obj)) {
         es3_functions.glGetProgramiv((GLuint)obj, pname, params);
+        fp_ge_check("fw_glGetProgramiv");
     } else if(ltws_is_shader((GLuint)obj)) {
         glGetShaderiv((GLuint)obj, pname, params);
     }
@@ -575,4 +595,5 @@ void glGetInfoLogARB(GLhandleARB obj, GLsizei maxLength, GLsizei *length, GLchar
 
 void glGetAttachedObjectsARB(GLhandleARB containerObj, GLsizei maxCount, GLsizei *count, GLhandleARB *obj) {
     es3_functions.glGetAttachedShaders((GLuint)containerObj, maxCount, count, (GLuint*)obj);
+    fp_ge_check("fw_glGetAttachedShaders");
 }

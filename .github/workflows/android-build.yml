@@ -2,7 +2,7 @@ name: Android Build - Build APK
 
 on:
   push:
-    branches: [ main, master, ui/optimize-app-interface ]
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
@@ -39,6 +39,7 @@ jobs:
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+      continue-on-error: true
 
     - name: Cache Android NDK
       uses: actions/cache@v4
