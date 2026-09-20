@@ -1414,9 +1414,22 @@ void fp_note_vbo_upload(GLuint abo, GLintptr offset, GLsizeiptr size, const void
 // 之后所有实体 DL 回放采样 lightmap 最暗角=全身黑。
 static void fp_snapshot_lightmap_uv_vbo(void) {
     if(fp_client_texcoord1_type != GL_SHORT || fp_client_texcoord1_size < 2 ||
-       fp_client_texcoord1_abo == 0) return;
-    if(fp_vbo_upload_cache.abo != (GLuint)fp_client_texcoord1_abo || !fp_vbo_upload_cache.data)
+       fp_client_texcoord1_abo == 0) {
+        if(ltw_lightmap_trace)
+            LTW_ERROR_PRINTF("[LMT] t1skip type=0x%x size=%d abo=%d",
+                             fp_client_texcoord1_type, fp_client_texcoord1_size,
+                             fp_client_texcoord1_abo);
         return;
+    }
+    if(fp_vbo_upload_cache.abo != (GLuint)fp_client_texcoord1_abo || !fp_vbo_upload_cache.data) {
+        if(ltw_lightmap_trace)
+            LTW_ERROR_PRINTF("[LMT] t1nomatch upabo=%u updata=%p want=%d",
+                             fp_vbo_upload_cache.abo, fp_vbo_upload_cache.data,
+                             fp_client_texcoord1_abo);
+        return;
+    }
+    if(ltw_lightmap_trace)
+        LTW_ERROR_PRINTF("[LMT] t1match upabo=%u", fp_vbo_upload_cache.abo);
     // unit1 指针是 VBO 绝对偏移；上传偏移 + 指针偏移定位 UV1 在 CPU 缓冲中的位置
     ptrdiff_t abs_off = (ptrdiff_t)((uintptr_t)fp_client_texcoord1_ptr +
                                     (uintptr_t)fp_vbo_upload_cache.offset);
