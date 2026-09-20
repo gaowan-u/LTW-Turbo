@@ -1402,6 +1402,11 @@ void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* po
         fp_client_texcoord1_stride = stride; fp_client_texcoord1_ptr = pointer;
         fp_client_texcoord1_abo = fp_current_abo();
         fp_client_texcoord1_touched = true;  // MathCode: 本次绘制 lightmap 数据有效标记
+        // MathCode: 云黑闪诊断——谁在世界段后设 unit1 指针（量极小，仅 UNIT1 指针设置点）
+        if(ltw_lightmap_trace) {
+            LTW_ERROR_PRINTF("[LMT] t1ptr size=%d type=0x%x stride=%d ptr=%p abo=%d",
+                             size, type, stride, pointer, fp_client_texcoord1_abo);
+        }
     }
 }
 void fp_set_client_active_texture(GLenum unit) {
