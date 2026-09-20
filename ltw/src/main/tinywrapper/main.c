@@ -632,6 +632,11 @@ void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void
     if(!current_context) return;
     es3_functions.glBufferSubData(target, offset, size, data);
     ltw_ebo_shadow_upload(target, size, data, offset, false);
+    // MathCode: 记录 ARRAY_BUFFER 上传（data 仍是有效 CPU 指针），
+    // 实体常量 lightmap 快照的 VBO 数据源
+    if(target == GL_ARRAY_BUFFER) {
+        fp_note_vbo_upload((GLuint)current_context->bound_buffers[0], offset, size, data);
+    }
 }
 void glDeleteBuffers(GLsizei n, const GLuint* buffers) {
     if(!current_context) return;

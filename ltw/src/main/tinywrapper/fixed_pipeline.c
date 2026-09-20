@@ -1390,6 +1390,50 @@ void fp_vertex_pointer(GLint size, GLenum type, GLsizei stride, const void* poin
     fp_client_vertex_stride = stride; fp_client_vertex_ptr = pointer;
     fp_client_vertex_abo = fp_current_abo();
 }
+// MathCode: 实体常量 lightmap 快照的 VBO 数据源缓存——MC Tessellator 用
+// glBufferSubData 上传交错顶点数据（此刻 data 仍是有效 CPU 指针），记录
+// (abo → data)，unit1 指针设置时（VBO 路径）用指针偏移免费解引用 UV1，
+// 避免每帧 glGetBufferSubData/MapBufferRange 读回 GPU。
+static struct {
+    GLuint abo;
+    GLintptr offset;
+    const void* data;
+    GLsizeiptr size;
+} fp_vbo_upload_cache = {0, 0, NULL, 0};
+
+void fp_note_vbo_upload(GLuint abo, GLintptr offset, GLsizeiptr size, const void* data) {
+    if(abo == 0 || !data) return;
+    fp_vbo_upload_cache.abo = abo;
+    fp_vbo_upload_cache.offset = offset;
+    fp_vbo_upload_cache.data = data;
+    fp_vbo_upload_cache.size = size;
+}
+
+// MathCode: 生物黑闪根因修复——常量 lightmap 快照只从 VBO 路径（方块段 abo!=0）取值。CPU 拷贝路径的绘制
+// （云/闪电/天气层等自发光 quad）会把快照污染成 (0,0)，
+// 之后所有实体 DL 回放采样 lightmap 最暗角=全身黑。
+static void fp_snapshot_lightmap_uv_vbo(void) {
+    if(fp_client_texcoord1_type != GL_SHORT || fp_client_texcoord1_size < 2 ||
+       fp_client_texcoord1_abo == 0) return;
+    if(fp_vbo_upload_cache.abo != (GLuint)fp_client_texcoord1_abo || !fp_vbo_upload_cache.data)
+        return;
+    // unit1 指针是 VBO 绝对偏移；上传偏移 + 指针偏移定位 UV1 在 CPU 缓冲中的位置
+    ptrdiff_t abs_off = (ptrdiff_t)((uintptr_t)fp_client_texcoord1_ptr +
+                                    (uintptr_t)fp_vbo_upload_cache.offset);
+    if(abs_off < 0 || (GLsizeiptr)abs_off + 4 > fp_vbo_upload_cache.size) return;
+    const uint8_t* p = (const uint8_t*)fp_vbo_upload_cache.data + abs_off;
+    int16_t u0 = *(const int16_t*)p;
+    int16_t v0 = *(const int16_t*)(p + 2);
+    if(ltw_lightmap_trace) {
+        LTW_ERROR_PRINTF("[LMT] t1uv u0=%d v0=%d", u0, v0);
+    }
+    if(u0 >= 0 && u0 <= 255 && v0 >= 0 && v0 <= 255) {
+        fp_last_lightmap_uv_snap[0] = (GLfloat)u0 / 16.0f;
+        fp_last_lightmap_uv_snap[1] = (GLfloat)v0 / 16.0f;
+        fp_last_lightmap_uv_valid = true;
+    }
+}
+
 void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer) {
     if(fp_client_active_texture == GL_TEXTURE0) {
         fp_client_texcoord_size = size; fp_client_texcoord_type = type;
@@ -1402,6 +1446,8 @@ void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* po
         fp_client_texcoord1_stride = stride; fp_client_texcoord1_ptr = pointer;
         fp_client_texcoord1_abo = fp_current_abo();
         fp_client_texcoord1_touched = true;  // MathCode: 本次绘制 lightmap 数据有效标记
+        // MathCode: VBO 路径快照——从 Tessellator 上传缓存取首顶点亮度
+        fp_snapshot_lightmap_uv_vbo();
         // MathCode: 云黑闪诊断——谁在世界段后设 unit1 指针（量极小，仅 UNIT1 指针设置点）
         if(ltw_lightmap_trace) {
             LTW_ERROR_PRINTF("[LMT] t1ptr size=%d type=0x%x stride=%d ptr=%p abo=%d",

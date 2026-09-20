@@ -104,6 +104,7 @@ void fp_normal3fv(const GLfloat* v);
 // 客户端顶点数组
 void fp_vertex_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer);
 void fp_texcoord_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer);
+void fp_note_vbo_upload(GLuint abo, GLintptr offset, GLsizeiptr size, const void* data);
 void fp_color_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer);
 void fp_normal_pointer(GLenum type, GLsizei stride, const void* pointer);
 void fp_enable_client_state(GLenum cap);
