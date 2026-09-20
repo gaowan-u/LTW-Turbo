@@ -2457,6 +2457,14 @@ static bool fp_begin_dl_replay(void) {
     fp_client_uv1_active = false;
     fp_lightmap_const_active = (fp_last_lightmap_uv_valid &&
                                 fp_bound_texture1 != 0);
+    // MathCode: 生物黑闪诊断——实体 DL 回放的常量 lightmap 快照值
+    if(ltw_lightmap_trace) {
+        LTW_ERROR_PRINTF("[LMT] dlent const=%d uv=[%.3f %.3f] valid=%d tex1=%u",
+                         fp_lightmap_const_active ? 1 : 0,
+                         fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1],
+                         fp_last_lightmap_uv_valid ? 1 : 0,
+                         fp_bound_texture1);
+    }
 
     es3_functions.glUseProgram(fp_program);
     if(current_context) current_context->program = fp_program;

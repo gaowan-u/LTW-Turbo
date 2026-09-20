@@ -23,6 +23,7 @@
 #include <string.h>
 #include "proc.h"
 #include "egl.h"
+#include "ltw_config.h"
 #include "glformats.h"
 #include "main.h"
 #include "swizzle.h"
@@ -225,6 +226,13 @@ void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *p
 void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *data) {
     if(!current_context) return;
     fp_flush_immediate_batch();
+    // MathCode: 云黑闪诊断——OptiFine 可能走 TexImage2D 重传 lightmap
+    if(ltw_config_get_bool("lightmapTrace", false) && width == 16 && height == 16 &&
+       data != NULL && level == 0) {
+        const unsigned char* p = (const unsigned char*)data;
+        LTW_ERROR_PRINTF("[LMT] lmup2d fmt=0x%x row0=[%02x %02x %02x %02x | %02x %02x %02x %02x]",
+                         format, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+    }
     if (isProxyTexture(target)) {
         current_context->proxy_width = ((width<<level)>current_context->maxTextureSize)?0:width;
         current_context->proxy_height = ((height<<level)>current_context->maxTextureSize)?0:height;
