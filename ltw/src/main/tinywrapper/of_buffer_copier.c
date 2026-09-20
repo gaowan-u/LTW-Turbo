@@ -18,7 +18,10 @@
 #include <string.h>
 #include "swizzle.h"
 #include "debug.h"
+#include "ltw_config.h"
 #include "fixed_pipeline.h"
+#include "ltw_config.h"
+
 void buffer_copier_init(context_t* context) {
     framebuffer_copier_t* copier = &context->framebuffer_copier;
     while(es3_functions.glGetError() != 0) {}
@@ -208,6 +211,15 @@ void glTexSubImage2D(GLenum target,
                      const void * data) {
     if(!current_context) return;
     fp_flush_immediate_batch();
+    // MathCode: 云黑闪诊断——lightmap 纹理（16x16 RGBA）每 tick 重传，
+    // dump 首行亮度值验证 tick 上传内容是否异常
+    if(ltw_config_get_bool("lightmapTrace", false) && width == 16 && height == 16 &&
+       format == GL_RGBA && type == GL_UNSIGNED_BYTE && data) {
+        const unsigned char* p = (const unsigned char*)data;
+        LTW_ERROR_PRINTF("[LMT] lmup x=%d y=%d row0=[%02x %02x %02x %02x | %02x %02x %02x %02x]",
+                         xoffset, yoffset,
+                         p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+    }
     // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查
     bool is_depth = (format == GL_DEPTH_COMPONENT);
     // MC 1.12 的字形/unicode 纹理用 GL_BGRA + GL_UNSIGNED_INT_8_8_8_8_REV
