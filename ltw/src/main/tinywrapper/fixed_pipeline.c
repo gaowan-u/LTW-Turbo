@@ -1837,7 +1837,13 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
         // 的 TEXTURE_COORD_ARRAY 启用状态持久且从不被管理，enable 状态
         // 不可靠；但残留指针+缓冲复用（Tessellator 全局缓冲）会让 off
         // 越界检查漏放 GUI 矩形，必须用 touched 区分"本次真实设置"。
-        if(uv1_touched && fp_client_texcoord1_size > 0 && fp_client_texcoord1_ptr) {
+        if(uv1_touched && fp_client_texcoord1_size > 0 && fp_client_texcoord1_ptr &&
+           // MathCode: 天空云黑闪根因修复——unit1 数组合法数据只有 lightmap
+           // 的 GL_(UNSIGNED_)SHORT 亮度级（0-255）。MC 遗留 client-active
+           // 单元时会把 unit0 的 GL_FLOAT UV 指针误设到 unit1，浮点 UV 采样
+           // lightmap 错位成黑块（云整块变黑闪）。按类型拒绝非 short 数据。
+           (fp_client_texcoord1_type == GL_SHORT ||
+            fp_client_texcoord1_type == GL_UNSIGNED_SHORT)) {
             ptrdiff_t off = (const uint8_t*)fp_client_texcoord1_ptr - (const uint8_t*)fp_client_vertex_ptr;
             if(off >= 0 && (size_t)off < vsize) {
                 es3_functions.glEnableVertexAttribArray(FP_ATTR_UV1);
@@ -1963,6 +1969,9 @@ bool fp_prepare_client_arrays(GLsizei count) {
                               : (size_t)fp_client_texcoord1_size * fp_type_bytes(fp_client_texcoord1_type);
         if(uv1_touched && fp_client_texcoord1_size > 0 &&
            fp_client_texcoord1_ptr != NULL &&
+           // MathCode: 同云黑闪修复——unit1 只接受 lightmap 的 short 类型
+           (fp_client_texcoord1_type == GL_SHORT ||
+            fp_client_texcoord1_type == GL_UNSIGNED_SHORT) &&
            v1off > 0 && v1stride > 0 &&
            (size_t)v1off + v1stride <= (size_t)count * v1stride) {
             es3_functions.glEnableVertexAttribArray(FP_ATTR_UV1);
