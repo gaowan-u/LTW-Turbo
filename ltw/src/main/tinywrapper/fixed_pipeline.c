@@ -1881,7 +1881,12 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
                 // 数据此刻仍指向 MC 正在使用的缓冲，拷贝后才安全。
                 {
                     const uint8_t* p = (const uint8_t*)fp_client_texcoord1_ptr;
-                    if(fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2) {
+                        // MathCode: 生物黑闪根因修复——常量 lightmap 快照只从
+                        // VBO 路径（方块段 abo!=0）取值。CPU 拷贝路径的绘制
+                        // （云/闪电/天气层等自发光 quad）会把快照污染成 (0,0)，
+                        // 之后所有实体 DL 回放采样 lightmap 最暗角=全身黑。
+                        if(fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2 &&
+                           fp_client_texcoord1_abo != 0) {
                         int16_t u0 = *(const int16_t*)p;
                         int16_t v0 = *(const int16_t*)(p + 2);
                         // MathCode: 云黑闪诊断——云 quad 的亮度 UV 值本身
