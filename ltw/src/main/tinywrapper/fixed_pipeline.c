@@ -1802,6 +1802,26 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
     es3_functions.glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vsize * count,
                                fp_client_vertex_ptr, GL_STREAM_DRAW);
 
+    // MathCode: 云黑闪终极诊断——小quad(count<=4)全量dump首顶点原始布局
+    if(ltw_lightmap_trace && count <= 4) {
+        const uint8_t* vp = (const uint8_t*)fp_client_vertex_ptr;
+        LTW_ERROR_PRINTF("[LMT] vdump vsize=%d pos=[%.1f %.1f %.1f] color=[%02x%02x%02x%02x] "
+                         "colen=%d coloff=%ld",
+                         (int)vsize,
+                         *(const float*)(vp), *(const float*)(vp+4), *(const float*)(vp+8),
+                         fp_client_color_active && fp_client_color_ptr
+                             ? ((const uint8_t*)fp_client_color_ptr)[0] : 0xAA,
+                         fp_client_color_active && fp_client_color_ptr
+                             ? ((const uint8_t*)fp_client_color_ptr)[1] : 0xBB,
+                         fp_client_color_active && fp_client_color_ptr
+                             ? ((const uint8_t*)fp_client_color_ptr)[2] : 0xCC,
+                         fp_client_color_active && fp_client_color_ptr
+                             ? ((const uint8_t*)fp_client_color_ptr)[3] : 0xDD,
+                         fp_client_color_active ? 1 : 0,
+                         fp_client_color_active && fp_client_color_ptr
+                             ? (long)((const uint8_t*)fp_client_color_ptr - vp) : -1L);
+    }
+
     // 位置 attribute：offset 0
     {
         es3_functions.glEnableVertexAttribArray(FP_ATTR_POS);
