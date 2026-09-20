@@ -1864,6 +1864,10 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
                     if(fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2) {
                         int16_t u0 = *(const int16_t*)p;
                         int16_t v0 = *(const int16_t*)(p + 2);
+                        // MathCode: 云黑闪诊断——云 quad 的亮度 UV 值本身
+                        if(ltw_lightmap_trace) {
+                            LTW_ERROR_PRINTF("[LMT] t1uv u0=%d v0=%d", u0, v0);
+                        }
                         if(u0 >= 0 && u0 <= 255 && v0 >= 0 && v0 <= 255) {
                             fp_last_lightmap_uv_snap[0] = (GLfloat)u0 / 16.0f;
                             fp_last_lightmap_uv_snap[1] = (GLfloat)v0 / 16.0f;
