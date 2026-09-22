@@ -208,9 +208,22 @@ void glTexCoord2d(GLdouble s, GLdouble t) {
 // LWJGL2 时代代码/老版本 MC 用 glMultiTexCoord2f(GL_TEXTURE1, ...) 设光照
 // 贴图坐标。固定管线模拟只消费 unit0，unit1 忽略；实现这些入口同时避免
 // LWJGL 因解析不到函数而刷 "No context is current"。
+// MathCode: 1.12.2 实体渲染前 MC 调 setLightmapCoordinates → 多纹理坐标
+// (GL_TEXTURE1, x, y) ——这是每个实体的真实光照，截获记录供 DL 回放使用。
+float fp_multi_lm_uv[2] = {0.f, 0.f};
+bool fp_multi_lm_valid = false;
 void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
     if(!current_context) return;
     if(texture == GL_TEXTURE0) fp_texcoord2f_raw(s, t);
+    else if(texture == GL_TEXTURE1) {
+        fp_multi_lm_uv[0] = s; fp_multi_lm_uv[1] = t;
+        fp_multi_lm_valid = true;
+        if(ltw_lightmap_trace) {
+            static int lm_mc_cnt = 0;
+            if(lm_mc_cnt++ < 40 || (lm_mc_cnt & 1023) == 0)
+                LTW_ERROR_PRINTF("[LMT] mc2f s=%.3f t=%.3f", s, t);
+        }
+    }
 }
 void glMultiTexCoord2fv(GLenum texture, const GLfloat* v) {
     if(!current_context || !v) return;
