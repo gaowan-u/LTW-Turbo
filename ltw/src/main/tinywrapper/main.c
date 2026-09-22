@@ -627,6 +627,11 @@ void glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum usage
     if(!current_context) return;
     es3_functions.glBufferData(target, size, data, usage);
     ltw_ebo_shadow_upload(target, size, data, 0, true);
+    // MathCode: MC Tessellator 每帧用 glBufferData 整量上传顶点（data 仍是
+    // 有效 CPU 指针），记录供实体常量 lightmap 快照解引用 UV1
+    if(target == GL_ARRAY_BUFFER && data != NULL) {
+        fp_note_vbo_upload((GLuint)current_context->bound_buffers[0], 0, size, data);
+    }
 }
 void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void* data) {
     if(!current_context) return;

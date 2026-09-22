@@ -1862,23 +1862,23 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
                                fp_client_vertex_ptr, GL_STREAM_DRAW);
 
     // MathCode: 云黑闪终极诊断——小quad(count<=4)全量dump首顶点原始布局
+    // 安全前提：本函数仅 vertex_abo==0（CPU 指针）时被调用；color/uv1 指针
+    // 可能是 VBO 偏移残留（F5 崩溃教训），只解引用确认是 CPU 地址的字段。
     if(ltw_lightmap_trace && count <= 4) {
         const uint8_t* vp = (const uint8_t*)fp_client_vertex_ptr;
+        ptrdiff_t coloff = (fp_client_color_active && fp_client_color_ptr &&
+                            fp_client_color_abo == 0)
+                               ? (const uint8_t*)fp_client_color_ptr - vp : -1;
         LTW_ERROR_PRINTF("[LMT] vdump vsize=%d pos=[%.1f %.1f %.1f] color=[%02x%02x%02x%02x] "
                          "colen=%d coloff=%ld",
                          (int)vsize,
                          *(const float*)(vp), *(const float*)(vp+4), *(const float*)(vp+8),
-                         fp_client_color_active && fp_client_color_ptr
-                             ? ((const uint8_t*)fp_client_color_ptr)[0] : 0xAA,
-                         fp_client_color_active && fp_client_color_ptr
-                             ? ((const uint8_t*)fp_client_color_ptr)[1] : 0xBB,
-                         fp_client_color_active && fp_client_color_ptr
-                             ? ((const uint8_t*)fp_client_color_ptr)[2] : 0xCC,
-                         fp_client_color_active && fp_client_color_ptr
-                             ? ((const uint8_t*)fp_client_color_ptr)[3] : 0xDD,
+                         coloff >= 0 ? ((const uint8_t*)fp_client_color_ptr)[0] : 0xAA,
+                         coloff >= 0 ? ((const uint8_t*)fp_client_color_ptr)[1] : 0xBB,
+                         coloff >= 0 ? ((const uint8_t*)fp_client_color_ptr)[2] : 0xCC,
+                         coloff >= 0 ? ((const uint8_t*)fp_client_color_ptr)[3] : 0xDD,
                          fp_client_color_active ? 1 : 0,
-                         fp_client_color_active && fp_client_color_ptr
-                             ? (long)((const uint8_t*)fp_client_color_ptr - vp) : -1L);
+                         (long)coloff);
     }
 
     // 位置 attribute：offset 0
@@ -1941,11 +1941,10 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
                 {
                     const uint8_t* p = (const uint8_t*)fp_client_texcoord1_ptr;
                         // MathCode: 生物黑闪根因修复——常量 lightmap 快照只从
-                        // VBO 路径（方块段 abo!=0）取值。CPU 拷贝路径的绘制
-                        // （云/闪电/天气层等自发光 quad）会把快照污染成 (0,0)，
-                        // 之后所有实体 DL 回放采样 lightmap 最暗角=全身黑。
-                        if(fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2 &&
-                           fp_client_texcoord1_abo != 0) {
+    // MathCode: 同 F5 崩溃防御——CPU 路径的 UV1 快照只信 unit1 指针
+    // 同为 CPU 地址（abo==0）的情况，VBO 偏移残留不解引用。
+    if(fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2 &&
+       fp_client_texcoord1_abo == 0 && fp_client_vertex_abo == 0) {
                         int16_t u0 = *(const int16_t*)p;
                         int16_t v0 = *(const int16_t*)(p + 2);
                         // MathCode: 云黑闪诊断——云 quad 的亮度 UV 值本身
