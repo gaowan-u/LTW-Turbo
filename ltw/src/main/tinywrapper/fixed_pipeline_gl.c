@@ -217,14 +217,23 @@ void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
     if(texture == GL_TEXTURE0) fp_texcoord2f_raw(s, t);
     else if(texture == GL_TEXTURE1) {
         // MathCode: 只在 lightmap 启用窗口内取值——disable 后 MC 会重置
-        // (0,0)，那是窗口外的垃圾数据，取了实体就黑
+        // (0,0)，那是窗口外的垃圾数据，取了实体就黑。
+        // 值域过滤：光照坐标是 0-255 像素域；OptiFine 在窗口内也会用
+        // unit1 传非光照数据（如 61680=0xF0F0 的纹理动画坐标），取了
+        // UV 错位采样 lightmap 亮区=掉落物/手持白天亮度。
         if(fp_lightmap_enabled()) {
-            fp_multi_lm_uv[0] = s; fp_multi_lm_uv[1] = t;
-            fp_multi_lm_valid = true;
-            if(ltw_lightmap_trace) {
-                static int lm_mc_cnt = 0;
-                if(lm_mc_cnt++ < 40 || (lm_mc_cnt & 1023) == 0)
-                    LTW_ERROR_PRINTF("[LMT] mc2f s=%.3f t=%.3f", s, t);
+            if(s <= 255.f && t <= 255.f) {
+                fp_multi_lm_uv[0] = s; fp_multi_lm_uv[1] = t;
+                fp_multi_lm_valid = true;
+                if(ltw_lightmap_trace) {
+                    static int lm_mc_cnt = 0;
+                    if(lm_mc_cnt++ < 40 || (lm_mc_cnt & 1023) == 0)
+                        LTW_ERROR_PRINTF("[LMT] mc2f s=%.3f t=%.3f", s, t);
+                }
+            } else if(ltw_lightmap_trace) {
+                static int lm_mc_junk_cnt = 0;
+                if(lm_mc_junk_cnt++ < 20)
+                    LTW_ERROR_PRINTF("[LMT] mc2f_junk s=%.3f t=%.3f", s, t);
             }
         } else if(ltw_lightmap_trace) {
             static int lm_mc_off_cnt = 0;
