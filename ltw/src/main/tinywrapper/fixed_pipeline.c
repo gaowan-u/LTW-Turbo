@@ -1524,6 +1524,12 @@ void fp_set_texture_enabled(bool enabled) {
     int idx = fp_texenv_unit_index(fp_active_texture);
     if(idx >= 0 && idx < FP_TEXENV_UNITS) fp_texture_enabled[idx] = enabled;
 }
+// MathCode: 实体真实光照窗口锚——lightmap 单元（unit1）的启用状态。
+// MC enableLightmap~disableLightmap 之间设置的 multiTexCoord2f(GL_TEXTURE1)
+// 才是实体光照；disable 后的重置值 (0,0) 不许污染。
+bool fp_lightmap_enabled(void) {
+    return fp_texture_enabled[1];
+}
 
 // 显示列表回放专用：TEXTURE_ENABLE op 录制时来自 unit0 的
 // glEnable/glDisable(GL_TEXTURE_2D)，回放时固定写 unit0 槽位。
@@ -1784,6 +1790,13 @@ static void fp_set_default_uniforms(void) {
         fp_last_uselightmap = uselightmap;
     }
     // 实体常量 lightmap UV（归一化 0-1）
+    // MathCode: 实体常量光照值来源优先级——mc2f 截获（每实体真实光照，
+    // 像素域 0-240）> chunk 首顶点快照（抽签近似）。mc2f ÷16 归一化到格。
+    if(fp_lightmap_const_active && fp_multi_lm_valid) {
+        fp_last_lightmap_uv_snap[0] = fp_multi_lm_uv[0] / 16.0f;
+        fp_last_lightmap_uv_snap[1] = fp_multi_lm_uv[1] / 16.0f;
+        fp_last_lightmap_uv_valid = true;
+    }
     if(fp_lightmapuv_loc >= 0 && (!fp_uniforms_initialized ||
        fp_last_lightmapuv_set != (fp_lightmap_const_active ? 1 : 0) ||
        memcmp(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv)) != 0)) {

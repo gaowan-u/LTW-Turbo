@@ -216,12 +216,20 @@ void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
     if(!current_context) return;
     if(texture == GL_TEXTURE0) fp_texcoord2f_raw(s, t);
     else if(texture == GL_TEXTURE1) {
-        fp_multi_lm_uv[0] = s; fp_multi_lm_uv[1] = t;
-        fp_multi_lm_valid = true;
-        if(ltw_lightmap_trace) {
-            static int lm_mc_cnt = 0;
-            if(lm_mc_cnt++ < 40 || (lm_mc_cnt & 1023) == 0)
-                LTW_ERROR_PRINTF("[LMT] mc2f s=%.3f t=%.3f", s, t);
+        // MathCode: 只在 lightmap 启用窗口内取值——disable 后 MC 会重置
+        // (0,0)，那是窗口外的垃圾数据，取了实体就黑
+        if(fp_lightmap_enabled()) {
+            fp_multi_lm_uv[0] = s; fp_multi_lm_uv[1] = t;
+            fp_multi_lm_valid = true;
+            if(ltw_lightmap_trace) {
+                static int lm_mc_cnt = 0;
+                if(lm_mc_cnt++ < 40 || (lm_mc_cnt & 1023) == 0)
+                    LTW_ERROR_PRINTF("[LMT] mc2f s=%.3f t=%.3f", s, t);
+            }
+        } else if(ltw_lightmap_trace) {
+            static int lm_mc_off_cnt = 0;
+            if(lm_mc_off_cnt++ < 20)
+                LTW_ERROR_PRINTF("[LMT] mc2f_off s=%.3f t=%.3f", s, t);
         }
     }
 }

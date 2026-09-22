@@ -108,6 +108,7 @@ void fp_note_vbo_upload(GLuint abo, GLintptr offset, GLsizeiptr size, const void
 extern bool ltw_lightmap_trace;
 extern float fp_multi_lm_uv[2];
 extern bool fp_multi_lm_valid;
+bool fp_lightmap_enabled(void);
 void fp_color_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer);
 void fp_normal_pointer(GLenum type, GLsizei stride, const void* pointer);
 void fp_enable_client_state(GLenum cap);
