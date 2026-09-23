@@ -222,7 +222,11 @@ void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
         // unit1 传非光照数据（如 61680=0xF0F0 的纹理动画坐标），取了
         // UV 错位采样 lightmap 亮区=掉落物/手持白天亮度。
         if(fp_lightmap_enabled()) {
-            if(s <= 255.f && t <= 255.f) {
+            // MathCode: (240,240) = OpenGlHelper.lastBrightness 的出厂默认值
+            // （1.12.2 源码 lastBrightnessX/Y 初值 240/240）。MC/OptiFine 部分
+            // 路径用未更新的 last 值调用 setLightmapCoordinates=复位信号，
+            // 不是真实光照；消费它会让手持/掉落物变火把满亮（lg31 实锤）。
+            if(s <= 255.f && t <= 255.f && !(s == 240.f && t == 240.f)) {
                 fp_multi_lm_uv[0] = s; fp_multi_lm_uv[1] = t;
                 fp_multi_lm_valid = true;
                 if(ltw_lightmap_trace) {
