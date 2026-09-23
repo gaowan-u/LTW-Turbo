@@ -266,7 +266,7 @@ static const char* fp_fragment_shader_src =
     "    // 昼夜亮度：uUseLightMap=1 走顶点 lightmap UV（方块，0-15 亮度级 ÷16），\n"
     "    // =2 走常量 UV（实体/掉落物模型无 unit1 坐标，用最近方块的首顶点亮度）\n"
     "    if(uUseLightMap == 1) fc.rgb *= texture(uLightMap, vUV1 / 16.0).rgb;\n"
-    "    else if(uUseLightMap == 2) fc.rgb *= texture(uLightMap, uLightMapUV).rgb;\n"
+    "    else if(uUseLightMap == 2) fc.rgb *= texture(uLightMap, uLightMapUV / 16.0).rgb;\n"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
     "    else if(uAlphaFunc == 1) atpass = fc.a < uAlphaRef;\n"
@@ -1922,56 +1922,32 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
             es3_functions.glDisableVertexAttribArray(FP_ATTR_COLOR);
         }
         // unit1（光照贴图）坐标 attribute：偏移 = 指针差（交错缓冲内）。
-        // MathCode: 2026-08-11 掉落物闪烁/GUI 变色根因修复——条件改为
-        // "本次绘制前设置过 unit1 指针"（touched）：MC 桌面语义下 unit1
-        // 的 TEXTURE_COORD_ARRAY 启用状态持久且从不被管理，enable 状态
-        // 不可靠；但残留指针+缓冲复用（Tessellator 全局缓冲）会让 off
-        // 越界检查漏放 GUI 矩形，必须用 touched 区分"本次真实设置"。
-        if(uv1_touched && fp_client_texcoord1_size > 0 && fp_client_texcoord1_ptr &&
-           // MathCode: 天空云黑闪根因修复——unit1 数组合法数据只有 lightmap
-           // 的 GL_(UNSIGNED_)SHORT 亮度级（0-255）。MC 遗留 client-active
-           // 单元时会把 unit0 的 GL_FLOAT UV 指针误设到 unit1，浮点 UV 采样
-           // lightmap 错位成黑块（云整块变黑闪）。按类型拒绝非 short 数据。
-           (fp_client_texcoord1_type == GL_SHORT ||
-            fp_client_texcoord1_type == GL_UNSIGNED_SHORT)) {
-            ptrdiff_t off = (const uint8_t*)fp_client_texcoord1_ptr - (const uint8_t*)fp_client_vertex_ptr;
-            if(off >= 0 && (size_t)off < vsize) {
-                es3_functions.glEnableVertexAttribArray(FP_ATTR_UV1);
-                es3_functions.glVertexAttribPointer(FP_ATTR_UV1, fp_client_texcoord1_size,
-                                                    fp_client_texcoord1_type, GL_FALSE,
-                                                    fp_client_vertex_stride, (const void*)off);
-                fp_client_uv1_active = true;
-                // 快照首顶点的 lightmap UV（GL_SHORT 亮度级 → ÷16 归一化）。
-                // 实体模型无 unit1 坐标，绘制时用这个常量亮度近似场景明暗；
-                // 数据此刻仍指向 MC 正在使用的缓冲，拷贝后才安全。
-                {
-                    const uint8_t* p = (const uint8_t*)fp_client_texcoord1_ptr;
-                        // MathCode: 生物黑闪根因修复——常量 lightmap 快照只从
-    // MathCode: 同 F5 崩溃防御——CPU 路径的 UV1 快照只信 unit1 指针
-    // 同为 CPU 地址（abo==0）的情况，VBO 偏移残留不解引用。
-    if(fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2 &&
-       fp_client_texcoord1_abo == 0 && fp_client_vertex_abo == 0) {
-                        int16_t u0 = *(const int16_t*)p;
-                        int16_t v0 = *(const int16_t*)(p + 2);
-                        // MathCode: 云黑闪诊断——云 quad 的亮度 UV 值本身
-                        if(ltw_lightmap_trace) {
-                            LTW_ERROR_PRINTF("[LMT] t1uv u0=%d v0=%d", u0, v0);
-                        }
-                        if(u0 >= 0 && u0 <= 255 && v0 >= 0 && v0 <= 255) {
-                            fp_last_lightmap_uv_snap[0] = (GLfloat)u0 / 16.0f;
-                            fp_last_lightmap_uv_snap[1] = (GLfloat)v0 / 16.0f;
-                            fp_last_lightmap_uv_valid = true;
-                        }
-                    }
+        // MathCode: 白天云闪根治——CPU 拷贝路径（云/闪电/天气层 quad）的
+        // unit1 指针是陈旧残留，偶尔落进当前缓冲范围被启用、偶尔越界被
+        // 拒绝，两种状态颜色不同=云高频闪（lg30：870 拒/117 启交替）。
+        // 桌面语义云是 fullbright（禁 lightmap），CPU 路径绘制一律不启用
+        // unit1；需要 lightmap 的方块渲染走 VBO 直通路径，不受影响。
+        // 快照逻辑保留（mc2f 优先，chunk 首顶点快照兜底）。
+        // MathCode: CPU 路径的 UV1 快照只信 unit1 指针同为 CPU 地址
+        // （abo==0）的情况，VBO 偏移残留不解引用（F5 崩溃防御）。
+        {
+            const uint8_t* p = (const uint8_t*)fp_client_texcoord1_ptr;
+            if(fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2 &&
+               fp_client_texcoord1_abo == 0 && fp_client_vertex_abo == 0) {
+                int16_t u0 = *(const int16_t*)p;
+                int16_t v0 = *(const int16_t*)(p + 2);
+                if(ltw_lightmap_trace) {
+                    LTW_ERROR_PRINTF("[LMT] t1uv u0=%d v0=%d", u0, v0);
                 }
-            } else {
-                es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
-                fp_client_uv1_active = false;
+                if(u0 >= 0 && u0 <= 255 && v0 >= 0 && v0 <= 255) {
+                    fp_last_lightmap_uv_snap[0] = (GLfloat)u0 / 16.0f;
+                    fp_last_lightmap_uv_snap[1] = (GLfloat)v0 / 16.0f;
+                    fp_last_lightmap_uv_valid = true;
+                }
             }
-        } else {
-            es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
-            fp_client_uv1_active = false;
         }
+        es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
+        fp_client_uv1_active = false;
     }
 
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
