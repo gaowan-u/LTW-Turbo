@@ -1790,13 +1790,6 @@ static void fp_set_default_uniforms(void) {
         fp_last_uselightmap = uselightmap;
     }
     // 实体常量 lightmap UV（归一化 0-1）
-    // MathCode: 实体常量光照值来源优先级——mc2f 截获（每实体真实光照，
-    // 像素域 0-240）> chunk 首顶点快照（抽签近似）。mc2f ÷16 归一化到格。
-    if(fp_lightmap_const_active && fp_multi_lm_valid) {
-        fp_last_lightmap_uv_snap[0] = fp_multi_lm_uv[0] / 16.0f;
-        fp_last_lightmap_uv_snap[1] = fp_multi_lm_uv[1] / 16.0f;
-        fp_last_lightmap_uv_valid = true;
-    }
     if(fp_lightmapuv_loc >= 0 && (!fp_uniforms_initialized ||
        fp_last_lightmapuv_set != (fp_lightmap_const_active ? 1 : 0) ||
        memcmp(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv)) != 0)) {
@@ -2533,6 +2526,16 @@ static bool fp_begin_dl_replay(void) {
     fp_client_uv1_active = false;
     fp_lightmap_const_active = (fp_last_lightmap_uv_valid &&
                                 fp_bound_texture1 != 0);
+    // MathCode: mc2f 一次性消费——multiTexCoord2f(GL_TEXTURE1) 是"每个实体
+    // 渲染前"的真实光照，只对本实体段有效。若不消费，天空/云的回放会捡走
+    // 上一个实体的光照值，白天跟着实体渲染节奏高频闪（lg29 实锤）。
+    fp_lightmap_const_active = fp_lightmap_const_active || fp_multi_lm_valid;
+    if(fp_multi_lm_valid) {
+        fp_last_lightmap_uv_snap[0] = fp_multi_lm_uv[0] / 16.0f;
+        fp_last_lightmap_uv_snap[1] = fp_multi_lm_uv[1] / 16.0f;
+        fp_last_lightmap_uv_valid = true;
+        fp_multi_lm_valid = false;  // 消费后失效，非实体段不得复用
+    }
     // MathCode: 生物黑闪诊断——实体 DL 回放的常量 lightmap 快照值
     if(ltw_lightmap_trace) {
         LTW_ERROR_PRINTF("[LMT] dlent const=%d uv=[%.3f %.3f] valid=%d tex1=%u",
