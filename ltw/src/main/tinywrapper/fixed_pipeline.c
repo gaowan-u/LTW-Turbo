@@ -1930,9 +1930,20 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
         // 快照逻辑保留（mc2f 优先，chunk 首顶点快照兜底）。
         // MathCode: CPU 路径的 UV1 快照只信 unit1 指针同为 CPU 地址
         // （abo==0）的情况，VBO 偏移残留不解引用（F5 崩溃防御）。
+        // MathCode 2026-09-28 手持/掉落物亮度根因修复——快照必须同时满足
+        // uv1_touched（本次绘制 MC 真实调用过 glTexCoordPointer(unit1)）。
+        // 1.12.2 中 ITEM 格式（DefaultVertexFormats.ITEM =
+        //    POS,COL,TEX_2F,NORMAL_3B,PADDING_1B）没有 index-1 UV，MC 的
+        //    WorldVertexBufferUploader 绝不会为它设 unit1 指针；但 LTW 的
+        //    fp_client_texcoord1_ptr 会残留上一次 BLOCK 绘制的 CPU 地址，
+        //    旧代码无视 touched 直接解引用 offset24（= ITEM 的法线字节）
+        //    写进快照 → 手持/掉落物常量 lightmap 被污染成亮值（实锤 lg32：
+        //    tch=0 的 count=92 绘制产 v0=129/224/240 污染快照）。
+        //    touched 为假时跳过，杜绝残留指针污染。
         {
             const uint8_t* p = (const uint8_t*)fp_client_texcoord1_ptr;
-            if(fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2 &&
+            if(uv1_touched &&
+               fp_client_texcoord1_type == GL_SHORT && fp_client_texcoord1_size >= 2 &&
                fp_client_texcoord1_abo == 0 && fp_client_vertex_abo == 0) {
                 int16_t u0 = *(const int16_t*)p;
                 int16_t v0 = *(const int16_t*)(p + 2);
@@ -1944,6 +1955,11 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
                     fp_last_lightmap_uv_snap[1] = (GLfloat)v0 / 16.0f;
                     fp_last_lightmap_uv_valid = true;
                 }
+            } else if(ltw_lightmap_trace && !uv1_touched && fp_client_texcoord1_abo == 0) {
+                // 残留 CPU 指针（非本次设置）——诊断：确认污染被拦截
+                static int t1stale_cnt = 0;
+                if(t1stale_cnt++ < 20)
+                    LTW_ERROR_PRINTF("[LMT] t1stale (uv1_touched=0, snapshot skipped)");
             }
         }
         es3_functions.glDisableVertexAttribArray(FP_ATTR_UV1);
@@ -1982,34 +1998,34 @@ bool fp_prepare_client_arrays(GLsizei count) {
                              fp_client_texcoord1_touched ? 1 : 0);
         }
     }
-    // MathCode: [FMT] 探针——验证 ITEM 格式（手持/掉落物）是否真的带 unit1
-    // lightmap。判别法：ITEM 元素 = POS,COL,TEX_2F,NORMAL_3B,PADDING_1B，
-    // 会调用 glNormalPointer（norm=1）且无 index-1 UV；BLOCK 元素带 TEX_2S
-    // （index=1），norm=0。若 norm=1 且 u1set=1 → 说明读的是法线字节而非
-    // lightmap（根因）。只打小绘制（<512 顶点）。
-    if(ltw_lightmap_trace && count < 512) {
-        static int fmt_cnt = 0;
-        if(fmt_cnt++ < 400) {
-            ptrdiff_t u1off = (const uint8_t*)fp_client_texcoord1_ptr - (const uint8_t*)fp_client_vertex_ptr;
-            ptrdiff_t u0off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
-            ptrdiff_t noff  = (const uint8_t*)fp_client_normal_ptr - (const uint8_t*)fp_client_vertex_ptr;
-            LTW_ERROR_PRINTF("[FMT] cnt=%d vstride=%d vs=%d csize=%d "
-                             "u0(type=0x%x off=%ld) u1set=%d u1(type=0x%x off=%ld) "
-                             "norm=%d(type=0x%x off=%ld)",
-                             count, fp_client_vertex_stride, fp_client_vertex_size,
-                             fp_client_color_size,
-                             fp_client_texcoord_type, (long)u0off,
-                             fp_client_texcoord1_touched ? 1 : 0,
-                             fp_client_texcoord1_type, (long)u1off,
-                             fp_client_normal_ptr ? 1 : 0,
-                             fp_client_normal_type, (long)noff);
-        }
-    }
     // MathCode: 2026-08-11 GUI 变色修复——消费 unit1 touched 标记：
     // 只有本次绘制前 MC 设置过 unit1 指针（lightmap 数据真实存在）才有效，
     // 残留指针（Tessellator 缓冲复用）不再能触发 lightmap。
     bool uv1_touched = fp_client_texcoord1_touched;
     fp_client_texcoord1_touched = false;
+
+    // MathCode: [FMT] 验证探针——格式签名 + unit1 快照决策。
+    // 关注小绘制（实体/物品/方块类，<512 顶点，排除 count=4 的 GUI 矩形）：
+    // ITEM 无 index-1 UV（norm=1 且 u1set=0），BLOCK 有（norm=0 且 u1set=1）。
+    // 修复后应看到：ITEM/实体绘制 u1set=0 → snap=0（不再污染快照）；
+    // 真实方块绘制 u1set=1 → snap=1（快照正常更新）。
+    if(ltw_lightmap_trace && count < 512 && count != 4) {
+        static int fmt_cnt = 0;
+        bool cpu_snap = uv1_touched && fp_client_texcoord1_abo == 0 &&
+                        fp_client_vertex_abo == 0 && fp_client_texcoord1_ptr != NULL;
+        if(fmt_cnt++ < 300) {
+            LTW_ERROR_PRINTF("[FMT] cnt=%d vstride=%d vs=%d csize=%d u0type=0x%x "
+                             "u1set=%d u1type=0x%x u1abo=%d vabo=%d norm=%d snap=%d",
+                             count, fp_client_vertex_stride, fp_client_vertex_size,
+                             fp_client_color_size,
+                             fp_client_texcoord_type,
+                             fp_client_texcoord1_touched ? 1 : 0,
+                             fp_client_texcoord1_type, fp_client_texcoord1_abo,
+                             fp_client_vertex_abo,
+                             fp_client_normal_ptr ? 1 : 0,
+                             cpu_snap ? 1 : 0);
+        }
+    }
 
     // GLES 3.x 禁止客户端数组指针。用数组"设置时"的 ARRAY_BUFFER 绑定判断：
     // 设置时未绑定（pointer 是 CPU 地址）→ 拷贝到 fp_vbo；设置时已绑定
