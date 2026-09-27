@@ -1982,6 +1982,29 @@ bool fp_prepare_client_arrays(GLsizei count) {
                              fp_client_texcoord1_touched ? 1 : 0);
         }
     }
+    // MathCode: [FMT] 探针——验证 ITEM 格式（手持/掉落物）是否真的带 unit1
+    // lightmap。判别法：ITEM 元素 = POS,COL,TEX_2F,NORMAL_3B,PADDING_1B，
+    // 会调用 glNormalPointer（norm=1）且无 index-1 UV；BLOCK 元素带 TEX_2S
+    // （index=1），norm=0。若 norm=1 且 u1set=1 → 说明读的是法线字节而非
+    // lightmap（根因）。只打小绘制（<512 顶点）。
+    if(ltw_lightmap_trace && count < 512) {
+        static int fmt_cnt = 0;
+        if(fmt_cnt++ < 400) {
+            ptrdiff_t u1off = (const uint8_t*)fp_client_texcoord1_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            ptrdiff_t u0off = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            ptrdiff_t noff  = (const uint8_t*)fp_client_normal_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            LTW_ERROR_PRINTF("[FMT] cnt=%d vstride=%d vs=%d csize=%d "
+                             "u0(type=0x%x off=%ld) u1set=%d u1(type=0x%x off=%ld) "
+                             "norm=%d(type=0x%x off=%ld)",
+                             count, fp_client_vertex_stride, fp_client_vertex_size,
+                             fp_client_color_size,
+                             fp_client_texcoord_type, (long)u0off,
+                             fp_client_texcoord1_touched ? 1 : 0,
+                             fp_client_texcoord1_type, (long)u1off,
+                             fp_client_normal_ptr ? 1 : 0,
+                             fp_client_normal_type, (long)noff);
+        }
+    }
     // MathCode: 2026-08-11 GUI 变色修复——消费 unit1 touched 标记：
     // 只有本次绘制前 MC 设置过 unit1 指针（lightmap 数据真实存在）才有效，
     // 残留指针（Tessellator 缓冲复用）不再能触发 lightmap。
