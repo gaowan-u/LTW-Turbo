@@ -439,6 +439,14 @@ static bool fp_client_uv1_active = false;
 // 坐标（桌面固定管线同样如此）。绘制时用"最近一次方块渲染的首顶点
 // lightmap UV"做常量采样，实体整体亮度随场景昼夜变化。
 static bool fp_lightmap_const_active = false;
+// MathCode 2026-09-28 手持/掉落物亮度根因修复(#2)——Tessellator 物品路径
+// 的一次性常量 lightmap。RenderItem.renderModel（手持/掉落物）用
+// DefaultVertexFormats.ITEM（无 index-1 UV）走 Tessellator →
+// fp_prepare_client_arrays，既无顶点 UV1 也不在 DL 回放段，
+// fp_lightmap_const_active 恒假 → uselightmap=0 → 物品全亮。
+// 物品真实光照由 ItemRenderer.setLightmap 以 mc2f 给出（fp_multi_lm_uv），
+// 这里在本次绘制把它当作一次性常量 lightmap 应用，画完由 draw 包装器清除。
+static bool fp_const_from_draw = false;
 // 最近一次方块渲染首顶点的 lightmap UV（归一化 0-1），由
 // fp_upload_client_arrays 在 CPU 路径拷贝（数据在绘制时刻仍有效）。
 static bool fp_last_lightmap_uv_valid = false;
@@ -2098,6 +2106,25 @@ bool fp_prepare_client_arrays(GLsizei count) {
         }
         if(v1bo != old_abo) glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
     }
+    // MathCode 2026-09-28 手持/掉落物亮度根因修复(#2)——Tessellator 物品路径
+    // 无顶点 UV1（ITEM 格式）也不在 DL 回放段，靠 mc2f（ItemRenderer.setLightmap
+    // 或邻近实体的 setLightmap）给出的"当前 lightmap 坐标"做常量采样
+    // （桌面固定管线即：unit1 当前坐标是持久状态，ITEM 绘制沿用它）。
+    // 判别 ITEM 格式：有法线指针 + 28 字节交错步长；GUI 矩形（POSITION_COLOR）
+    // 无纹理/无法线不会命中 → 不会被误调制。mc2f 值不作为一次性消费，
+    // 供同一帧内多个掉落物/手持绘制复用，直到被下一次 mc2f 覆盖。
+    bool looks_item = (fp_client_normal_ptr != NULL && fp_client_vertex_stride == 28);
+    if(!fp_client_uv1_active && looks_item && fp_cur_lm_valid && fp_bound_texture1 != 0) {
+        fp_last_lightmap_uv_snap[0] = fp_cur_lm_uv[0] / 16.0f;
+        fp_last_lightmap_uv_snap[1] = fp_cur_lm_uv[1] / 16.0f;
+        fp_last_lightmap_uv_valid = true;
+        fp_lightmap_const_active = true;
+        fp_const_from_draw = true;
+        if(ltw_lightmap_trace) {
+            LTW_ERROR_PRINTF("[LMT] draw_const uv=[%.3f %.3f]",
+                             fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1]);
+        }
+    }
     // attribute 启用情况影响 uUseColor，这里重设 uniforms（bind 先于 prepare）
     fp_set_default_uniforms();
     return true;
@@ -2125,6 +2152,8 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     if(!fp_bind_default_program()) return false;
     fp_prepare_client_arrays(count);
     es3_functions.glDrawArrays(mode, first, count);
+    // MathCode: 清除 Tessellator 物品路径的一次性常量 lightmap，防止泄漏
+    if(fp_const_from_draw) { fp_const_from_draw = false; fp_lightmap_const_active = false; }
     fp_unbind_default_program();
     return true;
 }
@@ -2161,6 +2190,8 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     }
     fp_prepare_client_arrays(count);
     es3_functions.glDrawElements(mode, count, type, indices);
+    // MathCode: 清除 Tessellator 物品路径的一次性常量 lightmap，防止泄漏
+    if(fp_const_from_draw) { fp_const_from_draw = false; fp_lightmap_const_active = false; }
     fp_unbind_default_program();
     return true;
 }

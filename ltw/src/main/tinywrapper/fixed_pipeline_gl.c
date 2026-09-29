@@ -212,6 +212,13 @@ void glTexCoord2d(GLdouble s, GLdouble t) {
 // (GL_TEXTURE1, x, y) ——这是每个实体的真实光照，截获记录供 DL 回放使用。
 float fp_multi_lm_uv[2] = {0.f, 0.f};
 bool fp_multi_lm_valid = false;
+// MathCode 2026-09-28 手持/掉落物亮度根因修复(#2)——"当前 lightmap 坐标"的
+// 持久镜像（桌面固定管线语义：glMultiTexCoord2f(unit1) 是粘性状态，无 unit1
+// 坐标的 ITEM 格式绘制沿用它）。与 fp_multi_lm_uv 的区别：本镜像不做一次性
+// 消费（DL 回放不会清空它），仅供 Tessellator 物品路径读取，避免影响
+// 天空/云的 mc2f 一次性消费修复（19c3d99）。
+float fp_cur_lm_uv[2] = {0.f, 0.f};
+bool fp_cur_lm_valid = false;
 void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
     if(!current_context) return;
     if(texture == GL_TEXTURE0) fp_texcoord2f_raw(s, t);
@@ -229,6 +236,9 @@ void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
             if(s <= 255.f && t <= 255.f && !(s == 240.f && t == 240.f)) {
                 fp_multi_lm_uv[0] = s; fp_multi_lm_uv[1] = t;
                 fp_multi_lm_valid = true;
+                // 持久镜像：供 Tessellator 物品路径（ITEM 格式）读取
+                fp_cur_lm_uv[0] = s; fp_cur_lm_uv[1] = t;
+                fp_cur_lm_valid = true;
                 if(ltw_lightmap_trace) {
                     static int lm_mc_cnt = 0;
                     if(lm_mc_cnt++ < 40 || (lm_mc_cnt & 1023) == 0)
