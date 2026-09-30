@@ -2027,24 +2027,25 @@ bool fp_prepare_client_arrays(GLsizei count) {
     // ITEM 无 index-1 UV（norm=1 且 u1set=0），BLOCK 有（norm=0 且 u1set=1）。
     // 修复后应看到：ITEM/实体绘制 u1set=0 → snap=0（不再污染快照）；
     // 真实方块绘制 u1set=1 → snap=1（快照正常更新）。
-    if(ltw_lightmap_trace && count < 512 && count != 4) {
+    if(ltw_lightmap_trace && normal_touched && fp_client_vertex_stride == 28) {
+        // 只打 28B+法线的绘制（ITEM 或云），打印全部字段（无上限）。
+        // 关键判别：ITEM = pos(12) col@12 uv@16 normal@24；
+        //        云 POSITION_TEX_COLOR_NORMAL = pos(12) uv@12 col@20 normal@24。
         static int fmt_cnt = 0;
-        bool cpu_snap = uv1_touched && fp_client_texcoord1_abo == 0 &&
-                        fp_client_vertex_abo == 0 && fp_client_texcoord1_ptr != NULL;
-        if(fmt_cnt++ < 300) {
-            // 关键判别：ITEM = pos(12) col@12 uv@16 normal@24；
-            //        云 POSITION_TEX_COLOR_NORMAL = pos(12) uv@12 col@20 normal@24。
-            // 用 coloff/u0off 区分（ITEM: col<uv；云: uv<col）。
+        if(fmt_cnt++ < 2000) {
             ptrdiff_t coloff = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
             ptrdiff_t u0off  = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            const uint8_t* vp = (const uint8_t*)fp_client_vertex_ptr;
+            unsigned vcol = 0;
+            if(fp_client_vertex_abo == 0 && coloff >= 0)
+                memcpy(&vcol, vp + coloff, 4);
             LTW_ERROR_PRINTF("[FMT] cnt=%d vstride=%d csize=%d coloff=%ld u0off=%ld "
-                             "u1set=%d vabo=%d normt=%d snap=%d",
+                             "u1set=%d u1stride=%d vabo=%d vcol=0x%08x",
                              count, fp_client_vertex_stride, fp_client_color_size,
                              (long)coloff, (long)u0off,
                              fp_client_texcoord1_touched ? 1 : 0,
-                             fp_client_vertex_abo,
-                             normal_touched ? 1 : 0,
-                             cpu_snap ? 1 : 0);
+                             fp_client_texcoord1_stride, fp_client_vertex_abo,
+                             vcol);
         }
     }
 
