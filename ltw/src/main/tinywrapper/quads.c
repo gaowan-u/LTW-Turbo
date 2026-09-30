@@ -289,6 +289,8 @@ static void quads_draw_triangles(GLsizei quads, const uint32_t* indices, GLuint 
     if(fp_bound) {
         fp_prepare_client_arrays(quads * 4);
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);
+        // MathCode: 清除 Tessellator 物品路径的一次性常量 lightmap，防泄漏
+        fp_clear_const_from_draw();
         fp_unbind_default_program();
     } else {
         es3_functions.glDrawElements(GL_TRIANGLES, tri_count, GL_UNSIGNED_INT, NULL);

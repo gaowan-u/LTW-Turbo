@@ -462,6 +462,9 @@ static const void* fp_client_color_ptr = NULL;
 static GLenum fp_client_normal_type = GL_FLOAT;
 static GLsizei fp_client_normal_stride = 0;
 static const void* fp_client_normal_ptr = NULL;
+// MathCode 2026-09-28：本次绘制是否真实调用过 glNormalPointer（ITEM 格式
+// 判别）。每绘制消费清零，避免残留指针把 BLOCK/GUI 误判成 ITEM。
+static bool fp_client_normal_touched = false;
 static bool fp_client_vertex_enabled = false;
 static bool fp_client_texcoord_enabled = false;
 static bool fp_client_color_enabled = false;
@@ -1486,6 +1489,10 @@ void fp_color_pointer(GLint size, GLenum type, GLsizei stride, const void* point
 }
 void fp_normal_pointer(GLenum type, GLsizei stride, const void* pointer) {
     fp_client_normal_type = type; fp_client_normal_stride = stride; fp_client_normal_ptr = pointer;
+    // MathCode 2026-09-28：本次绘制真实调用过 glNormalPointer（ITEM 格式
+    // 有 NORMAL_3B 元素会调用；BLOCK/GUI 矩形不会）。与 texcoord1_touched
+    // 同理，绘制时消费并清零，避免残留指针误判格式。
+    fp_client_normal_touched = true;
 }
 void fp_enable_client_state(GLenum cap) {
     switch(cap) {
@@ -2011,6 +2018,9 @@ bool fp_prepare_client_arrays(GLsizei count) {
     // 残留指针（Tessellator 缓冲复用）不再能触发 lightmap。
     bool uv1_touched = fp_client_texcoord1_touched;
     fp_client_texcoord1_touched = false;
+    // MathCode 2026-09-28：消费法线 touched（ITEM 格式判别），同上。
+    bool normal_touched = fp_client_normal_touched;
+    fp_client_normal_touched = false;
 
     // MathCode: [FMT] 验证探针——格式签名 + unit1 快照决策。
     // 关注小绘制（实体/物品/方块类，<512 顶点，排除 count=4 的 GUI 矩形）：
@@ -2113,7 +2123,10 @@ bool fp_prepare_client_arrays(GLsizei count) {
     // 判别 ITEM 格式：有法线指针 + 28 字节交错步长；GUI 矩形（POSITION_COLOR）
     // 无纹理/无法线不会命中 → 不会被误调制。mc2f 值不作为一次性消费，
     // 供同一帧内多个掉落物/手持绘制复用，直到被下一次 mc2f 覆盖。
-    bool looks_item = (fp_client_normal_ptr != NULL && fp_client_vertex_stride == 28);
+    // ITEM 格式判别必须用「本次绘制真实设置过法线指针」（normal_touched），
+    // 不能用残留的 fp_client_normal_ptr（BLOCK/GUI 不调用 glNormalPointer，
+    // 残留指针会误判 → 把区块/GUI 也套上常量 lightmap 变黑，game4 实锤）。
+    bool looks_item = (normal_touched && fp_client_vertex_stride == 28);
     if(!fp_client_uv1_active && looks_item && fp_cur_lm_valid && fp_bound_texture1 != 0) {
         fp_last_lightmap_uv_snap[0] = fp_cur_lm_uv[0] / 16.0f;
         fp_last_lightmap_uv_snap[1] = fp_cur_lm_uv[1] / 16.0f;
@@ -2153,9 +2166,19 @@ bool fp_try_draw_arrays(GLenum mode, GLint first, GLsizei count) {
     fp_prepare_client_arrays(count);
     es3_functions.glDrawArrays(mode, first, count);
     // MathCode: 清除 Tessellator 物品路径的一次性常量 lightmap，防止泄漏
-    if(fp_const_from_draw) { fp_const_from_draw = false; fp_lightmap_const_active = false; }
+    fp_clear_const_from_draw();
     fp_unbind_default_program();
     return true;
+}
+
+// MathCode 2026-09-28：清除「本次绘制一次性常量 lightmap」标记。
+// 仅清除由 Tessellator 物品路径（fp_prepare_client_arrays）设置的状态；
+// DL 回放设置的 fp_lightmap_const_active 不受影响（由 fp_end_dl_replay 管）。
+void fp_clear_const_from_draw(void) {
+    if(fp_const_from_draw) {
+        fp_const_from_draw = false;
+        fp_lightmap_const_active = false;
+    }
 }
 
 bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
@@ -2191,7 +2214,7 @@ bool fp_try_draw_elements(GLenum mode, GLsizei count, GLenum type, const void* i
     fp_prepare_client_arrays(count);
     es3_functions.glDrawElements(mode, count, type, indices);
     // MathCode: 清除 Tessellator 物品路径的一次性常量 lightmap，防止泄漏
-    if(fp_const_from_draw) { fp_const_from_draw = false; fp_lightmap_const_active = false; }
+    fp_clear_const_from_draw();
     fp_unbind_default_program();
     return true;
 }

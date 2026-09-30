@@ -168,6 +168,9 @@ void fp_unbind_default_program(void);
 // 必须在绘制时把数据拷贝到 VBO。返回 true 表示已设置。
 bool fp_prepare_client_arrays(GLsizei count);
 
+// 清除 Tessellator 物品路径的一次性常量 lightmap（绘制后调用，防泄漏）
+void fp_clear_const_from_draw(void);
+
 // 查询默认 shader 当前是否可用
 bool fp_default_program_ready(void);
 
