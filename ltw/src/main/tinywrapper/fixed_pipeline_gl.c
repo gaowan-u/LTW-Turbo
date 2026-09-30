@@ -223,36 +223,41 @@ void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
     if(!current_context) return;
     if(texture == GL_TEXTURE0) fp_texcoord2f_raw(s, t);
     else if(texture == GL_TEXTURE1) {
-        // MathCode: 只在 lightmap 启用窗口内取值——disable 后 MC 会重置
-        // (0,0)，那是窗口外的垃圾数据，取了实体就黑。
-        // 值域过滤：光照坐标是 0-255 像素域；OptiFine 在窗口内也会用
-        // unit1 传非光照数据（如 61680=0xF0F0 的纹理动画坐标），取了
-        // UV 错位采样 lightmap 亮区=掉落物/手持白天亮度。
-        if(fp_lightmap_enabled()) {
-            // MathCode: (240,240) = OpenGlHelper.lastBrightness 的出厂默认值
-            // （1.12.2 源码 lastBrightnessX/Y 初值 240/240）。MC/OptiFine 部分
-            // 路径用未更新的 last 值调用 setLightmapCoordinates=复位信号，
-            // 不是真实光照；消费它会让手持/掉落物变火把满亮（lg31 实锤）。
-            if(s <= 255.f && t <= 255.f && !(s == 240.f && t == 240.f)) {
+        // 值域过滤：光照坐标是 0-240 像素域（格×16）；OptiFine 在窗口内也会
+        // 用 unit1 传非光照数据（如 61680=0xF0F0 的纹理动画坐标），取到会
+        // UV 错位采样 lightmap 亮区=物品发亮。只接受合法像素域。
+        bool valid_domain = (s >= 0.f && s <= 240.f && t >= 0.f && t <= 240.f);
+        // MathCode 2026-09-28：GUIContainer.drawScreen 显式调用
+        // setLightmapTextureCoords(unit1, 240, 240) 让 GUI 物品满亮度，此时
+        // unit1 的 GL_TEXTURE_2D 处于 disabled（fp_lightmap_enabled()=false）。
+        // 桌面语义：当前 lightmap 坐标是粘性状态，ITEM 绘制沿用它——
+        // 所以 GUI 的 (240,240) 必须写进"持久镜像"，否则背包/物品栏物品会
+        // 沿用世界的昼夜值而随白天/黑夜变暗（game5 实锤）。
+        if(valid_domain && (fp_lightmap_enabled() || (s == 240.f && t == 240.f))) {
+            // 持久镜像：供 Tessellator 物品路径（ITEM 格式）读取（含 GUI 满亮）
+            fp_cur_lm_uv[0] = s; fp_cur_lm_uv[1] = t;
+            fp_cur_lm_valid = true;
+            // 一次性值（实体 DL 段用）：仍在 lightmap 启用窗口内取，且排除
+            // (240,240)——那是 GUI 满亮复位信号，不是世界实体光照（沿用
+            // a813652 的结论，避免影响实体昼夜亮度）。
+            if(fp_lightmap_enabled() && !(s == 240.f && t == 240.f)) {
                 fp_multi_lm_uv[0] = s; fp_multi_lm_uv[1] = t;
                 fp_multi_lm_valid = true;
-                // 持久镜像：供 Tessellator 物品路径（ITEM 格式）读取
-                fp_cur_lm_uv[0] = s; fp_cur_lm_uv[1] = t;
-                fp_cur_lm_valid = true;
                 if(ltw_lightmap_trace) {
                     static int lm_mc_cnt = 0;
                     if(lm_mc_cnt++ < 40 || (lm_mc_cnt & 1023) == 0)
                         LTW_ERROR_PRINTF("[LMT] mc2f s=%.3f t=%.3f", s, t);
                 }
             } else if(ltw_lightmap_trace) {
-                static int lm_mc_junk_cnt = 0;
-                if(lm_mc_junk_cnt++ < 20)
-                    LTW_ERROR_PRINTF("[LMT] mc2f_junk s=%.3f t=%.3f", s, t);
+                static int lm_mc_gui_cnt = 0;
+                if(lm_mc_gui_cnt++ < 20)
+                    LTW_ERROR_PRINTF("[LMT] mc2f_gui s=%.3f t=%.3f", s, t);
             }
         } else if(ltw_lightmap_trace) {
-            static int lm_mc_off_cnt = 0;
-            if(lm_mc_off_cnt++ < 20)
-                LTW_ERROR_PRINTF("[LMT] mc2f_off s=%.3f t=%.3f", s, t);
+            static int lm_mc_junk_cnt = 0;
+            if(lm_mc_junk_cnt++ < 20)
+                LTW_ERROR_PRINTF("[LMT] mc2f_junk s=%.3f t=%.3f en=%d",
+                                 s, t, fp_lightmap_enabled() ? 1 : 0);
         }
     }
 }

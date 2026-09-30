@@ -2032,15 +2032,18 @@ bool fp_prepare_client_arrays(GLsizei count) {
         bool cpu_snap = uv1_touched && fp_client_texcoord1_abo == 0 &&
                         fp_client_vertex_abo == 0 && fp_client_texcoord1_ptr != NULL;
         if(fmt_cnt++ < 300) {
-            LTW_ERROR_PRINTF("[FMT] cnt=%d vstride=%d vs=%d csize=%d u0type=0x%x "
-                             "u1set=%d u1type=0x%x u1abo=%d vabo=%d norm=%d snap=%d",
-                             count, fp_client_vertex_stride, fp_client_vertex_size,
-                             fp_client_color_size,
-                             fp_client_texcoord_type,
+            // 关键判别：ITEM = pos(12) col@12 uv@16 normal@24；
+            //        云 POSITION_TEX_COLOR_NORMAL = pos(12) uv@12 col@20 normal@24。
+            // 用 coloff/u0off 区分（ITEM: col<uv；云: uv<col）。
+            ptrdiff_t coloff = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            ptrdiff_t u0off  = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
+            LTW_ERROR_PRINTF("[FMT] cnt=%d vstride=%d csize=%d coloff=%ld u0off=%ld "
+                             "u1set=%d vabo=%d normt=%d snap=%d",
+                             count, fp_client_vertex_stride, fp_client_color_size,
+                             (long)coloff, (long)u0off,
                              fp_client_texcoord1_touched ? 1 : 0,
-                             fp_client_texcoord1_type, fp_client_texcoord1_abo,
                              fp_client_vertex_abo,
-                             fp_client_normal_ptr ? 1 : 0,
+                             normal_touched ? 1 : 0,
                              cpu_snap ? 1 : 0);
         }
     }
@@ -2126,7 +2129,17 @@ bool fp_prepare_client_arrays(GLsizei count) {
     // ITEM 格式判别必须用「本次绘制真实设置过法线指针」（normal_touched），
     // 不能用残留的 fp_client_normal_ptr（BLOCK/GUI 不调用 glNormalPointer，
     // 残留指针会误判 → 把区块/GUI 也套上常量 lightmap 变黑，game4 实锤）。
-    bool looks_item = (normal_touched && fp_client_vertex_stride == 28);
+    // 仅靠 stride=28 + normal 还不够：云用 POSITION_TEX_COLOR_NORMAL 也是
+    // 28B + normal（POS,TEX,COL,NORMAL,PADDING），会把白云当物品套常量
+    // lightmap → 白天云闪（game5 实锤）。用元素顺序区分：
+    //   ITEM       = POS(12) COL@12 TEX@16 NORMAL@24  → coloff(12) < u0off(16)
+    //   云/其他    = POS(12) TEX@12 COL@20 NORMAL@24  → u0off(12) < coloff(20)
+    // ITEM 特征：颜色元素在纹理元素之前（coloff < u0off）。
+    ptrdiff_t coloff = (const uint8_t*)fp_client_color_ptr - (const uint8_t*)fp_client_vertex_ptr;
+    ptrdiff_t u0off  = (const uint8_t*)fp_client_texcoord_ptr - (const uint8_t*)fp_client_vertex_ptr;
+    bool looks_item = (normal_touched && fp_client_vertex_stride == 28 &&
+                       fp_client_color_size == 4 &&
+                       coloff >= 0 && u0off >= 0 && coloff < u0off);
     if(!fp_client_uv1_active && looks_item && fp_cur_lm_valid && fp_bound_texture1 != 0) {
         fp_last_lightmap_uv_snap[0] = fp_cur_lm_uv[0] / 16.0f;
         fp_last_lightmap_uv_snap[1] = fp_cur_lm_uv[1] / 16.0f;
