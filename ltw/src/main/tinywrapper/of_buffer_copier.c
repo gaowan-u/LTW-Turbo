@@ -215,9 +215,13 @@ void glTexSubImage2D(GLenum target,
     // dump 首行亮度值验证 tick 上传内容是否异常
     if(ltw_config_get_bool("lightmapTrace", false) && width == 16 && height == 16 && data) {
         const unsigned char* p = (const unsigned char*)data;
-        LTW_ERROR_PRINTF("[LMT] lmup x=%d y=%d fmt=0x%x type=0x%x row0=[%02x %02x %02x %02x | %02x %02x %02x %02x]",
-                         xoffset, yoffset, format, type,
-                         p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+        // 首像素(0,0)与末像素(15,15)（BGRA，每像素 4B；pixel15 = off60，
+        // pixel255 = off1020）——用于确认满亮角 (15,15) 是否白。
+        LTW_ERROR_PRINTF("[LMT] lmup x=%d y=%d fmt=0x%x px00=[%02x %02x %02x %02x] px15=[%02x %02x %02x %02x] px255=[%02x %02x %02x %02x]",
+                         xoffset, yoffset, format,
+                         p[0], p[1], p[2], p[3],
+                         p[60], p[61], p[62], p[63],
+                         p[1020], p[1021], p[1022], p[1023]);
     }
     // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查
     bool is_depth = (format == GL_DEPTH_COMPONENT);
