@@ -213,11 +213,10 @@ void glTexSubImage2D(GLenum target,
     fp_flush_immediate_batch();
     // MathCode: 云黑闪诊断——lightmap 纹理（16x16 RGBA）每 tick 重传，
     // dump 首行亮度值验证 tick 上传内容是否异常
-    if(ltw_config_get_bool("lightmapTrace", false) && width == 16 && height == 16 &&
-       format == GL_RGBA && type == GL_UNSIGNED_BYTE && data) {
+    if(ltw_config_get_bool("lightmapTrace", false) && width == 16 && height == 16 && data) {
         const unsigned char* p = (const unsigned char*)data;
-        LTW_ERROR_PRINTF("[LMT] lmup x=%d y=%d row0=[%02x %02x %02x %02x | %02x %02x %02x %02x]",
-                         xoffset, yoffset,
+        LTW_ERROR_PRINTF("[LMT] lmup x=%d y=%d fmt=0x%x type=0x%x row0=[%02x %02x %02x %02x | %02x %02x %02x %02x]",
+                         xoffset, yoffset, format, type,
                          p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
     }
     // 检查是否为深度纹理，需要在 swizzle_process_upload 之前检查

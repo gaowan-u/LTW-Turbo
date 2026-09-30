@@ -230,8 +230,9 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei widt
     if(ltw_config_get_bool("lightmapTrace", false) && width == 16 && height == 16 &&
        data != NULL && level == 0) {
         const unsigned char* p = (const unsigned char*)data;
-        LTW_ERROR_PRINTF("[LMT] lmup2d fmt=0x%x row0=[%02x %02x %02x %02x | %02x %02x %02x %02x]",
-                         format, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+        LTW_ERROR_PRINTF("[LMT] lmup2d fmt=0x%x type=0x%x internal=0x%x row0=[%02x %02x %02x %02x | %02x %02x %02x %02x]",
+                         format, type, (unsigned)internalformat,
+                         p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
     }
     if (isProxyTexture(target)) {
         current_context->proxy_width = ((width<<level)>current_context->maxTextureSize)?0:width;
