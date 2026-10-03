@@ -674,13 +674,12 @@ static void fp_ensure_program(void) {
     int shdbg = ltw_config_get_int("shaderDebug", 0);
     const char* dbg_line = "";
     if(shdbg == 1)
-        // v2 坐标编码视图：红=block 光分量(/16)、绿=sky 分量、蓝=(15,15)满亮标记。
-        // 图标显示黄/白 = uLightMapUV 正确传到 shader；黑色 = uniform 实际为 (0,0)
-        // = 上传未生效（location/驱动问题）= 根因直接可见。
-        dbg_line = "    vec2 lmdbg = uLightMapUV;\n"
-                   "    fragColor = vec4(lmdbg.x / 16.0, lmdbg.y / 16.0,\n"
-                   "        (lmdbg.x > 14.0 && lmdbg.y > 14.0) ? 1.0 : 0.0, 1.0);\n"
-                   "    return;\n";
+        // v3 坐标编码视图：uselm=0（主菜单/GUI 面板/文字）正常渲染可导航；
+        // uselm=1 方块 → vUV1 坐标色；uselm=2 图标/实体 → uLightMapUV 坐标色
+        // +蓝通道标记。图标"蓝底黄"= uniform 正确；"蓝底黑"= uniform 实际
+        // (0,0) = 上传未生效实锤。
+        dbg_line = "    if(uUseLightMap == 1) { fragColor = vec4(vUV1.x / 240.0, vUV1.y / 240.0, 0.0, 1.0); return; }\n"
+                   "    if(uUseLightMap == 2) { fragColor = vec4(uLightMapUV.x / 16.0, uLightMapUV.y / 16.0, 1.0, 1.0); return; }\n";
     else if(shdbg == 2)
         dbg_line = "    fragColor = vec4(vColor.rgb, 1.0);\n    return;\n";
     else if(shdbg == 3)
