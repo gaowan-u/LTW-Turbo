@@ -2302,6 +2302,51 @@ bool fp_prepare_client_arrays(GLsizei count) {
             LTW_ERROR_PRINTF("[LMT] draw_const uv=[%.3f %.3f]",
                              fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1]);
         }
+        // MathCode 2026-10-04 [PIX] 读回探针：GUI 满亮图标绘制时，
+        // A) 读回 unit1(lightmap) 纹理 texel(15,15) 的 GPU 实际内容——
+        //    验证"上传内容正确但 GPU 里被改"假说；
+        // B) 读回本笔 VBO 首顶点顶点色——VBO 路径的顶点色从未直接验证过
+        //    （[FMT] 的 vcol 只在 CPU 路径读）。
+        // 一次装机同时裁决两大最后嫌疑。
+        if(ltw_lightmap_trace && fp_client_vertex_abo != 0 &&
+           fp_last_lightmap_uv_snap[0] == 15.0f && fp_last_lightmap_uv_snap[1] == 15.0f) {
+            static int pix_cnt = 0;
+            if(pix_cnt < 10) {
+                pix_cnt++;
+                // B) VBO 首顶点顶点色
+                GLint old_abo = 0;
+                es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_abo);
+                es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_client_vertex_abo);
+                ptrdiff_t coff = (const uint8_t*)fp_client_color_ptr -
+                                 (const uint8_t*)fp_client_vertex_ptr;
+                if(coff >= 0) {
+                    void* m = es3_functions.glMapBufferRange(GL_ARRAY_BUFFER,
+                                (GLintptr)coff, 4, GL_MAP_READ_BIT);
+                    unsigned vc = 0;
+                    if(m) { memcpy(&vc, m, 4); es3_functions.glUnmapBuffer(GL_ARRAY_BUFFER); }
+                    LTW_ERROR_PRINTF("[PIX] vcol_gpu=0x%08x abo=%u off=%ld", vc,
+                                     (unsigned)fp_client_vertex_abo, (long)coff);
+                }
+                if(old_abo != (GLint)fp_client_vertex_abo)
+                    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
+                // A) lightmap 纹理 texel(15,15) GPU 内容
+                GLint old_fbo = 0;
+                es3_functions.glGetIntegerv(GL_FRAMEBUFFER_BINDING, &old_fbo);
+                static GLuint pix_fbo = 0;
+                if(pix_fbo == 0) es3_functions.glGenFramebuffers(1, &pix_fbo);
+                es3_functions.glBindFramebuffer(GL_FRAMEBUFFER, pix_fbo);
+                es3_functions.glFramebufferTexture2D(GL_FRAMEBUFFER,
+                        GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fp_bound_texture1, 0);
+                unsigned char px[4] = {0, 0, 0, 0};
+                es3_functions.glReadPixels(15, 15, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+                es3_functions.glFramebufferTexture2D(GL_FRAMEBUFFER,
+                        GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+                es3_functions.glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)old_fbo);
+                LTW_ERROR_PRINTF("[PIX] lightmap(15,15)_gpu=[%02x %02x %02x %02x] tex=%u",
+                                 px[0], px[1], px[2], px[3],
+                                 (unsigned)fp_bound_texture1);
+            }
+        }
     }
     // MathCode 2026-10-03 [TEX] 探针 v2：夜间创造物品栏图标黑——game9 日志
     // 铁证：白天 GUI 段 unit0 只绑 atlas(tex0=8)，夜间 GUI 段大量 tex0=94
