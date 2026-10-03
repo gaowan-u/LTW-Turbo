@@ -234,7 +234,16 @@ static const char* fp_vertex_shader_src =
     "    gl_Position = uMVP * aPos;\n"
     "}\n";
 
-static const char* fp_fragment_shader_src =
+// MathCode 2026-10-04 [SHD] shader 可视化调试：config.json "shaderDebug"=1/2/3
+// 时把 shader 内部值直接画到片元上（视觉裁决 GL 真值与 shader 实际执行的差异）：
+// 1 = lightmap 采样色（图标全白=采样正确；暗=shader 内采样值暗）
+// 2 = 顶点色 vColor（白=顶点色正确）
+// 3 = 纹理采样 c（显示 atlas 采样内容）
+// 0/缺省 = 正常渲染。调试完成后删除。
+static char fp_fragment_shader_buf[4096];
+static const char* fp_fragment_shader_src = fp_fragment_shader_buf;
+// 原始 shader 源的静态底版（%s 处按 config 插入调试行）
+static const char* fp_fragment_shader_tpl =
     "#version 300 es\n"
     "precision mediump float;\n"
     "in vec4 vColor;\n"
@@ -270,6 +279,7 @@ static const char* fp_fragment_shader_src =
     "    // GL_LINEAR 混入较暗的 texel14。\n"
     "    if(uUseLightMap == 1) fc.rgb *= texture(uLightMap, (vUV1 + 8.0) / 256.0).rgb;\n"
     "    else if(uUseLightMap == 2) fc.rgb *= texture(uLightMap, (uLightMapUV + 0.5) / 16.0).rgb;\n"
+    "%s"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
     "    else if(uAlphaFunc == 1) atpass = fc.a < uAlphaRef;\n"
@@ -659,6 +669,20 @@ static void fp_ensure_program(void) {
     if(fp_init_done) return;
     fp_init_done = true;
     if(!current_context) return;
+
+    // [SHD] 按 config 生成调试版 fragment shader（0=正常渲染）
+    int shdbg = ltw_config_get_int("shaderDebug", 0);
+    const char* dbg_line = "";
+    if(shdbg == 1)
+        dbg_line = "    fragColor = vec4(texture(uLightMap, (uLightMapUV + 0.5) / 16.0).rgb, 1.0);\n"
+                   "    return;\n";
+    else if(shdbg == 2)
+        dbg_line = "    fragColor = vec4(vColor.rgb, 1.0);\n    return;\n";
+    else if(shdbg == 3)
+        dbg_line = "    fragColor = vec4(c.rgb, 1.0);\n    return;\n";
+    snprintf(fp_fragment_shader_buf, sizeof(fp_fragment_shader_buf),
+             fp_fragment_shader_tpl, dbg_line);
+    LTW_ERROR_PRINTF("[SHD] shaderDebug=%d", shdbg);
 
     GLuint vs = es3_functions.glCreateShader(GL_VERTEX_SHADER);
     GLuint fs = es3_functions.glCreateShader(GL_FRAGMENT_SHADER);
