@@ -2302,34 +2302,38 @@ bool fp_prepare_client_arrays(GLsizei count) {
             LTW_ERROR_PRINTF("[LMT] draw_const uv=[%.3f %.3f]",
                              fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1]);
         }
-        // MathCode 2026-10-04 [PIX] 读回探针：GUI 满亮图标绘制时，
-        // A) 读回 unit1(lightmap) 纹理 texel(15,15) 的 GPU 实际内容——
-        //    验证"上传内容正确但 GPU 里被改"假说；
-        // B) 读回本笔 VBO 首顶点顶点色——VBO 路径的顶点色从未直接验证过
-        //    （[FMT] 的 vcol 只在 CPU 路径读）。
-        // 一次装机同时裁决两大最后嫌疑。
-        if(ltw_lightmap_trace && fp_client_vertex_abo != 0 &&
+        // MathCode 2026-10-04 [PIX2] 读回探针：GUI 满亮图标绘制时
+        // A) 读回 unit1(lightmap) 纹理 texel(15,15) 的 GPU 实际内容；
+        // B) 读回首顶点顶点色——CPU 路径直接 memcpy，VBO 路径 MapBufferRange。
+        // game14 教训：GUI 图标本轮走 CPU 路径（abo=0），旧 [PIX] 被 abo!=0
+        // 条件连坐零输出；lightmap 读回与路径无关，拆开各自触发。
+        if(ltw_lightmap_trace &&
            fp_last_lightmap_uv_snap[0] == 15.0f && fp_last_lightmap_uv_snap[1] == 15.0f) {
             static int pix_cnt = 0;
             if(pix_cnt < 10) {
                 pix_cnt++;
-                // B) VBO 首顶点顶点色
-                GLint old_abo = 0;
-                es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_abo);
-                es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_client_vertex_abo);
+                // B) 首顶点顶点色（CPU/VBO 双路径）
                 ptrdiff_t coff = (const uint8_t*)fp_client_color_ptr -
                                  (const uint8_t*)fp_client_vertex_ptr;
-                if(coff >= 0) {
-                    void* m = es3_functions.glMapBufferRange(GL_ARRAY_BUFFER,
-                                (GLintptr)coff, 4, GL_MAP_READ_BIT);
-                    unsigned vc = 0;
-                    if(m) { memcpy(&vc, m, 4); es3_functions.glUnmapBuffer(GL_ARRAY_BUFFER); }
-                    LTW_ERROR_PRINTF("[PIX] vcol_gpu=0x%08x abo=%u off=%ld", vc,
-                                     (unsigned)fp_client_vertex_abo, (long)coff);
+                unsigned vc = 0;
+                const char* vsrc = "cpu";
+                if(fp_client_vertex_abo == 0) {
+                    if(coff >= 0 && fp_client_vertex_ptr)
+                        memcpy(&vc, (const uint8_t*)fp_client_vertex_ptr + coff, 4);
+                } else {
+                    vsrc = "vbo";
+                    GLint old_abo = 0;
+                    es3_functions.glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_abo);
+                    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, fp_client_vertex_abo);
+                    if(coff >= 0) {
+                        void* m = es3_functions.glMapBufferRange(GL_ARRAY_BUFFER,
+                                    (GLintptr)coff, 4, GL_MAP_READ_BIT);
+                        if(m) { memcpy(&vc, m, 4); es3_functions.glUnmapBuffer(GL_ARRAY_BUFFER); }
+                    }
+                    if(old_abo != (GLint)fp_client_vertex_abo)
+                        es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
                 }
-                if(old_abo != (GLint)fp_client_vertex_abo)
-                    es3_functions.glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_abo);
-                // A) lightmap 纹理 texel(15,15) GPU 内容
+                // A) lightmap 纹理 texel(15,15) GPU 内容（与路径无关）
                 GLint old_fbo = 0;
                 es3_functions.glGetIntegerv(GL_FRAMEBUFFER_BINDING, &old_fbo);
                 static GLuint pix_fbo = 0;
@@ -2342,8 +2346,10 @@ bool fp_prepare_client_arrays(GLsizei count) {
                 es3_functions.glFramebufferTexture2D(GL_FRAMEBUFFER,
                         GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
                 es3_functions.glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)old_fbo);
-                LTW_ERROR_PRINTF("[PIX] lightmap(15,15)_gpu=[%02x %02x %02x %02x] tex=%u",
-                                 px[0], px[1], px[2], px[3],
+                LTW_ERROR_PRINTF("[PIX2] vcol=0x%08x(%s abo=%u) count=%d "
+                                 "lightmap(15,15)_gpu=[%02x %02x %02x %02x] tex=%u",
+                                 vc, vsrc, (unsigned)fp_client_vertex_abo,
+                                 (int)count, px[0], px[1], px[2], px[3],
                                  (unsigned)fp_bound_texture1);
             }
         }
