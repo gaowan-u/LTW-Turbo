@@ -2155,6 +2155,37 @@ bool fp_prepare_client_arrays(GLsizei count) {
                              fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1]);
         }
     }
+    // MathCode 2026-10-03 [TEX] 探针：夜间创造物品栏图标黑——[LMT] 已证明
+    // lightmap 坐标/顶点色正确，剩余嫌疑：A) unit0 主纹理绑定错位（采到
+    // lightmap 纹理）；B) mc2f 时序污染持久镜像（实体黑暗光照 (0,240) 覆盖
+    // GUI 满亮 (240,240)）。在 ITEM 路径打印最终状态区分两者。
+    if(ltw_lightmap_trace && looks_item) {
+        static int tex_cnt = 0;
+        static int tex_state = -1;
+        int ts = (int)((fp_last_lightmap_uv_snap[0] * 16.0f))
+               ^ ((int)(fp_last_lightmap_uv_snap[1] * 16.0f) << 8)
+               ^ (fp_bound_texture << 16)
+               ^ ((fp_last_usetex ? 1 : 0) << 24)
+               ^ ((fp_light_tint ? 1 : 0) << 25);
+        if(tex_cnt < 500 || ts != tex_state) {
+            tex_state = ts;
+            tex_cnt++;
+            LTW_ERROR_PRINTF("[TEX] lm=(%.3f %.3f) cur=(%.1f %.1f) tex0=%u texen0=%d "
+                             "act=%d tex1=%u usetex=%d usecolor=%d colact=%d "
+                             "uselm=%d lmuv=[%.3f %.3f] tint=%d lcol=[%.2f %.2f %.2f %.2f]",
+                             fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1],
+                             fp_cur_lm_uv[0], fp_cur_lm_uv[1],
+                             fp_bound_texture, fp_texture_enabled[0] ? 1 : 0,
+                             (int)fp_active_texture, fp_bound_texture1,
+                             fp_last_usetex, fp_last_usecolor,
+                             fp_client_color_active ? 1 : 0,
+                             fp_last_uselightmap,
+                             fp_last_lightmap_uv[0], fp_last_lightmap_uv[1],
+                             fp_light_tint ? 1 : 0,
+                             fp_texenv_state[1].color[0], fp_texenv_state[1].color[1],
+                             fp_texenv_state[1].color[2], fp_texenv_state[1].color[3]);
+        }
+    }
     // attribute 启用情况影响 uUseColor，这里重设 uniforms（bind 先于 prepare）
     fp_set_default_uniforms();
     return true;
