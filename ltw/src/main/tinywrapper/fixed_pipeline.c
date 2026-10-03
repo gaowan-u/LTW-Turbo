@@ -1941,6 +1941,45 @@ static void fp_set_default_uniforms(void) {
                                  (u1r == (GLint)fp_bound_texture1) ? "" : " MISMATCH");
             }
         }
+        // MathCode 2026-10-03 [UNI] 探针：截图证明图标是"极暗化"（形状保留、
+        // widgets/玩家正常、仅 atlas 图标暗）= lightmap 暗系数乘法特征。
+        // CPU 侧 fin 显示 lmuv=[15,15] 满亮已设，但 GL 端 uniform 实际值可能
+        // 不是（location 失效/上传失败/缓存错）→ shader 采暗 texel(0,0)=0x0e。
+        // 直接问 GL 本尊要 uniform 真值。
+        {
+            static int uni_cnt = 0;
+            static int uni_state = -1;
+            if(fp_program && fp_uselightmap_loc >= 0 && fp_lightmapuv_loc >= 0) {
+                GLint r_uselm = 0, r_usetex = 0, r_usecolor = 0;
+                GLfloat r_lmuv[2] = {0, 0}, r_col[4] = {0, 0, 0, 0};
+                es3_functions.glGetUniformiv(fp_program, fp_uselightmap_loc, &r_uselm);
+                es3_functions.glGetUniformfv(fp_program, fp_lightmapuv_loc, r_lmuv);
+                if(fp_usetex_loc >= 0)
+                    es3_functions.glGetUniformiv(fp_program, fp_usetex_loc, &r_usetex);
+                if(fp_usecolor_loc >= 0)
+                    es3_functions.glGetUniformiv(fp_program, fp_usecolor_loc, &r_usecolor);
+                if(fp_color_loc >= 0)
+                    es3_functions.glGetUniformfv(fp_program, fp_color_loc, r_col);
+                int us = (r_uselm << 8)
+                       ^ ((int)(r_lmuv[0] * 16.0f) << 16)
+                       ^ ((int)(r_lmuv[1] * 16.0f) << 20)
+                       ^ ((r_usetex ? 1 : 0) << 24)
+                       ^ ((r_usecolor ? 1 : 0) << 25)
+                       ^ ((int)(r_col[0] * 255.0f) << 26);
+                if(uni_cnt < 200 || us != uni_state) {
+                    uni_state = us;
+                    uni_cnt++;
+                    LTW_ERROR_PRINTF("[UNI] GL真值 uselm=%d(CPU %d) lmuv=[%.3f %.3f]"
+                                     "(CPU [%.3f %.3f]) usetex=%d usecolor=%d "
+                                     "uColor=[%.2f %.2f %.2f %.2f]",
+                                     r_uselm, fp_last_uselightmap,
+                                     r_lmuv[0], r_lmuv[1],
+                                     fp_last_lightmap_uv[0], fp_last_lightmap_uv[1],
+                                     r_usetex, r_usecolor,
+                                     r_col[0], r_col[1], r_col[2], r_col[3]);
+                }
+            }
+        }
     }
 }
 
