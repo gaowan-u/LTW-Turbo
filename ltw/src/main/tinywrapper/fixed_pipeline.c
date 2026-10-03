@@ -1896,6 +1896,51 @@ static void fp_set_default_uniforms(void) {
                 }
             }
         }
+        // MathCode 2026-10-03 [GLS] 驱动真值探针：CPU 跟踪全正常但视觉黑，
+        // 查本笔 ITEM 绘制将真实使用的 blend/depth/纹理绑定状态。
+        // flush 恢复 CPU 值 + MC GlStateManager 去重 → 任何 desync 永久化。
+        // 重点：unit1 真实绑定 vs fp_bound_texture1（第 0 位缺口实锤点）。
+        static int gls_cnt = 0;
+        static int gls_state = -1;
+        {
+            GLint blend_en = 0, srgb = 0, drgb = 0, sa = 0, da = 0;
+            GLint dfun = 0, dmask = 0, u0r = 0, u1r = 0, actr = 0;
+            es3_functions.glGetIntegerv(GL_BLEND, &blend_en);
+            es3_functions.glGetIntegerv(GL_BLEND_SRC_RGB, &srgb);
+            es3_functions.glGetIntegerv(GL_BLEND_DST_RGB, &drgb);
+            es3_functions.glGetIntegerv(GL_BLEND_SRC_ALPHA, &sa);
+            es3_functions.glGetIntegerv(GL_BLEND_DST_ALPHA, &da);
+            es3_functions.glGetIntegerv(GL_DEPTH_FUNC, &dfun);
+            es3_functions.glGetBooleanv(GL_DEPTH_WRITEMASK, (GLboolean*)&dmask);
+            es3_functions.glGetIntegerv(GL_ACTIVE_TEXTURE, &actr);
+            es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &u0r);
+            GLenum old_act = (GLenum)actr;
+            if(old_act != GL_TEXTURE1) {
+                es3_functions.glActiveTexture(GL_TEXTURE1);
+                fp_active_texture = GL_TEXTURE1;
+            }
+            es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &u1r);
+            if(old_act != GL_TEXTURE1) {
+                es3_functions.glActiveTexture(old_act);
+                fp_active_texture = old_act;
+            }
+            int gs = (blend_en ? 1 : 0) | (srgb << 4) | (drgb << 12)
+                   | ((dfun & 0xf) << 20) | ((dmask ? 1 : 0) << 24)
+                   | ((u0r == (GLint)fp_bound_texture ? 0 : 1) << 25)
+                   | ((u1r == (GLint)fp_bound_texture1 ? 0 : 1) << 26);
+            if(gls_cnt < 400 || gs != gls_state) {
+                gls_state = gs;
+                gls_cnt++;
+                LTW_ERROR_PRINTF("[GLS] blend=%d src=(0x%x 0x%x 0x%x 0x%x) dfun=0x%x "
+                                 "dmask=%d act=0x%x u0real=%u(track %u%s) "
+                                 "u1real=%u(track %u%s)",
+                                 blend_en, srgb, drgb, sa, da, dfun, dmask, actr,
+                                 (GLuint)u0r, fp_bound_texture,
+                                 (u0r == (GLint)fp_bound_texture) ? "" : " MISMATCH",
+                                 (GLuint)u1r, fp_bound_texture1,
+                                 (u1r == (GLint)fp_bound_texture1) ? "" : " MISMATCH");
+            }
+        }
     }
 }
 
@@ -2224,6 +2269,10 @@ bool fp_prepare_client_arrays(GLsizei count) {
     // （1973 次）且 8↔94 抖动。v2 两步：ITEM 路径置 pending，在
     // fp_set_default_uniforms 末尾打印本次最终 uniform（v1 的 uselm/lmuv 是
     // 上次值，时机错）；未知纹理 id 一次性查尺寸/内部格式锁定 94 身份。
+    // game10 判读：94/112=glint 纹理（60/689 帧，正常 overlay），非黑源。
+    // 所有 CPU 跟踪状态夜间全正常但视觉黑 → 剩余嫌疑在驱动真值：
+    // blend 因子 / depth / unit1(lightmap) 真实绑定（flush 恢复 CPU 值 +
+    // MC GlStateManager 去重 = 错误状态永久盖章）。[GLS] 打驱动真值。
     if(ltw_lightmap_trace && looks_item) {
         fp_tex_probe_pending = true;
     }
