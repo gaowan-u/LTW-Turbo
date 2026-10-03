@@ -278,7 +278,7 @@ static const char* fp_fragment_shader_tpl =
     "    // 否则 240/16=0.9375 落在 texel14/15 边界，GUI 满亮物品会被\n"
     "    // GL_LINEAR 混入较暗的 texel14。\n"
     "    if(uUseLightMap == 1) fc.rgb *= texture(uLightMap, (vUV1 + 8.0) / 256.0).rgb;\n"
-    "    else if(uUseLightMap == 2) fc.rgb *= texture(uLightMap, (uLightMapUV4.xy + 0.5) / 16.0).rgb;\n"
+    "    else if(uUseLightMap == 2) fc.rgb *= texture(uLightMap, (uColor.xy + 0.5) / 16.0).rgb;\n"
     "%s"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
@@ -679,7 +679,7 @@ static void fp_ensure_program(void) {
         // +蓝通道标记。图标"蓝底黄"= uniform 正确；"蓝底黑"= uniform 实际
         // (0,0) = 上传未生效实锤。
         dbg_line = "    if(uUseLightMap == 1) { fragColor = vec4(vUV1.x / 240.0, vUV1.y / 240.0, 0.0, 1.0); return; }\n"
-                   "    if(uUseLightMap == 2) { fragColor = vec4(uLightMapUV4.x / 16.0, uLightMapUV4.y / 16.0, 1.0, 1.0); return; }\n";
+                   "    if(uUseLightMap == 2) { fragColor = vec4(uColor.x / 16.0, uColor.y / 16.0, 1.0, 1.0); return; }\n";
     else if(shdbg == 2)
         dbg_line = "    fragColor = vec4(vColor.rgb, 1.0);\n    return;\n";
     else if(shdbg == 3)
@@ -1855,8 +1855,31 @@ static void fp_set_default_uniforms(void) {
                                       fp_last_lightmap_uv_snap[0],
                                       fp_last_lightmap_uv_snap[1], 0.0f, 0.0f);
             memcpy(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv));
+            // [GLU] glUniform 后错误检查——若驱动在此报 GL_INVALID_OPERATION，
+            // 说明上传调用环境有问题（program/use 时序），一次性定位。
+            if(ltw_lightmap_trace) {
+                static int glu_cnt = 0;
+                GLenum gerr = es3_functions.glGetError();
+                if(gerr != GL_NO_ERROR && glu_cnt++ < 20)
+                    LTW_ERROR_PRINTF("[GLU] glUniform4f(lmuv) err=0x%x", gerr);
+            }
         }
         fp_last_lightmapuv_set = fp_lightmap_const_active ? 1 : 0;
+    }
+    // MathCode 2026-10-04【uColor 携带通道】：uselm=2 时 uColor 空闲（图标笔
+    // usecolor=1 用顶点色，[UNI] 历史无 usecolor=0&&uselm=2 组合），把 lmuv
+    // 塞进 uColor.xy——uColor 是"已被证明工作"的 uniform，绕开 uLightMapUV4
+    // 的驱动失效。uselm!=2 时恢复真实当前色（值差异触发 memcmp 重传）。
+    if(uselightmap == 2 && fp_color_loc >= 0) {
+        es3_functions.glUniform4f(fp_color_loc,
+                                  fp_last_lightmap_uv_snap[0],
+                                  fp_last_lightmap_uv_snap[1], 0.0f, 1.0f);
+        fp_last_usetex = fp_last_usetex;  // no-op 保持结构
+        fp_last_usecolor = fp_last_usecolor;  // no-op 保持结构
+        fp_last_color[0] = fp_last_lightmap_uv_snap[0];
+        fp_last_color[1] = fp_last_lightmap_uv_snap[1];
+        fp_last_color[2] = 0.0f;
+        fp_last_color[3] = 1.0f;
     }
     // uLightMap 采样器固定绑定 unit1（lightmap 纹理所在单元），只需设一次。
     // 直接走 es3_functions 切换活动单元，避免 glActiveTexture 包装器
