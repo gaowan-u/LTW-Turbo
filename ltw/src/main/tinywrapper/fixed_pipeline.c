@@ -260,7 +260,7 @@ static const char* fp_fragment_shader_tpl =
     "uniform vec4 uLightColor;\n"
     "uniform sampler2D uLightMap;\n"
     "uniform int uUseLightMap;\n"
-    "uniform vec2 uLightMapUV;\n"
+    "uniform highp vec4 uLightMapUV4;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
     "    vec4 c = vec4(1.0);\n"
@@ -278,7 +278,7 @@ static const char* fp_fragment_shader_tpl =
     "    // 否则 240/16=0.9375 落在 texel14/15 边界，GUI 满亮物品会被\n"
     "    // GL_LINEAR 混入较暗的 texel14。\n"
     "    if(uUseLightMap == 1) fc.rgb *= texture(uLightMap, (vUV1 + 8.0) / 256.0).rgb;\n"
-    "    else if(uUseLightMap == 2) fc.rgb *= texture(uLightMap, (uLightMapUV + 0.5) / 16.0).rgb;\n"
+    "    else if(uUseLightMap == 2) fc.rgb *= texture(uLightMap, (uLightMapUV4.xy + 0.5) / 16.0).rgb;\n"
     "%s"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
@@ -679,7 +679,7 @@ static void fp_ensure_program(void) {
         // +蓝通道标记。图标"蓝底黄"= uniform 正确；"蓝底黑"= uniform 实际
         // (0,0) = 上传未生效实锤。
         dbg_line = "    if(uUseLightMap == 1) { fragColor = vec4(vUV1.x / 240.0, vUV1.y / 240.0, 0.0, 1.0); return; }\n"
-                   "    if(uUseLightMap == 2) { fragColor = vec4(uLightMapUV.x / 16.0, uLightMapUV.y / 16.0, 1.0, 1.0); return; }\n";
+                   "    if(uUseLightMap == 2) { fragColor = vec4(uLightMapUV4.x / 16.0, uLightMapUV4.y / 16.0, 1.0, 1.0); return; }\n";
     else if(shdbg == 2)
         dbg_line = "    fragColor = vec4(vColor.rgb, 1.0);\n    return;\n";
     else if(shdbg == 3)
@@ -745,7 +745,15 @@ static void fp_ensure_program(void) {
     fp_lightcolor_loc = es3_functions.glGetUniformLocation(prog, "uLightColor");
     fp_lightmap_loc = es3_functions.glGetUniformLocation(prog, "uLightMap");
     fp_uselightmap_loc = es3_functions.glGetUniformLocation(prog, "uUseLightMap");
-    fp_lightmapuv_loc = es3_functions.glGetUniformLocation(prog, "uLightMapUV");
+    fp_lightmapuv_loc = es3_functions.glGetUniformLocation(prog, "uLightMapUV4");
+    // [LOC] 一次性打印全部 uniform location——诊断驱动 uniform 布局/重定位
+    LTW_ERROR_PRINTF("[LOC] mvp=%d tex=%d usetex=%d usecolor=%d color=%d "
+                     "alphafunc=%d alpharef=%d single=%d lighttint=%d lightcolor=%d "
+                     "lightmap=%d uselightmap=%d lightmapuv=%d",
+                     fp_mvp_loc, fp_tex_loc, fp_usetex_loc, fp_usecolor_loc,
+                     fp_color_loc, fp_alphafunc_loc, fp_alpharef_loc, fp_single_loc,
+                     fp_lighttint_loc, fp_lightcolor_loc, fp_lightmap_loc,
+                     fp_uselightmap_loc, fp_lightmapuv_loc);
 
     es3_functions.glGenBuffers(1, &fp_vbo);
     es3_functions.glGenBuffers(1, &fp_vbo_pos);
@@ -1838,11 +1846,14 @@ static void fp_set_default_uniforms(void) {
         fp_last_uselightmap = uselightmap;
     }
     // 实体常量 lightmap UV（归一化 0-1）
-    if(fp_lightmapuv_loc >= 0 && (!fp_uniforms_initialized ||
-       fp_last_lightmapuv_set != (fp_lightmap_const_active ? 1 : 0) ||
-       memcmp(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv)) != 0)) {
+    // MathCode 2026-10-04：改 vec4+highp+逐分量+每笔强制上传——绕开疑似驱动的
+    // vec2 uniform 打包/同步 bug（[SHD] v3 截图实锤：glGetUniform 读回 [15,15]
+    // 而 shader 执行读到 (0,0)，同 program 内 uselightmap 却生效）。
+    if(fp_lightmapuv_loc >= 0) {
         if(fp_lightmap_const_active) {
-            es3_functions.glUniform2fv(fp_lightmapuv_loc, 1, fp_last_lightmap_uv_snap);
+            es3_functions.glUniform4f(fp_lightmapuv_loc,
+                                      fp_last_lightmap_uv_snap[0],
+                                      fp_last_lightmap_uv_snap[1], 0.0f, 0.0f);
             memcpy(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv));
         }
         fp_last_lightmapuv_set = fp_lightmap_const_active ? 1 : 0;
@@ -1979,7 +1990,7 @@ static void fp_set_default_uniforms(void) {
             static int uni_state = -1;
             if(fp_program && fp_uselightmap_loc >= 0 && fp_lightmapuv_loc >= 0) {
                 GLint r_uselm = 0, r_usetex = 0, r_usecolor = 0;
-                GLfloat r_lmuv[2] = {0, 0}, r_col[4] = {0, 0, 0, 0};
+                GLfloat r_lmuv[4] = {0, 0, 0, 0}, r_col[4] = {0, 0, 0, 0};
                 es3_functions.glGetUniformiv(fp_program, fp_uselightmap_loc, &r_uselm);
                 es3_functions.glGetUniformfv(fp_program, fp_lightmapuv_loc, r_lmuv);
                 if(fp_usetex_loc >= 0)
