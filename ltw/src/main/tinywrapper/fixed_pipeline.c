@@ -458,6 +458,8 @@ static GLfloat fp_last_lightmap_uv_snap[2] = {0.0f, 0.0f};
 // （定位掉落物/手持物品昼夜亮度问题的临时探针，定位后移除）
 bool ltw_lightmap_trace = false;
 static int ltw_lm_trace_state = -1;
+// [TEX] v2：ITEM 绘制 pending 标记（prepare 置位，set_default_uniforms 末尾消费打印）
+static bool fp_tex_probe_pending = false;
 static GLint fp_client_color_size = 0;
 static GLenum fp_client_color_type = GL_FLOAT;
 static GLsizei fp_client_color_stride = 0;
@@ -1833,6 +1835,68 @@ static void fp_set_default_uniforms(void) {
         }
     }
     fp_uniforms_initialized = true;
+    // [TEX] v2：ITEM 绘制的最终 uniform 状态 + 未知纹理身份查询（见上文注释）
+    if(fp_tex_probe_pending) {
+        fp_tex_probe_pending = false;
+        static int fin_cnt = 0;
+        static int fin_state = -1;
+        int fs = (fp_last_uselightmap << 16)
+               ^ ((int)(fp_last_lightmap_uv[0] * 16.0f) << 8)
+               ^ (int)(fp_last_lightmap_uv[1] * 16.0f)
+               ^ (fp_last_usetex ? 0x100000 : 0)
+               ^ ((fp_bound_texture & 0xff) << 22);
+        if(fin_cnt < 300 || fs != fin_state) {
+            fin_state = fs;
+            fin_cnt++;
+            LTW_ERROR_PRINTF("[TEX] fin usetex=%d usecolor=%d uselm=%d lmuv=[%.3f %.3f] "
+                             "tex0=%u single=%d colact=%d tint=%d lcol=[%.2f %.2f %.2f %.2f] "
+                             "uven=%d uvsize=%d uvtype=0x%x uvstride=%d",
+                             fp_last_usetex, fp_last_usecolor, fp_last_uselightmap,
+                             fp_last_lightmap_uv[0], fp_last_lightmap_uv[1],
+                             fp_bound_texture, fp_bound_single_channel ? 1 : 0,
+                             fp_client_color_active ? 1 : 0,
+                             fp_light_tint ? 1 : 0,
+                             fp_texenv_state[1].color[0], fp_texenv_state[1].color[1],
+                             fp_texenv_state[1].color[2], fp_texenv_state[1].color[3],
+                             fp_client_texcoord_enabled ? 1 : 0,
+                             fp_client_texcoord_size, fp_client_texcoord_type,
+                             fp_client_texcoord_stride);
+            // 未知纹理 id（非已知 atlas/lightmap）一次性查身份：
+            // 尺寸 + 内部格式。查询作用于当前活动单元的绑定，先确认。
+            static uint32_t probed_ids[16];
+            static int probed_n = 0;
+            GLuint tid = fp_bound_texture;
+            if(tid != 0 && tid != fp_bound_texture1) {
+                bool known = false;
+                for(int i = 0; i < probed_n; i++) known = known || (probed_ids[i] == tid);
+                if(!known && probed_n < 16) {
+                    probed_ids[probed_n++] = tid;
+                    GLenum old_act = fp_active_texture;
+                    if(old_act != GL_TEXTURE0) {
+                        es3_functions.glActiveTexture(GL_TEXTURE0);
+                        fp_active_texture = GL_TEXTURE0;
+                    }
+                    GLint bound_now = 0;
+                    es3_functions.glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound_now);
+                    if((GLuint)bound_now == tid) {
+                        GLint w = 0, h = 0, ifmt = 0;
+                        es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0,
+                                                               GL_TEXTURE_WIDTH, &w);
+                        es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0,
+                                                               GL_TEXTURE_HEIGHT, &h);
+                        es3_functions.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0,
+                                                               GL_TEXTURE_INTERNAL_FORMAT, &ifmt);
+                        LTW_ERROR_PRINTF("[TEXID] id=%u %dx%d ifmt=0x%x",
+                                         tid, w, h, ifmt);
+                    }
+                    if(old_act != GL_TEXTURE0) {
+                        es3_functions.glActiveTexture(old_act);
+                        fp_active_texture = old_act;
+                    }
+                }
+            }
+        }
+    }
 }
 
 // 绑定默认 program。返回 true 表示成功（调用方须配对调用 fp_unbind_default_program）。
@@ -2155,36 +2219,13 @@ bool fp_prepare_client_arrays(GLsizei count) {
                              fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1]);
         }
     }
-    // MathCode 2026-10-03 [TEX] 探针：夜间创造物品栏图标黑——[LMT] 已证明
-    // lightmap 坐标/顶点色正确，剩余嫌疑：A) unit0 主纹理绑定错位（采到
-    // lightmap 纹理）；B) mc2f 时序污染持久镜像（实体黑暗光照 (0,240) 覆盖
-    // GUI 满亮 (240,240)）。在 ITEM 路径打印最终状态区分两者。
+    // MathCode 2026-10-03 [TEX] 探针 v2：夜间创造物品栏图标黑——game9 日志
+    // 铁证：白天 GUI 段 unit0 只绑 atlas(tex0=8)，夜间 GUI 段大量 tex0=94
+    // （1973 次）且 8↔94 抖动。v2 两步：ITEM 路径置 pending，在
+    // fp_set_default_uniforms 末尾打印本次最终 uniform（v1 的 uselm/lmuv 是
+    // 上次值，时机错）；未知纹理 id 一次性查尺寸/内部格式锁定 94 身份。
     if(ltw_lightmap_trace && looks_item) {
-        static int tex_cnt = 0;
-        static int tex_state = -1;
-        int ts = (int)((fp_last_lightmap_uv_snap[0] * 16.0f))
-               ^ ((int)(fp_last_lightmap_uv_snap[1] * 16.0f) << 8)
-               ^ (fp_bound_texture << 16)
-               ^ ((fp_last_usetex ? 1 : 0) << 24)
-               ^ ((fp_light_tint ? 1 : 0) << 25);
-        if(tex_cnt < 500 || ts != tex_state) {
-            tex_state = ts;
-            tex_cnt++;
-            LTW_ERROR_PRINTF("[TEX] lm=(%.3f %.3f) cur=(%.1f %.1f) tex0=%u texen0=%d "
-                             "act=%d tex1=%u usetex=%d usecolor=%d colact=%d "
-                             "uselm=%d lmuv=[%.3f %.3f] tint=%d lcol=[%.2f %.2f %.2f %.2f]",
-                             fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1],
-                             fp_cur_lm_uv[0], fp_cur_lm_uv[1],
-                             fp_bound_texture, fp_texture_enabled[0] ? 1 : 0,
-                             (int)fp_active_texture, fp_bound_texture1,
-                             fp_last_usetex, fp_last_usecolor,
-                             fp_client_color_active ? 1 : 0,
-                             fp_last_uselightmap,
-                             fp_last_lightmap_uv[0], fp_last_lightmap_uv[1],
-                             fp_light_tint ? 1 : 0,
-                             fp_texenv_state[1].color[0], fp_texenv_state[1].color[1],
-                             fp_texenv_state[1].color[2], fp_texenv_state[1].color[3]);
-        }
+        fp_tex_probe_pending = true;
     }
     // attribute 启用情况影响 uUseColor，这里重设 uniforms（bind 先于 prepare）
     fp_set_default_uniforms();
