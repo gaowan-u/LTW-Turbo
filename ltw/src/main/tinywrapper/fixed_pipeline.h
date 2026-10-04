@@ -110,6 +110,10 @@ extern float fp_multi_lm_uv[2];
 extern bool fp_multi_lm_valid;
 extern float fp_cur_lm_uv[2];
 extern bool fp_cur_lm_valid;
+// MathCode 2026-10-04：GUI 满亮独立镜像（unit1 disabled 窗口的 (240,240)），
+// 不被世界光照覆盖；looks_item 消费时按 fp_lightmap_enabled() 选择。
+extern float fp_gui_lm_uv[2];
+extern bool fp_gui_lm_valid;
 bool fp_lightmap_enabled(void);
 void fp_color_pointer(GLint size, GLenum type, GLsizei stride, const void* pointer);
 void fp_normal_pointer(GLenum type, GLsizei stride, const void* pointer);

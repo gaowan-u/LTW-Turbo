@@ -2355,14 +2355,26 @@ bool fp_prepare_client_arrays(GLsizei count) {
                        fp_client_color_size == 4 &&
                        coloff >= 0 && u0off >= 0 && coloff < u0off);
     if(!fp_client_uv1_active && looks_item && fp_cur_lm_valid && fp_bound_texture1 != 0) {
-        fp_last_lightmap_uv_snap[0] = fp_cur_lm_uv[0] / 16.0f;
-        fp_last_lightmap_uv_snap[1] = fp_cur_lm_uv[1] / 16.0f;
+        // MathCode 2026-10-04【根因修复】——GUI 段图标恒用满亮 (240,240)：
+        // GuiInventory 玩家模型渲染会 setLightmap(玩家位置光照，夜间 (0,240))
+        // 覆盖持久镜像，玩家模型之后的图标采样夜空暗行 → 图标随天黑变暗
+        // （白天 texel(0,15) 亮所以假性正常）。现在按 fp_lightmap_enabled()
+        // 区分：GUI 段（unit1 disabled）→ 用 GUI 独立镜像（恒 (240,240)，
+        // 不被世界光照污染）；世界段（enabled，掉落物/手持）→ 真实光照。
+        if(!fp_lightmap_enabled() && fp_gui_lm_valid) {
+            fp_last_lightmap_uv_snap[0] = fp_gui_lm_uv[0] / 16.0f;
+            fp_last_lightmap_uv_snap[1] = fp_gui_lm_uv[1] / 16.0f;
+        } else {
+            fp_last_lightmap_uv_snap[0] = fp_cur_lm_uv[0] / 16.0f;
+            fp_last_lightmap_uv_snap[1] = fp_cur_lm_uv[1] / 16.0f;
+        }
         fp_last_lightmap_uv_valid = true;
         fp_lightmap_const_active = true;
         fp_const_from_draw = true;
         if(ltw_lightmap_trace) {
-            LTW_ERROR_PRINTF("[LMT] draw_const uv=[%.3f %.3f]",
-                             fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1]);
+            LTW_ERROR_PRINTF("[LMT] draw_const uv=[%.3f %.3f] gui=%d",
+                             fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1],
+                             (!fp_lightmap_enabled() && fp_gui_lm_valid) ? 1 : 0);
         }
         // MathCode 2026-10-04 [PIX2] 读回探针：GUI 满亮图标绘制时
         // A) 读回 unit1(lightmap) 纹理 texel(15,15) 的 GPU 实际内容；

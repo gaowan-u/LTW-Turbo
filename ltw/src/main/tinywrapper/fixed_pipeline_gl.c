@@ -219,6 +219,14 @@ bool fp_multi_lm_valid = false;
 // 天空/云的 mc2f 一次性消费修复（19c3d99）。
 float fp_cur_lm_uv[2] = {0.f, 0.f};
 bool fp_cur_lm_valid = false;
+// MathCode 2026-10-04【GUI 满亮独立镜像】——根因修复：GuiInventory 的玩家
+// 模型渲染会 setLightmap(玩家位置真实光照，夜间 (0,240))，把持久镜像里的
+// GUI 满亮 (240,240) 覆盖掉 → 玩家模型之后的图标全部采样夜空暗行（图标
+// 随天黑变暗，白天恰好看不出）。现把两者分存：GUI 镜像只收"unit1 disabled
+// 窗口的 (240,240)"（mc2f_gui），世界光照永远不碰它；looks_item 消费时按
+// fp_lightmap_enabled() 选镜像（GUI 段 disabled → 用 GUI 镜像）。
+float fp_gui_lm_uv[2] = {0.f, 0.f};
+bool fp_gui_lm_valid = false;
 void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
     if(!current_context) return;
     if(texture == GL_TEXTURE0) fp_texcoord2f_raw(s, t);
@@ -237,6 +245,13 @@ void glMultiTexCoord2f(GLenum texture, GLfloat s, GLfloat t) {
             // 持久镜像：供 Tessellator 物品路径（ITEM 格式）读取（含 GUI 满亮）
             fp_cur_lm_uv[0] = s; fp_cur_lm_uv[1] = t;
             fp_cur_lm_valid = true;
+            // MathCode 2026-10-04【GUI 镜像】：unit1 disabled 窗口的 (240,240)
+            // 是 GUI 满亮信号 → 写独立镜像。世界光照（enabled 窗口）永远
+            // 不碰它——玩家模型 setLightmap(0,240) 不再污染 GUI 图标。
+            if(!fp_lightmap_enabled() && s == 240.f && t == 240.f) {
+                fp_gui_lm_uv[0] = s; fp_gui_lm_uv[1] = t;
+                fp_gui_lm_valid = true;
+            }
             // 一次性值（实体 DL 段用）：仍在 lightmap 启用窗口内取，且排除
             // (240,240)——那是 GUI 满亮复位信号，不是世界实体光照（沿用
             // a813652 的结论，避免影响实体昼夜亮度）。
