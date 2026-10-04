@@ -278,7 +278,10 @@ static const char* fp_fragment_shader_tpl =
     "    // 否则 240/16=0.9375 落在 texel14/15 边界，GUI 满亮物品会被\n"
     "    // GL_LINEAR 混入较暗的 texel14。\n"
     "    if(uUseLightMap == 1) fc.rgb *= texture(uLightMap, (vUV1 + 8.0) / 256.0).rgb;\n"
-    "    else if(uUseLightMap == 2) fc.rgb *= texture(uLightMap, (uColor.xy + 0.5) / 16.0).rgb;\n"
+    "    else if(uUseLightMap == 2) {\n"
+    "        vec2 lmuv2 = uUseColor ? uColor.xy : uLightMapUV4.xy;\n"
+    "        fc.rgb *= texture(uLightMap, (lmuv2 + 0.5) / 16.0).rgb;\n"
+    "    }\n"
     "%s"
     "    bool atpass = true;\n"
     "    if(uAlphaFunc == 0) atpass = false;\n"
@@ -1846,36 +1849,29 @@ static void fp_set_default_uniforms(void) {
         fp_last_uselightmap = uselightmap;
     }
     // 实体常量 lightmap UV（归一化 0-1）
-    // MathCode 2026-10-04：改 vec4+highp+逐分量+每笔强制上传——绕开疑似驱动的
-    // vec2 uniform 打包/同步 bug（[SHD] v3 截图实锤：glGetUniform 读回 [15,15]
-    // 而 shader 执行读到 (0,0)，同 program 内 uselightmap 却生效）。
+    // MathCode 2026-10-04：恢复 uLightMapUV4 上传（DL 生物笔 usecolor=0 读它）；
+    // 此前"vec2 驱动 bug"假说作废——图标黑真凶是 mc2f 污染（已由 GUI 镜像修复，
+    // glGetUniform 读回证明上传链一直正常）。
     if(fp_lightmapuv_loc >= 0) {
         if(fp_lightmap_const_active) {
             es3_functions.glUniform4f(fp_lightmapuv_loc,
                                       fp_last_lightmap_uv_snap[0],
                                       fp_last_lightmap_uv_snap[1], 0.0f, 0.0f);
             memcpy(fp_last_lightmap_uv, fp_last_lightmap_uv_snap, sizeof(fp_last_lightmap_uv));
-            // [GLU] glUniform 后错误检查——若驱动在此报 GL_INVALID_OPERATION，
-            // 说明上传调用环境有问题（program/use 时序），一次性定位。
-            if(ltw_lightmap_trace) {
-                static int glu_cnt = 0;
-                GLenum gerr = es3_functions.glGetError();
-                if(gerr != GL_NO_ERROR && glu_cnt++ < 20)
-                    LTW_ERROR_PRINTF("[GLU] glUniform4f(lmuv) err=0x%x", gerr);
-            }
         }
         fp_last_lightmapuv_set = fp_lightmap_const_active ? 1 : 0;
     }
-    // MathCode 2026-10-04【uColor 携带通道】：uselm=2 时 uColor 空闲（图标笔
-    // usecolor=1 用顶点色，[UNI] 历史无 usecolor=0&&uselm=2 组合），把 lmuv
-    // 塞进 uColor.xy——uColor 是"已被证明工作"的 uniform，绕开 uLightMapUV4
-    // 的驱动失效。uselm!=2 时恢复真实当前色（值差异触发 memcmp 重传）。
-    if(uselightmap == 2 && fp_color_loc >= 0) {
+    // uLightMap 采样器固定绑定 unit1（lightmap 纹理所在单元），只需设一次。
+    // MathCode 2026-10-04【uColor 携带通道】收紧：仅 ITEM 图标笔（looks_item，
+    // fp_const_from_draw 标记）塞 lmuv 进 uColor.xy——此类笔 usecolor=1 用
+    // 顶点色，uColor 空闲。DL 生物回放笔 uselm=2 但 usecolor=0（无顶点色
+    // 数组，uColor 就是片元色）——绝不能塞，否则生物 = 纹理×(0,15,0) 纯绿
+    // （game21 实锤：夜间生物绿、白天玩家黄）。DL 笔的 lmuv 走恢复的
+    // uLightMapUV4 通道（shader 按 uUseColor 分流选择来源）。
+    if(uselightmap == 2 && fp_const_from_draw && fp_color_loc >= 0) {
         es3_functions.glUniform4f(fp_color_loc,
                                   fp_last_lightmap_uv_snap[0],
                                   fp_last_lightmap_uv_snap[1], 0.0f, 1.0f);
-        fp_last_usetex = fp_last_usetex;  // no-op 保持结构
-        fp_last_usecolor = fp_last_usecolor;  // no-op 保持结构
         fp_last_color[0] = fp_last_lightmap_uv_snap[0];
         fp_last_color[1] = fp_last_lightmap_uv_snap[1];
         fp_last_color[2] = 0.0f;
