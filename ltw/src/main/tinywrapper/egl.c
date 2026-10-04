@@ -498,5 +498,10 @@ EGLBoolean eglMakeCurrent (EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGL
 // 否则延迟提交的 HUD 文字会被下一帧开头的 glClear 清掉。
 EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
     fp_flush_immediate_batch();
+    // MathCode 2026-10-04：清跨帧残留的 lightmap 快照——帧首的天空/云 DL
+    // 会消费上帧末尾手持物品的 mc2f 残留（0,240 夜空暗行）→ 天空稳定灰、
+    // 白云被乘黑不可见。vanilla 天空/云不带 lightmap，帧首快照必须无效
+    // （天空 uselm=0 满亮）。生物/掉落物不受影响（渲染前 MC 会重新 setLightmap）。
+    fp_frame_reset_lightmap();
     return host_eglSwapBuffers(dpy, surface);
 }

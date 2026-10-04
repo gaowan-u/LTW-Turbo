@@ -63,6 +63,9 @@ void fp_end(void);
 // 把已累积的连续 glBegin/glEnd 顶点以“录制时的状态快照”一次性提交。
 // 应用绘制/清屏/读回/帧切换等会改变绘制顺序的入口必须调用它。
 void fp_flush_immediate_batch(void);
+// 帧首重置跨帧残留的 lightmap 快照（eglSwapBuffers 调用，防天空/云被
+// 上帧手持 mc2f 残留调制）。
+void fp_frame_reset_lightmap(void);
 // 是否还有未提交的即时模式批次（诊断用：帧首 glClear 时若仍为 true，
 // 说明帧切换入口没有拦截到，文字会被清屏清掉）。
 bool fp_immediate_batch_pending(void);

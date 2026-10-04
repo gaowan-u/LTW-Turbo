@@ -2869,6 +2869,17 @@ static uint32_t fp_dl_read_idx(const void* src, GLenum type, GLsizei i) {
     }
 }
 
+// MathCode 2026-10-04：帧首重置跨帧残留的 lightmap 快照（eglSwapBuffers 调用）。
+// 帧首天空/云 DL 消费上帧手持 mc2f 残留 (0,240) → 天空灰/白云黑；清后帧首
+// 快照无效，天空/云 uselm=0 满亮（vanilla 语义）。生物/掉落物渲染前 MC 都会
+// 重新 setLightmap，不受影响。
+void fp_frame_reset_lightmap(void) {
+    fp_multi_lm_valid = false;
+    fp_last_lightmap_uv_valid = false;
+    fp_last_lightmap_uv_snap[0] = 0.0f;
+    fp_last_lightmap_uv_snap[1] = 0.0f;
+}
+
 // 进入显示列表批量回放：保存应用 GL 状态，绑定默认 program / 私有 VAO /
 // unit0 纹理。调用方必须配对调用 fp_end_dl_replay。
 static bool fp_begin_dl_replay(void) {
@@ -2891,8 +2902,16 @@ static bool fp_begin_dl_replay(void) {
     // MathCode: 2026-08-11 掉落物闪烁根因修复——不依赖 fp_texture_enabled[1]
     // （桌面语义 unit1 纹理启用持久，MC 从不管理；见 fp_set_default_uniforms）。
     fp_client_uv1_active = false;
-    fp_lightmap_const_active = (fp_last_lightmap_uv_valid &&
-                                fp_bound_texture1 != 0);
+    // MathCode 2026-10-04【GUI 段 DL 满亮】：unit1 disabled（GUI 段，如
+    // GuiInventory 玩家模型）时 DL 回放不套 lightmap——vanilla GUI 实体走
+    // enableGUIStandardItemLighting 满亮，不该跟随世界昼夜（game21 实锤：
+    // 玩家模型随天黑变暗）。世界段（enabled）行为不变。
+    if(fp_lightmap_enabled()) {
+        fp_lightmap_const_active = (fp_last_lightmap_uv_valid &&
+                                    fp_bound_texture1 != 0);
+    } else {
+        fp_lightmap_const_active = false;
+    }
     // MathCode: mc2f 一次性消费——multiTexCoord2f(GL_TEXTURE1) 是"每个实体
     // 渲染前"的真实光照，只对本实体段有效。若不消费，天空/云的回放会捡走
     // 上一个实体的光照值，白天跟着实体渲染节奏高频闪（lg29 实锤）。
@@ -2905,11 +2924,11 @@ static bool fp_begin_dl_replay(void) {
     }
     // MathCode: 生物黑闪诊断——实体 DL 回放的常量 lightmap 快照值
     if(ltw_lightmap_trace) {
-        LTW_ERROR_PRINTF("[LMT] dlent const=%d uv=[%.3f %.3f] valid=%d tex1=%u",
+        LTW_ERROR_PRINTF("[LMT] dlent const=%d uv=[%.3f %.3f] valid=%d tex1=%u en=%d",
                          fp_lightmap_const_active ? 1 : 0,
                          fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1],
                          fp_last_lightmap_uv_valid ? 1 : 0,
-                         fp_bound_texture1);
+                         fp_bound_texture1, fp_lightmap_enabled() ? 1 : 0);
     }
 
     es3_functions.glUseProgram(fp_program);
