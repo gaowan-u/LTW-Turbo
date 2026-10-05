@@ -2370,7 +2370,17 @@ bool fp_prepare_client_arrays(GLsizei count) {
         // （白天 texel(0,15) 亮所以假性正常）。现在按 fp_lightmap_enabled()
         // 区分：GUI 段（unit1 disabled）→ 用 GUI 独立镜像（恒 (240,240)，
         // 不被世界光照污染）；世界段（enabled，掉落物/手持）→ 真实光照。
-        if(!fp_lightmap_enabled() && fp_gui_lm_valid) {
+        // MathCode 2026-10-05【进世界首帧 hotbar 黑根因修复】——game22:4705
+        // 铁证：Zalith+OptiFine G5 的 hotbar HUD 物品渲染【不发】
+        // setLightmap(240,240)（全文第一条 mc2f_gui 在 29476=背包打开处），
+        // HUD 物品光照完全依赖粘性 cur——而 cur 在进世界时被实体 mc2f(0,240)
+        // 甚至 (0,0)（game22:5286）覆盖 → hotbar 图标消费夜空暗行 →
+        // 进世界即黑夜时 hotbar 默认黑，开/关背包（发 240,240）后"刷新"恢复。
+        // 桌面语义目标 = HUD 物品满亮（桌面 vanilla 每物品都设 240,240），
+        // 故 Tessellator ITEM 笔一律优先 GUI 镜像（初始即满亮，见
+        // fp_gui_lm_valid=true 初始化）。掉落物/手持/实体全部在 DL 回放段
+        // 消费，不走本路径，昼夜亮度不受影响（game22 的 dlent 段验证）。
+        if(fp_gui_lm_valid) {
             fp_last_lightmap_uv_snap[0] = fp_gui_lm_uv[0] / 16.0f;
             fp_last_lightmap_uv_snap[1] = fp_gui_lm_uv[1] / 16.0f;
         } else {
@@ -2383,7 +2393,7 @@ bool fp_prepare_client_arrays(GLsizei count) {
         if(ltw_lightmap_trace) {
             LTW_ERROR_PRINTF("[LMT] draw_const uv=[%.3f %.3f] gui=%d",
                              fp_last_lightmap_uv_snap[0], fp_last_lightmap_uv_snap[1],
-                             (!fp_lightmap_enabled() && fp_gui_lm_valid) ? 1 : 0);
+                             fp_gui_lm_valid ? 1 : 0);
         }
         // MathCode 2026-10-04 [PIX2] 读回探针：GUI 满亮图标绘制时
         // A) 读回 unit1(lightmap) 纹理 texel(15,15) 的 GPU 实际内容；
