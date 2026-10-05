@@ -2099,8 +2099,20 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
         ptrdiff_t coloff = (fp_client_color_active && fp_client_color_ptr &&
                             fp_client_color_abo == 0)
                                ? (const uint8_t*)fp_client_color_ptr - vp : -1;
+        // MathCode 2026-10-04：补 UV dump——箱 tab 图标"上黑下亮"已排除
+        // lightmap（fin 满亮），嫌疑收敛到纹理 UV/覆盖层；上顶点 vs 下顶点
+        // 的 UV 值对比可定位（首顶点 = 上左，第 3 顶点含下右）。
+        float u0d = 0.f, v0d = 0.f, u2d = 0.f, v2d = 0.f;
+        ptrdiff_t texoff = (fp_client_texcoord_ptr && fp_client_texcoord_abo == 0)
+                               ? (const uint8_t*)fp_client_texcoord_ptr - vp : -1;
+        if(texoff >= 0 && fp_client_texcoord_type == GL_FLOAT) {
+            u0d = *(const float*)(vp + texoff);
+            v0d = *(const float*)(vp + texoff + 4);
+            u2d = *(const float*)(vp + texoff + 2 * fp_client_vertex_stride);
+            v2d = *(const float*)(vp + texoff + 2 * fp_client_vertex_stride + 4);
+        }
         LTW_ERROR_PRINTF("[LMT] vdump vsize=%d pos=[%.1f %.1f %.1f] color=[%02x%02x%02x%02x] "
-                         "colen=%d coloff=%ld",
+                         "colen=%d coloff=%ld uv0=[%.4f %.4f] uv2=[%.4f %.4f]",
                          (int)vsize,
                          *(const float*)(vp), *(const float*)(vp+4), *(const float*)(vp+8),
                          coloff >= 0 ? ((const uint8_t*)fp_client_color_ptr)[0] : 0xAA,
@@ -2108,7 +2120,8 @@ static void fp_upload_client_arrays(GLsizei count, bool uv1_touched) {
                          coloff >= 0 ? ((const uint8_t*)fp_client_color_ptr)[2] : 0xCC,
                          coloff >= 0 ? ((const uint8_t*)fp_client_color_ptr)[3] : 0xDD,
                          fp_client_color_active ? 1 : 0,
-                         (long)coloff);
+                         (long)coloff,
+                         u0d, v0d, u2d, v2d);
     }
 
     // 位置 attribute：offset 0
